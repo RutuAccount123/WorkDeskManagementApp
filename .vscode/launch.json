@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    
+    {
+      "type": "java",
+      "name": "WorkDesk Backend (dev)",
+      "request": "launch",
+      "mainClass": "com.decentdecor.workdesk.WorkDeskApplication",
+      "vmArgs": "-Dspring.profiles.active=dev"
+    }
+  ]
+}

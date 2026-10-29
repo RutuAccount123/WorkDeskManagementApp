@@ -1,0 +1,6 @@
+﻿node_modules/
+dist/
+target/
+.github/modernize/
+.idea/
+*.log

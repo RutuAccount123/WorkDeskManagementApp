@@ -1,0 +1,31 @@
+# Everything on one computer with Docker:  docker compose up --build
+# Database + backend. Then run the frontend with VITE_USE_MOCK=false (it forwards /api to port 8082).
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: workdesk
+      POSTGRES_USER: workdesk
+      POSTGRES_PASSWORD: workdesk-local
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workdesk -d workdesk"]
+      interval: 5s
+      retries: 10
+  api:
+    build: .
+    depends_on:
+      db: { condition: service_healthy }
+    ports: ["8082:8082"]
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://db:5432/workdesk
+      DB_USER: workdesk
+      DB_PASSWORD: workdesk-local
+      WD_JWT_SECRET: local-only-secret-change-me-0123456789-abcdef
+      WD_ADMIN_EMAIL: admin@company.com
+      WD_ADMIN_PASSWORD: Admin@123
+      WD_CORS_ORIGINS: http://localhost:5173
+volumes:
+  pgdata:

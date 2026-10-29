@@ -1,0 +1,20 @@
+# Your computer only. NEVER use these values on a real server.
+# Database "workdesk" on local PostgreSQL, plus sample people and work (db/demo).
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/workdesk
+    username: postgres
+    password: root
+  flyway:
+    locations: classpath:db/migration,classpath:db/demo
+  jpa:
+    # set to true to see every SQL statement in the console
+    show-sql: false
+
+wd:
+  admin:
+    password: Admin@123
+  jwt:
+    secret: dev-only-secret-change-me-0123456789-abcdefghij
+  cors:
+    allowed-origins: http://localhost:5173,http://localhost:5174,http://localhost:5179,http://localhost:4173

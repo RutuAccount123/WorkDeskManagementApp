@@ -1,0 +1,81 @@
+# Work Desk backend settings.
+# Values in ${NAME:default} come from environment variables; the default after ":" is used when NAME is not set.
+spring:
+  profiles:
+    # Used when no profile is chosen: "dev" = your computer (application-dev.yml).
+    # On a real server set SPRING_PROFILES_ACTIVE=prod, so the dev settings and sample data are NOT used.
+    default: dev
+  application:
+    name: workdesk
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/workdesk}
+    username: ${DB_USER:workdesk}
+    password: ${DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      # a runaway query cannot block the server
+      connection-init-sql: set statement_timeout = '15s'
+
+  jpa:
+    # Tables are created by Flyway (db/migration). Hibernate never changes them.
+    hibernate:
+      ddl-auto: none
+    # Data is loaded inside the services; nothing is fetched while writing the HTTP response.
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+    show-sql: false
+
+  flyway:
+    locations: classpath:db/migration
+    # old database functions (from the earlier PL/pgSQL version) are no longer in the project
+    ignore-migration-patterns: "*:missing"
+
+  jackson:
+    default-property-inclusion: always
+
+server:
+  port: ${PORT:8082}
+  error:
+    include-message: never
+    include-stacktrace: never
+  # behind Nginx / a cloud load balancer: trust its X-Forwarded-* headers (real client IP for the sign-in limit)
+  forward-headers-strategy: ${FORWARD_HEADERS:none}
+  tomcat:
+    max-swallow-size: 1MB
+    max-http-form-post-size: 1MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+wd:
+  # "today", working days and deadlines are counted in this time zone
+  timezone: Asia/Kolkata
+  # First start only: the first admin account. REQUIRED when the database has no admin yet.
+  admin:
+    email: ${WD_ADMIN_EMAIL:admin@company.com}
+    password: ${WD_ADMIN_PASSWORD:}
+  jwt:
+    # REQUIRED: a long random secret (at least 32 characters). Keep it private.
+    secret: ${WD_JWT_SECRET:}
+    ttl: ${WD_JWT_TTL:12h}
+  cors:
+    allowed-origins: ${WD_CORS_ORIGINS:http://localhost:5173}
+  login:
+    max-attempts: 10
+    window: 15m
+  scheduler:
+    cron: "0 */5 * * * *"
+
+logging:
+  level:
+    root: INFO

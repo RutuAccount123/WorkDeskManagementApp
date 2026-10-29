@@ -1,0 +1,14 @@
+wd:
+  admin:
+    email: admin@company.com
+    password: Admin@123
+  jwt:
+    secret: test-secret-0123456789-abcdefghijklmnopqrstuvwxyz
+  login:
+    max-attempts: 5
+    window: 15m
+  scheduler:
+    cron: "-"
+logging:
+  level:
+    com.decentdecor: WARN

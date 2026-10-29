@@ -1,0 +1,85 @@
+/* =====================================================================
+   DESIGN TOKENS — change the look of the whole app from this one file.
+   Plain solid colours only: deep violet sidebar, violet accent, flat pastel cards.
+   ===================================================================== */
+:root {
+  /* surfaces */
+  --bg: #F6F4FC;
+  --surface: #FFFFFF;
+  --surface-2: #F9F8FE;
+  --border: #ECE8F6;
+  --border-strong: #D6CFEA;
+
+  /* text (deep navy, never pure black) */
+  --text: #1F1636;
+  --text-2: #463C5E;
+  --muted: #776D8F;
+
+  /* sidebar (the dark part) */
+  --nav-bg: #2E1065;
+  --nav-bg-2: #2E1065;
+  --nav-text: #C9BEE8;
+  --nav-text-strong: #FFFFFF;
+  --nav-section: #9184BA;
+  --nav-hover: rgba(255, 255, 255, 0.08);
+  --nav-active: rgba(255, 255, 255, 0.14);
+
+  /* brand accent (the rich colour) */
+  --primary: #7C3AED;
+  --primary-hover: #6D28D9;
+  --primary-soft: #F3EEFF;
+  --primary-text: #5B21B6;
+  --on-primary: #FFFFFF;
+
+  /* solid accent colours (no gradients) */
+  --accent: #EC4899;
+  --hero-bg: #6D28D9;      /* welcome banner */
+  --button-bg: #7C3AED;    /* main buttons */
+  --nav-solid: #2E1065;    /* side menu */
+
+  /* faint pastel card fills */
+  --pastel-violet: #F3EEFF;
+  --pastel-pink: #FDEEF6;
+  --pastel-peach: #FFF1E6;
+  --pastel-mint: #E8FAF1;
+  --pastel-sky: #E9F5FF;
+  --pastel-rose: #FFEDEF;
+
+  /* status: strong text on a faint tint */
+  --todo: #B54708;      --todo-bg: #FEF6EE;      --todo-line: #F79009;
+  --progress: #175CD3;  --progress-bg: #EFF6FF;  --progress-line: #2E90FA;
+  --review: #6941C6;    --review-bg: #F4F1FF;    --review-line: #7A5AF8;
+  --done: #067647;      --done-bg: #ECFDF3;      --done-line: #17B26A;
+  --overdue: #B42318;   --overdue-bg: #FEF3F2;   --overdue-line: #F04438;
+  --back: #93370D;      --back-bg: #FFFAEB;      --back-line: #FDB022;
+  --holiday: #C4320A;   --holiday-bg: #FFF4ED;   --holiday-line: #FB6514;
+  --daily: #0E7490;     --daily-bg: #ECFDFF;
+  --weekly: #9F1239;    --weekly-bg: #FFF1F3;
+
+  /* type */
+  --font: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --fs-xs: 0.78rem;
+  --fs-sm: 0.875rem;
+  --fs-base: 1rem;
+  --fs-md: 1.125rem;
+  --fs-lg: 1.375rem;
+  --fs-xl: 1.75rem;
+  --fs-2xl: 2.25rem;
+
+  /* shape & depth */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  --r-pill: 999px;
+  --shadow-sm: 0 1px 3px rgba(76, 29, 149, 0.06);
+  --shadow-md: 0 2px 6px rgba(76, 29, 149, 0.06), 0 10px 24px rgba(76, 29, 149, 0.08);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.16);
+  --focus: 0 0 0 4px rgba(124, 58, 237, 0.18);
+
+  /* layout */
+  --sidebar-w: 256px;
+  --topbar-h: 64px;
+  --gutter: 28px;
+
+  color-scheme: light;
+}
