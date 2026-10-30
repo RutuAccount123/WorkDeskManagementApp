@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Daily & weekly tasks. */
+/** Repeating tasks. */
 @RestController
 @RequestMapping("/api/recurring")
 public class RecurringTaskController {

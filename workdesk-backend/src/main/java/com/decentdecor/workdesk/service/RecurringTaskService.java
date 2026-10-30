@@ -17,16 +17,17 @@ import com.decentdecor.workdesk.repository.WorkflowRepository;
 import com.decentdecor.workdesk.security.CurrentUser;
 import com.decentdecor.workdesk.service.support.People;
 import com.decentdecor.workdesk.service.support.WorkflowAccess;
-import com.decentdecor.workdesk.service.support.WorkingDays;
 import com.decentdecor.workdesk.util.Enums;
 import com.decentdecor.workdesk.util.OfficeTime;
 import com.decentdecor.workdesk.util.Texts;
 import java.util.List;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Daily & weekly tasks.
+ * Daily, weekly, monthly, and yearly tasks.
  * Admins manage everyone's. Employees see theirs, and change only the ones they set up themselves.
  */
 @Service
@@ -34,18 +35,16 @@ public class RecurringTaskService {
     private final RecurringTemplateRepository templates;
     private final WorkflowRepository workflows;
     private final RecurringGenerator generator;
-    private final WorkingDays workingDays;
     private final People people;
     private final WorkflowAccess workflowAccess;
     private final RecurringMapper mapper;
     private final OfficeTime time;
 
     public RecurringTaskService(RecurringTemplateRepository templates, WorkflowRepository workflows, RecurringGenerator generator,
-                                WorkingDays workingDays, People people, WorkflowAccess workflowAccess, RecurringMapper mapper, OfficeTime time) {
+                                People people, WorkflowAccess workflowAccess, RecurringMapper mapper, OfficeTime time) {
         this.templates = templates;
         this.workflows = workflows;
         this.generator = generator;
-        this.workingDays = workingDays;
         this.people = people;
         this.workflowAccess = workflowAccess;
         this.mapper = mapper;
@@ -117,8 +116,8 @@ public class RecurringTaskService {
         Employee me = people.me(user);
         RecurringTemplate tpl = find(id, me, true);
         if (generator.hasCopyOn(tpl, time.today())) throw new BadRequestException("Today’s task for this template has already been created");
-        if (!workingDays.isWorkingDay(time.today())) {
-            throw new BadRequestException("Today is a weekly off or an office holiday, so no task is created");
+        if (!generator.runsOn(tpl, time.today())) {
+            throw new BadRequestException("Today is not a scheduled working day for this task");
         }
         generator.makeCopy(tpl, time.today());
     }
@@ -144,6 +143,34 @@ public class RecurringTaskService {
             if ("SUNDAY".equals(req.dayOfWeek())) throw new BadRequestException("Sunday is the weekly off. Choose Monday to Saturday.");
             day = Enums.parse(WeekDay.class, req.dayOfWeek(), null, "Choose a day of the week for weekly tasks");
         }
+        LocalDate startDate = OfficeTime.parseDate(req.startDate(), "start date");
+        if ((frequency == RepeatFrequency.MONTHLY || frequency == RepeatFrequency.YEARLY) && startDate == null) {
+            throw new BadRequestException("Choose the date this task should repeat on");
+        }
+        if (startDate == null) startDate = time.today();
+
+        LocalTime scheduledTime = null;
+        Integer durationMinutes = null;
+        LocalTime dueTime;
+        if (!Texts.isBlank(req.scheduledTime()) || req.durationMinutes() != null) {
+            if (Texts.isBlank(req.scheduledTime()) || req.durationMinutes() == null) {
+                throw new BadRequestException("Choose both a start time and a duration");
+            }
+            if (req.durationMinutes() < 1 || req.durationMinutes() >= 1440) {
+                throw new BadRequestException("Duration must be between 1 and 1439 minutes");
+            }
+            if (req.estimatedHours() != null) {
+                throw new BadRequestException("Use either a scheduled duration or estimated hours, not both");
+            }
+            scheduledTime = OfficeTime.parseTime(req.scheduledTime(), "Choose a valid scheduled time");
+            dueTime = scheduledTime.plusMinutes(req.durationMinutes());
+            if (!dueTime.isAfter(scheduledTime)) {
+                throw new BadRequestException("The duration must finish on the same day as the scheduled start time");
+            }
+            durationMinutes = req.durationMinutes();
+        } else {
+            dueTime = OfficeTime.parseTime(Texts.isBlank(req.dueTime()) ? "18:00" : req.dueTime(), "Choose a due time");
+        }
         tpl.setTitle(req.title().trim());
         tpl.setDescription(Texts.trimToEmpty(req.description()));
         // employees always set up repeating work for themselves
@@ -151,7 +178,10 @@ public class RecurringTaskService {
         tpl.setPriority(Enums.parse(Priority.class, req.priority(), Priority.MEDIUM, "Choose a valid priority"));
         tpl.setFrequency(frequency);
         tpl.setDayOfWeek(day);
-        tpl.setDueTime(OfficeTime.parseTime(Texts.isBlank(req.dueTime()) ? "18:00" : req.dueTime(), "Choose a due time"));
+        tpl.setStartDate(startDate);
+        tpl.setScheduledTime(scheduledTime);
+        tpl.setDurationMinutes(durationMinutes);
+        tpl.setDueTime(dueTime);
         tpl.setEstimatedHours(req.estimatedHours());
         if (req.estimatedHours() != null
                 && (req.estimatedHours().compareTo(new java.math.BigDecimal("0.25")) < 0

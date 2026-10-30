@@ -1,6 +1,13 @@
-﻿node_modules/
+# never commit these
+node_modules/
 dist/
 target/
-.github/modernize/
 .idea/
 *.log
+
+# a package-lock.json in this top folder is a mistake (npm install run in the wrong folder);
+# the real one is workdesk-frontend/package-lock.json
+/package-lock.json
+
+# VS Code "Java upgrade" tool working files (NOT the CI/CD workflows in .github/workflows)
+.github/modernize/

@@ -65,6 +65,19 @@ describe.each([
   });
 });
 
+describe('admin dashboard stat cards', () => {
+  it('links all four cards to the matching task filters', async () => {
+    tokenStore.set('mock-1');
+    start('/');
+    await screen.findByRole('heading', { level: 1, name: /Good morning|Good afternoon|Good evening/ });
+
+    expect(screen.getByRole('link', { name: /Overdue/ })).toHaveAttribute('href', '/tasks?overdue=1');
+    expect(screen.getByRole('link', { name: /Due today/ })).toHaveAttribute('href', '/tasks?dueToday=1');
+    expect(screen.getByRole('link', { name: /Waiting for review/ })).toHaveAttribute('href', '/tasks?status=SUBMITTED');
+    expect(screen.getByRole('link', { name: /Done this week/ })).toHaveAttribute('href', '/tasks?status=COMPLETED&completedThisWeek=1');
+  });
+});
+
 describe('permissions in the screens', () => {
   it('an employee cannot open admin pages (sent back home)', async () => {
     tokenStore.set('mock-3');
@@ -106,6 +119,7 @@ describe('workflows (FMS) pages', () => {
     tokenStore.set('mock-4'); // Sneha is assigned to step 1 of the demo daily FMS
     start('/');
     await screen.findByRole('heading', { name: /Good morning|Good afternoon|Good evening/ });
+    await user.click(screen.getByRole('tab', { name: 'Week' }));
     await user.click(await screen.findByRole('button', { name: 'Next' }));
     await user.click((await screen.findAllByRole('button', { name: /Daily purchase cycle Scheduled/ }))[0]);
     expect(await pageTitle()).toBe('Daily purchase cycle');

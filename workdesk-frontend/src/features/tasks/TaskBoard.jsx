@@ -37,7 +37,10 @@ export default function TaskBoard({ tasks, onOpen, showAssignee, hideClosed = fa
                       <span title={fmtDateTime(t.dueAt)}>
                         {t.dueAt ? (lane.key === 'closed' ? `Due ${fmtDateTime(t.dueAt)}` : `${fmtDateTime(t.dueAt)}, ${relativeDue(t.dueAt)}`) : 'No due date'}
                       </span>
-                      {t.repeat && <span className={`repeat-badge ${t.repeat === 'DAILY' ? 'rb-daily' : 'rb-weekly'}`}>{t.repeat === 'DAILY' ? 'Daily' : 'Weekly'}</span>}
+                      {t.scheduledAt && <span>Starts {fmtDateTime(t.scheduledAt)}</span>}
+                      {t.repeat && <span className={`repeat-badge ${t.repeat === 'DAILY' ? 'rb-daily' : 'rb-weekly'}`}>
+                        {t.repeat === 'DAILY' ? 'Daily' : t.repeat === 'WEEKLY' ? 'Weekly' : t.repeat === 'MONTHLY' ? 'Monthly' : 'Yearly'}
+                      </span>}
                       {t.priority === 'URGENT' && <span className="tag">Urgent</span>}
                     </span>
                   </span>

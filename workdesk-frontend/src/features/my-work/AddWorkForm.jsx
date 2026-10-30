@@ -6,14 +6,16 @@ import Modal from '@/components/ui/Modal.jsx';
 
 const REPEATS = [
   ['ONCE', 'One time'],
-  ['DAILY', 'Every day'],
+  ['DAILY', 'Every working day'],
   ['WEEKLY', 'Every week'],
+  ['MONTHLY', 'Every month'],
+  ['YEARLY', 'Every year'],
 ];
 
 /**
  * Employee adds (or edits) their own work.
- * One time → a single task on a date.  Every day / Every week → a repeating task that is
- * created automatically for each working day (skipping Sundays and office holidays).
+ * One time → a single task on a date. Repeating work is created automatically on its
+ * selected working-day schedule, with a scheduled start and deadline.
  */
 export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
   const existing = toLocalInput(task?.dueAt);
@@ -25,6 +27,8 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
     dayOfWeek: todayName === 'SUNDAY' ? 'MONDAY' : todayName,
     date: existing ? existing.slice(0, 10) : isoDay(defaultDate || new Date()),
     time: existing ? existing.slice(11, 16) : '18:00',
+    scheduledTime: '09:30',
+    durationMinutes: '20',
     priority: task?.priority || 'MEDIUM',
     status: 'TODO',
     reviewerId: task?.reviewer ? String(task.reviewer.id) : '',
@@ -52,7 +56,11 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
       if (repeating) {
         saved = await recurringService.create({
             title: form.title, description: form.description, priority: form.priority,
-            frequency: form.repeat, dayOfWeek: form.repeat === 'WEEKLY' ? form.dayOfWeek : null, dueTime: form.time || '18:00',
+            frequency: form.repeat,
+            dayOfWeek: form.repeat === 'WEEKLY' ? form.dayOfWeek : null,
+            startDate: form.date,
+            scheduledTime: form.scheduledTime,
+            durationMinutes: Number(form.durationMinutes),
             workflowId: workflowId ? Number(workflowId) : null,
         });
       } else {
@@ -119,10 +127,22 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
                 {DAYS.filter((d) => d !== 'SUNDAY').map((d) => <option key={d} value={d}>{dayLabel(d)}</option>)}
               </select>
             </label>
+          ) : form.repeat === 'MONTHLY' || form.repeat === 'YEARLY' ? (
+            <label>{form.repeat === 'YEARLY' ? 'Repeat every year on' : 'Repeat on'}
+              <input type="date" value={form.date} onChange={set('date')} required />
+            </label>
           ) : (
-            <label>Days<input value="Monday to Saturday" disabled /></label>
+            <label>Starts from<input type="date" value={form.date} onChange={set('date')} required /></label>
           )}
-          <label>By time<input type="time" value={form.time} onChange={set('time')} /></label>
+          <label>{repeating ? 'Scheduled start' : 'Due by'}
+            <input type="time" value={repeating ? form.scheduledTime : form.time}
+              onChange={set(repeating ? 'scheduledTime' : 'time')} required />
+          </label>
+          {repeating && (
+            <label>Duration (minutes)
+              <input type="number" min="1" max="1439" value={form.durationMinutes} onChange={set('durationMinutes')} required />
+            </label>
+          )}
           <label>Priority
             <select value={form.priority} onChange={set('priority')}>
               {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
@@ -133,9 +153,13 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
         {repeating ? (
           <p className="hint">
             {form.repeat === 'DAILY'
-              ? 'This task will be added to every working day, starting today. Sundays and office holidays are skipped.'
-              : `This task will be added every ${dayLabel(form.dayOfWeek)}, starting this week. Office holidays are skipped.`}
-            {' '}You can pause or delete it any time from “My daily & weekly tasks”.
+              ? `This task will be added every working day from ${form.date}.`
+              : form.repeat === 'WEEKLY'
+                ? `This task will be added every ${dayLabel(form.dayOfWeek)}, starting ${form.date}.`
+                : form.repeat === 'MONTHLY'
+                  ? `This task will be added monthly on day ${Number(form.date.slice(-2))}, starting ${form.date}. Months without that day are skipped.`
+                  : `This task will be added every year on ${form.date.slice(5)}, starting ${form.date}. Non-leap years skip February 29.`}
+            {' '}It starts at {form.scheduledTime} and is due {form.durationMinutes || 20} minutes later. Sundays and office holidays are skipped. You can pause or delete it any time from “Repeating tasks”.
           </p>
         ) : (
           <label>Review by
@@ -160,7 +184,7 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
         <div className="form-actions">
           <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
           <button className="btn primary" disabled={busy}>
-            {task ? 'Save changes' : form.repeat === 'DAILY' ? 'Add daily task' : form.repeat === 'WEEKLY' ? 'Add weekly task' : 'Add work'}
+            {task ? 'Save changes' : form.repeat === 'DAILY' ? 'Add daily task' : form.repeat === 'WEEKLY' ? 'Add weekly task' : form.repeat === 'MONTHLY' ? 'Add monthly task' : form.repeat === 'YEARLY' ? 'Add yearly task' : 'Add work'}
           </button>
         </div>
       </form>

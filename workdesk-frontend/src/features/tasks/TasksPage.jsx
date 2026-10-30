@@ -37,6 +37,8 @@ export default function Tasks() {
   const assigneeId = params.get('assigneeId') || '';
   const priority = params.get('priority') || '';
   const overdue = params.get('overdue') === '1';
+  const dueToday = params.get('dueToday') === '1';
+  const completedThisWeek = params.get('completedThisWeek') === '1';
   const q = params.get('q') || '';
   const openId = params.get('open');
 
@@ -49,13 +51,24 @@ export default function Tasks() {
   const load = useCallback(async () => {
     try {
       const statuses = (STATUS_VIEWS.find((v) => v.key === view) || STATUS_VIEWS[0]).statuses;
-      setTasks(await taskService.list({
+      const results = await taskService.list({
         scope, status: statuses, assigneeId: scope === 'all' ? assigneeId : '', priority, overdue: overdue || '', q,
+      });
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const tomorrowStart = new Date(todayStart);
+      tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+      const weekStart = new Date(todayStart);
+      weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+      setTasks(results.filter((task) => {
+        if (dueToday && (!task.dueAt || new Date(task.dueAt) < todayStart || new Date(task.dueAt) >= tomorrowStart)) return false;
+        if (completedThisWeek && (!task.completedAt || new Date(task.completedAt) < weekStart || new Date(task.completedAt) >= tomorrowStart)) return false;
+        return true;
       }));
     } catch (e) {
       setError(e.message);
     }
-  }, [scope, view, assigneeId, priority, overdue, q]);
+  }, [scope, view, assigneeId, priority, overdue, dueToday, completedThisWeek, q]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (isAdmin) employeeService.list().then(setEmployees).catch(() => {}); }, [isAdmin]);

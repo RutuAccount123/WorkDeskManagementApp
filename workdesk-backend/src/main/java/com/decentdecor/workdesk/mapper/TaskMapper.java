@@ -31,6 +31,7 @@ public class TaskMapper {
                 t.getPriority().name(),
                 t.getStatus().name(),
                 t.getDueAt(),
+                t.getScheduledAt(),
                 t.getEstimatedHours(),
                 t.isOverdue(now),
                 t.getRecurringTemplate() != null,

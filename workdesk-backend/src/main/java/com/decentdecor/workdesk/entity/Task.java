@@ -23,7 +23,7 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * Table: task. One piece of work for one person.
- * Also used for daily / weekly copies (recurringTemplate is set) and as the single active task for an FMS run
+ * Also used for recurring copies (recurringTemplate is set) and as the single active task for an FMS run
  * (workflowRun is set; workflowStep identifies its current stage).
  */
 @Entity
@@ -65,6 +65,9 @@ public class Task {
 
     @Column(name = "due_at")
     private Instant dueAt;
+
+    @Column(name = "scheduled_at")
+    private Instant scheduledAt;
 
     @Column(name = "estimated_hours", precision = 7, scale = 4)
     private BigDecimal estimatedHours;
@@ -213,6 +216,14 @@ public class Task {
 
     public void setDueAt(Instant dueAt) {
         this.dueAt = dueAt;
+    }
+
+    public Instant getScheduledAt() {
+        return scheduledAt;
+    }
+
+    public void setScheduledAt(Instant scheduledAt) {
+        this.scheduledAt = scheduledAt;
     }
 
     public BigDecimal getEstimatedHours() {

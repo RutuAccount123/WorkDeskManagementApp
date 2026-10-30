@@ -8,3 +8,4 @@ export { holidayService } from './holidayService.js';
 export { notificationService } from './notificationService.js';
 export { reportService } from './reportService.js';
 export { workflowService } from './workflowService.js';
+export { profilePhotoService } from './profilePhotoService.js';

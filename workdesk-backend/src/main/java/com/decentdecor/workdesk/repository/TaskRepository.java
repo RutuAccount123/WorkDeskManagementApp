@@ -58,7 +58,9 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
 
     @Query("""
             select case when count(t) > 0 then true else false end from Task t
-            where t.recurringTemplate.id = :templateId and t.dueAt >= :from and t.dueAt < :to
+            where t.recurringTemplate.id = :templateId
+              and ((t.scheduledAt >= :from and t.scheduledAt < :to)
+                   or (t.scheduledAt is null and t.dueAt >= :from and t.dueAt < :to))
             """)
     boolean existsCopyBetween(@Param("templateId") Long templateId, @Param("from") Instant from, @Param("to") Instant to);
 
@@ -86,7 +88,9 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
             select t from Task t
             where t.status in :open and t.dueAt is not null
               and ((t.dueAt < :now and t.overdueReminded = false)
-                   or (t.dueAt >= :now and t.dueAt <= :soon and t.dueSoonReminded = false))
+                   or (t.dueSoonReminded = false and t.dueAt >= :now
+                       and ((t.scheduledAt is not null and t.scheduledAt <= :now)
+                            or (t.scheduledAt is null and t.dueAt <= :soon))))
             """)
     List<Task> findNeedingReminder(@Param("open") Collection<TaskStatus> open, @Param("now") Instant now, @Param("soon") Instant soon);
 }

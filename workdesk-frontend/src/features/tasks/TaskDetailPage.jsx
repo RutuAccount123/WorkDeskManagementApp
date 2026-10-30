@@ -266,6 +266,7 @@ export default function TaskDetailPage() {
             <h2 className="section-title">Details</h2>
             <dl className="facts side-facts">
               <div><dt>Assigned to</dt><dd>{mine ? 'You' : task.assignee.fullName}</dd></div>
+              {task.scheduledAt && <div><dt>Scheduled start</dt><dd>{fmtDateTime(task.scheduledAt)}</dd></div>}
               <div><dt>Due</dt><dd className={task.overdue ? 'text-overdue' : ''}>
                 {fmtDateTime(task.dueAt)}{task.dueAt && open && ` (${relativeDue(task.dueAt)})`}</dd></div>
               {task.estimatedHours != null && <div><dt>Estimated effort</dt><dd>{task.estimatedHours} hours</dd></div>}

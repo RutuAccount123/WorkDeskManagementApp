@@ -13,7 +13,7 @@ export const ADMIN_NAV = [
     items: [
       { to: '/employees', label: 'Employees', short: 'People', icon: 'people' },
       { to: '/workflows', label: 'Workflows (FMS)', short: 'FMS', icon: 'flow' },
-      { to: '/recurring', label: 'Daily & weekly tasks', short: 'Repeat', icon: 'repeat' },
+      { to: '/recurring', label: 'Repeating tasks', short: 'Repeat', icon: 'repeat' },
       { to: '/holidays', label: 'Holidays', icon: 'holiday' },
     ],
   },

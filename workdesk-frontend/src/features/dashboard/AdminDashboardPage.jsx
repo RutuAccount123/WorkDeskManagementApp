@@ -76,11 +76,11 @@ export default function Overview() {
 
       <div className="stats">
         <Stat value={stats?.overdue} label="Overdue" tone="overdue" icon="alert" to={isAdmin ? '/tasks?overdue=1' : undefined} />
-        <Stat value={stats?.dueToday} label="Due today" tone="today" icon="clock" />
+        <Stat value={stats?.dueToday} label="Due today" tone="today" icon="clock" to={isAdmin ? '/tasks?dueToday=1' : undefined} />
         {isAdmin
           ? <Stat value={stats?.awaitingReview} label="Waiting for review" tone="review" icon="review" to="/tasks?status=SUBMITTED" />
           : <Stat value={stats?.inProgress} label="In progress" tone="progress" icon="tasks" />}
-        <Stat value={stats?.completedThisWeek} label="Done this week" tone="done" icon="check" />
+        <Stat value={stats?.completedThisWeek} label="Done this week" tone="done" icon="check" to={isAdmin ? '/tasks?status=COMPLETED&completedThisWeek=1' : undefined} />
       </div>
 
       {isAdmin && <TeamOverview refreshKey={tasks} onOpen={setOpenId} />}

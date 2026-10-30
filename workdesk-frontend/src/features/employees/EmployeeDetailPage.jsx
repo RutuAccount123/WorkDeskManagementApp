@@ -58,7 +58,7 @@ export default function EmployeeDetail() {
       </section>
 
       <PerformanceCard employeeId={empId} refreshKey={refresh} />
-      <WorkCalendar employeeId={empId} onOpen={setOpenId} refreshKey={refresh} initialView="week" />
+      <WorkCalendar employeeId={empId} employeeName={emp.fullName} onOpen={setOpenId} refreshKey={refresh} initialView="week" />
 
       <TaskPanel openId={openId} onClose={() => setOpenId(null)} onChanged={bump} />
       {assigning && (

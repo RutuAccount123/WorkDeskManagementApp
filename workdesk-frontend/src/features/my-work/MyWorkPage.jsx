@@ -12,6 +12,7 @@ import TaskForm from '@/features/tasks/TaskForm.jsx';
 import TaskBoard from '@/features/tasks/TaskBoard.jsx';
 import { groupFmsTasks } from '@/features/tasks/taskGroups.js';
 import { Link } from 'react-router-dom';
+import EmployeeProfileCard from '@/features/dashboard/EmployeeProfileCard.jsx';
 
 /** Employee home: today's reminder, add own work, day/week/month/year views, monthly performance. */
 export default function MyWork() {
@@ -63,6 +64,9 @@ export default function MyWork() {
         </div>
       </header>
 
+      <EmployeeProfileCard user={user} today={today} refreshKey={refresh} />
+      <PerformanceCard refreshKey={refresh} />
+
       {today && (
         <section className={`reminder ${late ? 'has-late' : ''}`} aria-live="polite">
           <div>
@@ -95,9 +99,8 @@ export default function MyWork() {
         </section>
       )}
 
-      <WorkCalendar onOpen={setOpenId} refreshKey={refresh} initialView="week" />
+      <WorkCalendar onOpen={setOpenId} refreshKey={refresh} initialView="day" />
       <RepeatingTaskList refreshKey={refresh} onChanged={bump} />
-      <PerformanceCard refreshKey={refresh} />
 
       <TaskPanel openId={openId} onClose={() => setOpenId(null)} onChanged={bump} />
       {assigning && (

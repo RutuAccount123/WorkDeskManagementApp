@@ -13,13 +13,14 @@ import com.decentdecor.workdesk.service.support.WorkingDays;
 import com.decentdecor.workdesk.util.OfficeTime;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.Duration;
 import java.util.Locale;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Makes the copies of daily & weekly tasks.
- * Every active repeating task gets one normal Task per working day for the next 7 days
+ * Makes the copies of recurring tasks.
+ * Every active repeating task gets its matching normal Task in the next 7 days
  * (so they show in the Week / Month views). Never on Sundays or office holidays, never twice.
  */
 @Service
@@ -69,7 +70,7 @@ public class RecurringGenerator {
     }
 
     public boolean runsOn(RecurringTemplate tpl, LocalDate day) {
-        return workingDays.runsOn(tpl.getFrequency() == RepeatFrequency.DAILY, tpl.getDayOfWeek(), day);
+        return workingDays.runsOn(tpl.getFrequency(), tpl.getDayOfWeek(), tpl.getStartDate(), day);
     }
 
     public boolean hasCopyOn(RecurringTemplate tpl, LocalDate day) {
@@ -89,16 +90,25 @@ public class RecurringGenerator {
         t.setReviewer(selfOwned ? null : tpl.getCreatedBy());
         t.setPriority(tpl.getPriority());
         t.setStatus(TaskStatus.TODO);
-        t.setDueAt(time.at(day, tpl.getDueTime()));
+        Instant scheduledAt = tpl.getScheduledTime() == null ? null : time.at(day, tpl.getScheduledTime());
+        t.setScheduledAt(scheduledAt);
+        t.setDueAt(scheduledAt == null
+                ? time.at(day, tpl.getDueTime())
+                : scheduledAt.plus(Duration.ofMinutes(tpl.getDurationMinutes())));
         t.setEstimatedHours(tpl.getEstimatedHours());
         t.setCreatedAt(now);
         t.setUpdatedAt(now);
         t.setRecurringTemplate(tpl);
         t.setLinkedWorkflow(tpl.getWorkflow());
         t = tasks.save(t);
-        activity.log(t, null, ActivityAction.AUTO_GENERATED, null, TaskStatus.TODO,
-                tpl.getFrequency() == RepeatFrequency.DAILY ? "Daily task" : "Weekly task");
-        if (day.equals(time.today()) && !selfOwned) {
+        String recurrence = switch (tpl.getFrequency()) {
+            case DAILY -> "Daily task";
+            case WEEKLY -> "Weekly task";
+            case MONTHLY -> "Monthly task";
+            case YEARLY -> "Yearly task";
+        };
+        activity.log(t, null, ActivityAction.AUTO_GENERATED, null, TaskStatus.TODO, recurrence);
+        if (day.equals(time.today()) && !selfOwned && scheduledAt == null) {
             notifications.send(tpl.getAssignee(), t, NotificationType.TASK_ASSIGNED,
                     "New " + tpl.getFrequency().name().toLowerCase(Locale.ROOT) + " task: " + t.getTitle());
         }

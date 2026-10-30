@@ -5,7 +5,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 
-/** A daily / weekly task. dueTime: "18:00:00". lastGeneratedOn: the latest day a copy exists for. */
+/** A repeating task. dueTime: "18:00:00". lastGeneratedOn: the latest day a copy exists for. */
 public record RecurringResponse(
         Long id,
         String title,
@@ -15,6 +15,9 @@ public record RecurringResponse(
         String frequency,
         String dayOfWeek,
         String dueTime,
+        LocalDate startDate,
+        String scheduledTime,
+        Integer durationMinutes,
         BigDecimal estimatedHours,
         boolean active,
         LocalDate lastGeneratedOn,

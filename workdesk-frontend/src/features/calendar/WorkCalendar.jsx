@@ -9,6 +9,7 @@ import {
 import { useAuth } from '@/features/auth/AuthContext.jsx';
 import { groupFmsTasks } from '@/features/tasks/taskGroups.js';
 import { scheduledFmsForWeek } from './scheduledFms.js';
+import TaskPdfExport from '@/components/TaskPdfExport.jsx';
 
 const VIEWS = [
   { key: 'day', label: 'Day' },
@@ -242,7 +243,7 @@ export function scoreTone(score) {
  * employeeId: whose work to show (admins). Omit for "my own work".
  * refreshKey: change it to reload after edits.
  */
-export default function WorkCalendar({ employeeId, onOpen, refreshKey, initialView = 'week' }) {
+export default function WorkCalendar({ employeeId, employeeName, onOpen, refreshKey, initialView = 'week' }) {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
   const [view, setView] = useState(initialView);
@@ -300,11 +301,14 @@ export default function WorkCalendar({ employeeId, onOpen, refreshKey, initialVi
   return (
     <section className="panel work-views">
       <div className="wv-toolbar">
-        <div className="segmented" role="tablist" aria-label="View">
-          {VIEWS.map((v) => (
-            <button key={v.key} role="tab" aria-selected={view === v.key} className={view === v.key ? 'on' : ''}
-              onClick={() => setView(v.key)}>{v.label}</button>
-          ))}
+        <div className="wv-view-actions">
+          <div className="segmented" role="tablist" aria-label="View">
+            {VIEWS.map((v) => (
+              <button key={v.key} role="tab" aria-selected={view === v.key} className={view === v.key ? 'on' : ''}
+                onClick={() => setView(v.key)}>{v.label}</button>
+            ))}
+          </div>
+          <TaskPdfExport employeeId={employeeId} employeeName={employeeName} user={user} view={view} anchor={anchor} />
         </div>
         <div className="wv-nav">
           <button className="btn ghost small" onClick={() => setAnchor(move(view, anchor, -1))} aria-label="Previous">‹</button>

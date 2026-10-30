@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The background jobs (called by scheduler/SchedulerJobs every few minutes):
- *  1. make daily & weekly task copies for the next 7 days
+ *  1. make recurring task copies for the next 7 days
  *  2. start today's scheduled FMS runs
  *  3. send "due soon" (next 24 h) and "overdue" reminders, once per task
  * Safe to run often: nothing is created or sent twice.
@@ -62,8 +62,10 @@ public class SchedulerService {
                 t.setOverdueReminded(true);
                 t.setDueSoonReminded(true);
             } else {
-                notifications.send(t.getAssignee(), t, NotificationType.DUE_SOON,
-                        "Reminder: \"" + t.getTitle() + "\" is due " + time.friendly(t.getDueAt()));
+                String reminder = t.getScheduledAt() == null
+                        ? "Reminder: \"" + t.getTitle() + "\" is due " + time.friendly(t.getDueAt())
+                        : "Scheduled now: \"" + t.getTitle() + "\" is due " + time.friendly(t.getDueAt());
+                notifications.send(t.getAssignee(), t, NotificationType.DUE_SOON, reminder);
                 t.setDueSoonReminded(true);
             }
             sent++;

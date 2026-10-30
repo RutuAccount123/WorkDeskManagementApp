@@ -1,3 +1,5 @@
 {
-    "java.compile.nullAnalysis.mode": "automatic"
+    "java.compile.nullAnalysis.mode": "automatic",
+    "spring-boot.ls.java.home": "C:\\Users\\admin\\tools\\jdk-25.0.5.8\\jdk-25.0.5+8",
+    "boot-java.java.codelens-web-configs-on-controller-classes": false
 }

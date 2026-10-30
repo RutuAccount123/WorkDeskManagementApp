@@ -12,7 +12,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.util.Base64;
 import java.util.UUID;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -106,6 +110,31 @@ class ApiIntegrationTest {
                     .andExpect(jsonPath("$.status").value(401))
                     .andExpect(jsonPath("$.message").value("Invalid email or password"));
         }
+    }
+
+    @Test
+    void profilePhotoCanBeChangedAndRemovedByItsOwner() throws Exception {
+        String[] employee = newEmployee("Profile Photo");
+        mvc.perform(as(employee[1], get("/api/profile/photo")))
+                .andExpect(status().isNoContent());
+
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(4, 4, BufferedImage.TYPE_INT_RGB), "png", png);
+        String encoded = Base64.getEncoder().encodeToString(png.toByteArray());
+        mvc.perform(as(employee[1], put("/api/profile/photo").content(json("image", encoded))))
+                .andExpect(status().isNoContent());
+
+        MvcResult photo = mvc.perform(as(employee[1], get("/api/profile/photo")))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "image/jpeg"))
+                .andReturn();
+        assertThat(photo.getResponse().getContentAsByteArray()).startsWith((byte) 0xff, (byte) 0xd8);
+        mvc.perform(as(admin, get("/api/profile/photo"))).andExpect(status().isNoContent());
+
+        mvc.perform(as(employee[1], delete("/api/profile/photo")))
+                .andExpect(status().isNoContent());
+        mvc.perform(as(employee[1], get("/api/profile/photo")))
+                .andExpect(status().isNoContent());
     }
 
     @Test

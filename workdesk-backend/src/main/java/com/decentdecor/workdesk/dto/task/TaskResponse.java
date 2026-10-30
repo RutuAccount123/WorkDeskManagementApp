@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * One task, as the screens show it.
- * overdue: open and past its due time. repeat: DAILY / WEEKLY for copies of a repeating task.
+ * overdue: open and past its due time. repeat: recurrence frequency for copies of a repeating task.
  * reviewer: null = no review needed. workflow: set for an FMS run task.
  */
 public record TaskResponse(
@@ -20,6 +20,7 @@ public record TaskResponse(
         String priority,
         String status,
         Instant dueAt,
+        Instant scheduledAt,
         BigDecimal estimatedHours,
         boolean overdue,
         boolean recurring,

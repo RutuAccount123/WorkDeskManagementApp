@@ -233,6 +233,45 @@ class BusinessRulesIntegrationTest {
     }
 
     @Test
+    void monthlyAndYearlyScheduledTasksUseStartTimeAndDuration() throws Exception {
+        Person p = person("Monthly Scheduled");
+        var holidays = ok(admin, get("/api/holidays"), null).findValuesAsText("date");
+        LocalDate occurrence = LocalDate.now(OFFICE).plusDays(1);
+        for (int i = 0; i < 7 && (occurrence.getDayOfWeek() == DayOfWeek.SUNDAY || holidays.contains(occurrence.toString())); i++) {
+            occurrence = occurrence.plusDays(1);
+        }
+
+        JsonNode template = ok(admin, post("/api/recurring"), map(
+                "title", "Monthly check " + p.id(),
+                "assigneeId", p.id(),
+                "frequency", "MONTHLY",
+                "startDate", occurrence.toString(),
+                "scheduledTime", "09:30",
+                "durationMinutes", 20));
+        assertThat(template.get("frequency").asText()).isEqualTo("MONTHLY");
+        assertThat(template.get("scheduledTime").asText()).isEqualTo("09:30:00");
+        assertThat(template.get("durationMinutes").asInt()).isEqualTo(20);
+        JsonNode yearlyTemplate = ok(admin, post("/api/recurring"), map(
+                "title", "Yearly check " + p.id(),
+                "assigneeId", p.id(),
+                "frequency", "YEARLY",
+                "startDate", occurrence.toString(),
+                "scheduledTime", "09:30",
+                "durationMinutes", 20));
+        assertThat(yearlyTemplate.get("frequency").asText()).isEqualTo("YEARLY");
+
+        JsonNode tasks = ok(admin, get("/api/tasks?assigneeId=" + p.id() + "&workFrom=" + occurrence + "&workTo=" + occurrence), null);
+        assertThat(tasks).hasSize(2);
+        assertThat(tasks.findValuesAsText("repeat")).containsExactlyInAnyOrder("MONTHLY", "YEARLY");
+        tasks.forEach(task -> {
+            assertThat(java.time.Instant.parse(task.get("scheduledAt").asText()).atZone(OFFICE).toLocalTime().toString()).isEqualTo("09:30");
+            assertThat(java.time.Duration.between(
+                    java.time.Instant.parse(task.get("scheduledAt").asText()),
+                    java.time.Instant.parse(task.get("dueAt").asText())).toMinutes()).isEqualTo(20);
+        });
+    }
+
+    @Test
     void employeesManageOnlyTheirOwnRepeatingWork() throws Exception {
         Person p = person("Self Twelve");
         Person other = person("Other Thirteen");

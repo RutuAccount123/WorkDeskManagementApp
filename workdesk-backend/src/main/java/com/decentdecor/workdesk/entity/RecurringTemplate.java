@@ -20,7 +20,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 /**
- * Table: recurring_template. A daily or weekly task.
+ * Table: recurring_template. A daily, weekly, monthly, or yearly task.
  * A copy (a normal Task) is created for each working day in the next 7 days.
  */
 @Entity
@@ -62,6 +62,15 @@ public class RecurringTemplate {
 
     @Column(name = "due_time", nullable = false)
     private LocalTime dueTime;
+
+    @Column(name = "start_date")
+    private LocalDate startDate;
+
+    @Column(name = "scheduled_time")
+    private LocalTime scheduledTime;
+
+    @Column(name = "duration_minutes")
+    private Integer durationMinutes;
 
     @Column(name = "estimated_hours", precision = 7, scale = 4)
     private BigDecimal estimatedHours;
@@ -155,6 +164,30 @@ public class RecurringTemplate {
 
     public void setDueTime(LocalTime dueTime) {
         this.dueTime = dueTime;
+    }
+
+    public LocalDate getStartDate() {
+        return startDate;
+    }
+
+    public void setStartDate(LocalDate startDate) {
+        this.startDate = startDate;
+    }
+
+    public LocalTime getScheduledTime() {
+        return scheduledTime;
+    }
+
+    public void setScheduledTime(LocalTime scheduledTime) {
+        this.scheduledTime = scheduledTime;
+    }
+
+    public Integer getDurationMinutes() {
+        return durationMinutes;
+    }
+
+    public void setDurationMinutes(Integer durationMinutes) {
+        this.durationMinutes = durationMinutes;
     }
 
     public BigDecimal getEstimatedHours() {

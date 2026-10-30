@@ -78,7 +78,7 @@ function parseEstimatedHours(value) {
 
 const empById = (id) => db.employees.find((e) => e.id === id);
 const empRef = (id) => { const e = empById(id); return e ? { id: e.id, fullName: e.fullName, department: e.department } : null; };
-const empOut = ({ password, ...e }) => e; // never send password
+const empOut = ({ password, profilePhoto, ...e }) => e; // never send credentials or photo data
 
 /**
  * Who reviews a task. The reviewer chosen when it was assigned; if none was chosen,
@@ -671,6 +671,25 @@ function route(method, path, query, body, me) {
     if (!body.newPassword || body.newPassword.length < 8) throw bad('newPassword: must be at least 8 characters');
     me.password = body.newPassword;
     return null;
+  }
+  if (path === '/api/profile/photo') {
+    if (method === 'GET') {
+      if (!me.profilePhoto) return new Response(null, { status: 204 });
+      const binary = atob(me.profilePhoto);
+      return new Response(Uint8Array.from(binary, (char) => char.charCodeAt(0)), {
+        headers: { 'Content-Type': 'image/jpeg' },
+      });
+    }
+    if (method === 'PUT') {
+      const image = String(body.image || '');
+      if (!image || image.length > 7_000_000) throw bad('Choose an image smaller than 5 MB');
+      me.profilePhoto = image;
+      return null;
+    }
+    if (method === 'DELETE') {
+      delete me.profilePhoto;
+      return null;
+    }
   }
 
   // ----- people directory: everyone can see who they can assign work to

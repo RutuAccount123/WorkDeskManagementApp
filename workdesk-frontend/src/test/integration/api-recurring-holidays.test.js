@@ -6,7 +6,7 @@ import { isoDay, addDays } from '@/utils/format.js';
 
 const copiesOf = async (title) => (await taskService.list({ q: title })).filter((t) => t.title === title);
 
-describe('daily & weekly tasks', () => {
+describe('repeating tasks', () => {
   it('daily: one copy per working day for the next 7 days, never on Sunday', async () => {
     await signIn(ADMIN);
     const tpl = await recurringService.create({ title: 'Cash book check', assigneeId: 2, frequency: 'DAILY', dueTime: '11:00', estimatedHours: 2.5 });
