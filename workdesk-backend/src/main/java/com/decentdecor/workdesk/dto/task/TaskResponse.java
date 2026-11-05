@@ -34,5 +34,6 @@ public record TaskResponse(
         Instant updatedAt,
         Instant startedAt,
         Instant submittedAt,
-        Instant completedAt) {
+        Instant completedAt,
+        String image) {
 }

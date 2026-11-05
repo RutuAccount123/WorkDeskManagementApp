@@ -24,5 +24,7 @@ public record RecurringResponse(
         Instant createdAt,
         PersonRef createdBy,
         boolean selfOwned,
-        Long workflowId) {
+        Long workflowId,
+        PersonRef reviewer,
+        String image) {
 }

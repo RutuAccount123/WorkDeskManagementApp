@@ -40,6 +40,9 @@ public class Task {
     @Column(name = "description", nullable = false)
     private String description = "";
 
+    @Column(name = "image_data")
+    private byte[] imageData;
+
     /** The person doing the work. */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "assignee_id")
@@ -168,6 +171,14 @@ public class Task {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public byte[] getImageData() {
+        return imageData;
+    }
+
+    public void setImageData(byte[] imageData) {
+        this.imageData = imageData;
     }
 
     public Employee getAssignee() {

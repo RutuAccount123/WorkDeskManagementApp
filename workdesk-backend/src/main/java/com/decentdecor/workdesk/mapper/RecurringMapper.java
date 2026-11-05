@@ -4,6 +4,7 @@ import com.decentdecor.workdesk.dto.recurring.RecurringResponse;
 import com.decentdecor.workdesk.entity.RecurringTemplate;
 import com.decentdecor.workdesk.util.Enums;
 import java.time.format.DateTimeFormatter;
+import java.util.Base64;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -20,6 +21,7 @@ public class RecurringMapper {
                 t.getPriority().name(), t.getFrequency().name(), Enums.name(t.getDayOfWeek()), TIME.format(t.getDueTime()),
                 t.getStartDate(), t.getScheduledTime() == null ? null : TIME.format(t.getScheduledTime()), t.getDurationMinutes(),
                 t.getEstimatedHours(), t.isActive(), t.getLastGeneratedOn(), t.getCreatedAt(), employees.toRef(t.getCreatedBy()), t.isSelfOwned(),
-                t.getWorkflow() == null ? null : t.getWorkflow().getId());
+                t.getWorkflow() == null ? null : t.getWorkflow().getId(), employees.toRef(t.getReviewer()),
+                t.getImageData() == null ? null : Base64.getEncoder().encodeToString(t.getImageData()));
     }
 }

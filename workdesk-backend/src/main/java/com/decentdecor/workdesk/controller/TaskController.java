@@ -4,6 +4,8 @@ import com.decentdecor.workdesk.dto.task.ActivityResponse;
 import com.decentdecor.workdesk.dto.task.ChecklistTickRequest;
 import com.decentdecor.workdesk.dto.task.CommentRequest;
 import com.decentdecor.workdesk.dto.task.StatusRequest;
+import com.decentdecor.workdesk.dto.task.TaskBatchApprovalRequest;
+import com.decentdecor.workdesk.dto.task.TaskBatchRequest;
 import com.decentdecor.workdesk.dto.task.TaskFilter;
 import com.decentdecor.workdesk.dto.task.TaskRequest;
 import com.decentdecor.workdesk.dto.task.TaskResponse;
@@ -54,6 +56,18 @@ public class TaskController {
     @PostMapping
     public ResponseEntity<TaskResponse> create(@AuthenticationPrincipal CurrentUser me, @Valid @RequestBody TaskRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(taskService.create(me, request));
+    }
+
+    @PostMapping("/batch")
+    public ResponseEntity<List<TaskResponse>> createBatch(@AuthenticationPrincipal CurrentUser me,
+                                                          @Valid @RequestBody TaskBatchRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(taskService.createBatch(me, request));
+    }
+
+    @PostMapping("/batch/approve")
+    public ResponseEntity<List<TaskResponse>> approveBatch(@AuthenticationPrincipal CurrentUser me,
+                                                           @Valid @RequestBody TaskBatchApprovalRequest request) {
+        return ResponseEntity.ok(taskService.approveBatch(me, request));
     }
 
     @GetMapping("/{id}")

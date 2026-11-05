@@ -1,6 +1,7 @@
 package com.decentdecor.workdesk.service;
 
 import com.decentdecor.workdesk.dto.recurring.RecurringRequest;
+import com.decentdecor.workdesk.dto.recurring.RecurringBatchRequest;
 import com.decentdecor.workdesk.dto.recurring.RecurringResponse;
 import com.decentdecor.workdesk.entity.Employee;
 import com.decentdecor.workdesk.entity.RecurringTemplate;
@@ -21,6 +22,7 @@ import com.decentdecor.workdesk.util.Enums;
 import com.decentdecor.workdesk.util.OfficeTime;
 import com.decentdecor.workdesk.util.Texts;
 import java.util.List;
+import java.util.HashSet;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import org.springframework.stereotype.Service;
@@ -39,9 +41,11 @@ public class RecurringTaskService {
     private final WorkflowAccess workflowAccess;
     private final RecurringMapper mapper;
     private final OfficeTime time;
+    private final TaskImageProcessor taskImages;
 
     public RecurringTaskService(RecurringTemplateRepository templates, WorkflowRepository workflows, RecurringGenerator generator,
-                                People people, WorkflowAccess workflowAccess, RecurringMapper mapper, OfficeTime time) {
+                                People people, WorkflowAccess workflowAccess, RecurringMapper mapper, OfficeTime time,
+                                TaskImageProcessor taskImages) {
         this.templates = templates;
         this.workflows = workflows;
         this.generator = generator;
@@ -49,13 +53,14 @@ public class RecurringTaskService {
         this.workflowAccess = workflowAccess;
         this.mapper = mapper;
         this.time = time;
+        this.taskImages = taskImages;
     }
 
     @Transactional(readOnly = true)
     public List<RecurringResponse> list(CurrentUser user) {
         Employee me = people.me(user);
         List<RecurringTemplate> list = me.isAdmin() ? templates.findAllByOrderByTitleAsc()
-                : templates.findByAssigneeIdOrderByTitleAsc(me.getId());
+                : templates.findByAssigneeIdOrCreatedByIdOrderByTitleAsc(me.getId(), me.getId());
         return list.stream().map(mapper::toResponse).toList();
     }
 
@@ -71,6 +76,22 @@ public class RecurringTaskService {
         tpl = templates.save(tpl);
         generator.fill(tpl);
         return mapper.toResponse(tpl);
+    }
+
+    @Transactional
+    public List<RecurringResponse> createBatch(CurrentUser user, RecurringBatchRequest request) {
+        List<Long> assigneeIds = request.assigneeIds();
+        if (new HashSet<>(assigneeIds).size() != assigneeIds.size()) {
+            throw new BadRequestException("Choose each employee only once");
+        }
+        RecurringRequest task = request.task();
+        return assigneeIds.stream().map(assigneeId -> {
+            RecurringRequest perEmployee = new RecurringRequest(task.title(), task.description(), assigneeId,
+                    task.priority(), task.frequency(), task.dayOfWeek(), task.dueTime(), task.workflowId(),
+                    task.estimatedHours(), task.startDate(), task.scheduledTime(), task.durationMinutes(),
+                    task.reviewerId(), task.image());
+            return create(user, perEmployee);
+        }).toList();
     }
 
     /** Edit: future untouched copies are removed and made again with the new details. */
@@ -127,10 +148,10 @@ public class RecurringTaskService {
     /** Admins: any. Employees: only their own (and change only what they set up). */
     private RecurringTemplate find(Long id, Employee me, boolean forChange) {
         RecurringTemplate tpl = templates.findById(id).orElseThrow(() -> NotFoundException.of("Repeating task"));
-        if (!me.isAdmin() && !tpl.getAssignee().getId().equals(me.getId())) throw NotFoundException.of("Repeating task");
-        if (forChange && !me.isAdmin() && !tpl.getCreatedBy().getId().equals(me.getId())) {
-            throw new ForbiddenException("Only your admin can change this repeating task");
-        }
+        if (!me.isAdmin() && !tpl.getAssignee().getId().equals(me.getId())
+                && !tpl.getCreatedBy().getId().equals(me.getId())) throw NotFoundException.of("Repeating task");
+        if (forChange && !me.isAdmin() && !tpl.getCreatedBy().getId().equals(me.getId()))
+            throw new ForbiddenException("Only the person who assigned this repeating task can change it");
         return tpl;
     }
 
@@ -173,8 +194,11 @@ public class RecurringTaskService {
         }
         tpl.setTitle(req.title().trim());
         tpl.setDescription(Texts.trimToEmpty(req.description()));
-        // employees always set up repeating work for themselves
-        tpl.setAssignee(me.isAdmin() ? people.activeAssignee(req.assigneeId()) : me);
+        Employee assignee = req.assigneeId() == null ? me : people.activeAssignee(req.assigneeId());
+        tpl.setAssignee(assignee);
+        tpl.setReviewer(people.pickReviewer(req.reviewerId(), assignee,
+                assignee.getId().equals(me.getId()) ? null : me));
+        if (req.image() != null) tpl.setImageData(taskImages.normalize(req.image()));
         tpl.setPriority(Enums.parse(Priority.class, req.priority(), Priority.MEDIUM, "Choose a valid priority"));
         tpl.setFrequency(frequency);
         tpl.setDayOfWeek(day);

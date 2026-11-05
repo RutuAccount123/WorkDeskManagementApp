@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { employeeService, recurringService, taskService, workflowService } from '@/services/index.js';
 import { useAuth } from '@/features/auth/AuthContext.jsx';
 import { DAYS, PRIORITIES, PRIORITY_LABEL, dayLabel, isoDay, toLocalInput } from '@/utils/format.js';
+import { encodeImage } from '@/utils/image.js';
 import Modal from '@/components/ui/Modal.jsx';
 
 const NO_REVIEW = 'none';
@@ -11,17 +12,22 @@ const NO_REVIEW = 'none';
  * Used by admins and employees alike.
  */
 export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) {
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
   const [people, setPeople] = useState([]);
   const [workflows, setWorkflows] = useState([]);
   const [workflowError, setWorkflowError] = useState('');
   const [workflowId, setWorkflowId] = useState('');
+  const [image, setImage] = useState(task?.image || '');
+  const [assigneeIds, setAssigneeIds] = useState(() => {
+    const id = task?.assignee.id || defaultAssigneeId;
+    return id ? [String(id)] : [];
+  });
   const [form, setForm] = useState({
     title: task?.title || '',
     description: task?.description || '',
-    assigneeId: String(task?.assignee.id || defaultAssigneeId || ''),
     // default reviewer: the person assigning
-    reviewerId: task ? String(task.reviewer?.id || NO_REVIEW) : String(user.id),
+    reviewerId: task ? String(task.reviewer?.id || NO_REVIEW)
+      : String(defaultAssigneeId || user.id) === String(user.id) ? NO_REVIEW : String(user.id),
     priority: task?.priority || 'MEDIUM',
     dueAt: toLocalInput(task?.dueAt),
     estimatedHours: task?.estimatedHours == null ? '' : String(task.estimatedHours),
@@ -43,37 +49,57 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
 
   const set = (k) => (e) => {
     const value = e.target.value;
-    setForm((f) => {
-      const next = { ...f, [k]: value };
-      if (k === 'assigneeId') {
-        const me = String(user.id);
-        if (!isAdmin && value !== me) next.repeat = 'ONCE';
-        // the person doing the work can't review it
-        if (next.reviewerId === value) next.reviewerId = value === me ? NO_REVIEW : me;
-        // "No review needed" only exists for your own work; for someone else, you review it by default
-        if (next.reviewerId === NO_REVIEW && value !== me) next.reviewerId = me;
-      }
-      return next;
-    });
+    setForm((f) => ({ ...f, [k]: value }));
   };
 
-  const forMe = form.assigneeId === String(user.id);
-  const canRepeat = isAdmin || forMe;
-  const reviewers = people.filter((p) => String(p.id) !== form.assigneeId);
-  const assigneeName = people.find((p) => String(p.id) === form.assigneeId)?.fullName;
+  const updateAssignees = (next) => {
+    setAssigneeIds(next);
+    const defaultReviewer = next.includes(String(user.id))
+      ? people.find((person) => !next.includes(String(person.id)))?.id
+      : user.id;
+    setForm((current) => ({
+      ...current,
+      reviewerId: next.length === 1 && next[0] === String(user.id)
+        ? NO_REVIEW
+        : String(defaultReviewer ?? NO_REVIEW),
+    }));
+  };
+
+  const toggleAssignee = (id) => {
+    const next = assigneeIds.includes(id)
+      ? assigneeIds.filter((selectedId) => selectedId !== id)
+      : task ? [id] : [...assigneeIds, id];
+    updateAssignees(next);
+  };
+
+  const otherAssigneeIds = people
+    .filter((person) => String(person.id) !== String(user.id))
+    .map((person) => String(person.id));
+  const allOtherAssigneesSelected = otherAssigneeIds.length > 0
+    && otherAssigneeIds.every((id) => assigneeIds.includes(id));
+  const toggleAllOtherAssignees = () => {
+    updateAssignees(allOtherAssigneesSelected ? [] : otherAssigneeIds);
+  };
+
+  const forMe = assigneeIds.length === 1 && assigneeIds[0] === String(user.id);
+  const canRepeat = !task;
+  const reviewers = people.filter((p) => !assigneeIds.includes(String(p.id)));
+  const assigneeName = people.find((p) => String(p.id) === assigneeIds[0])?.fullName;
 
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
     setError('');
     try {
+      if (!assigneeIds.length) throw new Error('Choose at least one person to assign this task to.');
+      if (task && assigneeIds.length !== 1) throw new Error('Choose one assignee when editing a task.');
       const body = {
         title: form.title, description: form.description, priority: form.priority,
-        assigneeId: Number(form.assigneeId),
         ...(form.repeat === 'ONCE' || task ? {
           dueAt: form.dueAt || null,
           estimatedHours: form.estimatedHours === '' ? null : Number(form.estimatedHours),
           reviewerId: form.reviewerId === NO_REVIEW ? null : Number(form.reviewerId),
+          image: image || null,
         } : {
           frequency: form.repeat,
           dayOfWeek: form.repeat === 'WEEKLY' ? form.dayOfWeek : null,
@@ -82,13 +108,23 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
           durationMinutes: Number(form.durationMinutes),
           estimatedHours: null,
           workflowId: workflowId ? Number(workflowId) : null,
+          reviewerId: form.reviewerId === NO_REVIEW ? null : Number(form.reviewerId),
+          image: image || null,
         }),
       };
       const saved = task
-        ? await taskService.update(task.id, body)
+        ? await taskService.update(task.id, { ...body, assigneeId: Number(assigneeIds[0]) })
         : form.repeat === 'ONCE'
-          ? await taskService.create({ ...body, workflowId: workflowId ? Number(workflowId) : null })
-          : await recurringService.create(body);
+          ? assigneeIds.length > 1
+            ? await taskService.createForAssignees(assigneeIds.map(Number), {
+              ...body, workflowId: workflowId ? Number(workflowId) : null,
+            })
+            : await taskService.create({
+              ...body, assigneeId: Number(assigneeIds[0]), workflowId: workflowId ? Number(workflowId) : null,
+            })
+          : assigneeIds.length > 1
+            ? await recurringService.createForAssignees(assigneeIds.map(Number), body)
+            : await recurringService.create({ ...body, assigneeId: Number(assigneeIds[0]) });
       onSaved(saved);
     } catch (err) {
       setError(err.message);
@@ -107,27 +143,58 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
           <textarea value={form.description} onChange={set('description')} rows={3}
             placeholder="What needs to be done, and what counts as finished" />
         </label>
+        <label>Task reference image
+          <input type="file" accept="image/*" onChange={async (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            try {
+              setImage(await encodeImage(file));
+              setError('');
+            } catch (err) {
+              setError(err.message);
+            }
+          }} />
+        </label>
+        {image && <img className="task-reference-image" src={`data:image/jpeg;base64,${image}`} alt="Task reference" />}
+        <fieldset className="assignee-picker">
+          <legend>Assign to</legend>
+          {!task && (
+            <label className="assignee-option">
+              <input type="checkbox" checked={allOtherAssigneesSelected}
+                onChange={toggleAllOtherAssignees} />
+              <span>Select all employees except me</span>
+            </label>
+          )}
+          <div className="assignee-options">
+            {people.map((p) => (
+              <label key={p.id} className="assignee-option">
+                <input type="checkbox" checked={assigneeIds.includes(String(p.id))}
+                  onChange={() => toggleAssignee(String(p.id))} />
+                <span>{p.id === user.id ? `Me (${p.fullName})` : p.fullName}
+                  {p.department && <small className="muted">{p.department}</small>}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        {assigneeIds.length > 1 && (
+          <p className="hint">
+            A separate task will be created for each selected person. Each person can track their own copy.
+            {assigneeIds.includes(String(user.id))
+              ? ' You’ll review the other people’s copies; your own copy won’t need review.'
+              : ' You’ll review their work.'}
+          </p>
+        )}
         <div className="grid-2">
-          <label>Assign to
-            <select value={form.assigneeId} onChange={set('assigneeId')} required>
-              <option value="">Choose a person</option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.id === user.id ? `Me (${p.fullName})` : p.fullName}{p.department ? `, ${p.department}` : ''}
-                </option>
+          <label>Reviewed by
+            <select value={form.reviewerId} onChange={set('reviewerId')} disabled={!assigneeIds.length}>
+              {!assigneeIds.length && <option value={NO_REVIEW}>Select assignee first</option>}
+              {forMe && assigneeIds.length === 1 && <option value={NO_REVIEW}>No review needed</option>}
+              {reviewers.map((p) => (
+                <option key={p.id} value={p.id}>{p.id === user.id ? `Me (${p.fullName})` : p.fullName}</option>
               ))}
             </select>
           </label>
-          {(task || form.repeat === 'ONCE') && (
-            <label>Reviewed by
-              <select value={form.reviewerId} onChange={set('reviewerId')}>
-                {forMe && <option value={NO_REVIEW}>No review needed</option>}
-                {reviewers.map((p) => (
-                  <option key={p.id} value={p.id}>{p.id === user.id ? `Me (${p.fullName})` : p.fullName}</option>
-                ))}
-              </select>
-            </label>
-          )}
         </div>
         <div className="grid-2">
           <label>Priority
@@ -135,7 +202,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
               {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
             </select>
           </label>
-          {!task && canRepeat && (
+          {canRepeat && (
             <label>Repeat
               <select value={form.repeat} onChange={set('repeat')}>
                 <option value="ONCE">One time</option>
@@ -211,7 +278,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
           <p className="hint">Starting this FMS from the task will save its form as a new dated entry. Completed entries stay unchanged.</p>
         )}
         {workflowError && <p className="error" role="alert">Could not load FMS list: {workflowError}</p>}
-        {form.assigneeId && (task || form.repeat === 'ONCE') && (
+        {assigneeIds.length === 1 && (task || form.repeat === 'ONCE') && (
           <p className="hint">
             {form.reviewerId === NO_REVIEW
               ? 'You can mark this done yourself. No one needs to check it.'
@@ -223,7 +290,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
         {error && <p className="error" role="alert">{error}</p>}
         <div className="form-actions">
           <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={saving}>{saving ? 'Saving…' : task ? 'Save changes' : form.repeat === 'ONCE' ? 'Assign task' : 'Create repeating task'}</button>
+          <button className="btn primary" disabled={saving || assigneeIds.length === 0}>{saving ? 'Saving…' : task ? 'Save changes' : form.repeat === 'ONCE' ? 'Assign task' : 'Create repeating task'}</button>
         </div>
       </form>
     </Modal>

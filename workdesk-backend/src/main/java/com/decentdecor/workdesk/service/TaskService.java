@@ -2,6 +2,8 @@ package com.decentdecor.workdesk.service;
 
 import com.decentdecor.workdesk.dto.task.ActivityResponse;
 import com.decentdecor.workdesk.dto.task.ChecklistTickRequest;
+import com.decentdecor.workdesk.dto.task.TaskBatchApprovalRequest;
+import com.decentdecor.workdesk.dto.task.TaskBatchRequest;
 import com.decentdecor.workdesk.dto.task.TaskFilter;
 import com.decentdecor.workdesk.dto.task.TaskRequest;
 import com.decentdecor.workdesk.dto.task.TaskResponse;
@@ -34,10 +36,11 @@ import com.decentdecor.workdesk.service.support.WorkflowAccess;
 import com.decentdecor.workdesk.util.Enums;
 import com.decentdecor.workdesk.util.OfficeTime;
 import com.decentdecor.workdesk.util.Texts;
-import java.time.Instant;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -72,11 +75,12 @@ public class TaskService {
     private final TaskMapper mapper;
     private final OfficeTime time;
     private final WorkSchedule workSchedule;
+    private final TaskImageProcessor taskImages;
 
     public TaskService(TaskRepository tasks, TaskActivityRepository activities, WorkflowRepository workflows,
                        EmployeeRepository employees, People people, ActivityLogger activity,
                        NotificationService notifications, WorkflowEngine engine, WorkflowAccess workflowAccess,
-                       TaskMapper mapper, OfficeTime time, WorkSchedule workSchedule) {
+                       TaskMapper mapper, OfficeTime time, WorkSchedule workSchedule, TaskImageProcessor taskImages) {
         this.tasks = tasks;
         this.activities = activities;
         this.workflows = workflows;
@@ -89,6 +93,7 @@ public class TaskService {
         this.mapper = mapper;
         this.time = time;
         this.workSchedule = workSchedule;
+        this.taskImages = taskImages;
     }
 
     // ================================================================ list & read
@@ -135,7 +140,7 @@ public class TaskService {
 
     @Transactional(readOnly = true)
     public TaskResponse get(CurrentUser user, Long id) {
-        return mapper.toResponse(visibleTask(id, people.me(user), false), time.now());
+        return mapper.toResponse(visibleTask(id, people.me(user), false), time.now(), true);
     }
 
     @Transactional(readOnly = true)
@@ -149,6 +154,10 @@ public class TaskService {
     /** POST /api/tasks */
     @Transactional
     public TaskResponse create(CurrentUser user, TaskRequest req) {
+        return createOne(user, req, taskImages.normalize(req.image()));
+    }
+
+    private TaskResponse createOne(CurrentUser user, TaskRequest req, byte[] imageData) {
         Employee me = people.me(user);
         Employee assignee = req.assigneeId() == null ? me : people.activeAssignee(req.assigneeId());
         boolean self = assignee.getId().equals(me.getId());
@@ -168,6 +177,7 @@ public class TaskService {
         Task t = new Task();
         t.setTitle(req.title().trim());
         t.setDescription(Texts.trimToEmpty(req.description()));
+        t.setImageData(imageData);
         t.setAssignee(assignee);
         t.setCreatedBy(me);
         t.setReviewer(reviewer);
@@ -195,6 +205,34 @@ public class TaskService {
                     me.getFullName() + " made you the reviewer for \"" + t.getTitle() + "\" (" + assignee.getFullName() + ")");
         }
         return mapper.toResponse(t, now);
+    }
+
+    /** Creates independent copies in one transaction so the selection succeeds or fails together. */
+    @Transactional
+    public List<TaskResponse> createBatch(CurrentUser user, TaskBatchRequest request) {
+        List<Long> assigneeIds = request.assigneeIds();
+        if (new HashSet<>(assigneeIds).size() != assigneeIds.size()) {
+            throw new BadRequestException("Choose each employee only once");
+        }
+        TaskRequest task = request.task();
+        byte[] imageData = taskImages.normalize(task.image());
+        return assigneeIds.stream()
+                .map(assigneeId -> createOne(user, new TaskRequest(
+                        task.title(), task.description(), assigneeId, task.reviewerId(), task.priority(),
+                        task.dueAt(), task.status(), task.workflowId(), task.estimatedHours(), null), imageData))
+                .toList();
+    }
+
+    /** Approves selected tasks atomically using the normal reviewer/admin status rules. */
+    @Transactional
+    public List<TaskResponse> approveBatch(CurrentUser user, TaskBatchApprovalRequest request) {
+        List<Long> taskIds = request.taskIds();
+        if (new HashSet<>(taskIds).size() != taskIds.size()) {
+            throw new BadRequestException("Choose each task only once");
+        }
+        return taskIds.stream()
+                .map(taskId -> changeStatus(user, taskId, TaskStatus.COMPLETED.name(), null))
+                .toList();
     }
 
     // ================================================================ edit & delete
@@ -247,6 +285,7 @@ public class TaskService {
 
         t.setTitle(title);
         t.setDescription(Texts.trimToEmpty(req.description()));
+        if (req.image() != null) t.setImageData(taskImages.normalize(req.image()));
         t.setPriority(priority);
         t.setDueAt(due);
         t.setEstimatedHours(req.estimatedHours());

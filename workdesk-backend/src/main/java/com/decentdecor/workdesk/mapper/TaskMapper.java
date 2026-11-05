@@ -9,6 +9,7 @@ import com.decentdecor.workdesk.entity.TaskActivity;
 import com.decentdecor.workdesk.entity.WorkflowRun;
 import com.decentdecor.workdesk.util.Enums;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +23,10 @@ public class TaskMapper {
     }
 
     public TaskResponse toResponse(Task t, Instant now) {
+        return toResponse(t, now, false);
+    }
+
+    public TaskResponse toResponse(Task t, Instant now, boolean includeImage) {
         return new TaskResponse(
                 t.getId(),
                 t.getTitle(),
@@ -45,7 +50,14 @@ public class TaskMapper {
                 t.getUpdatedAt(),
                 t.getStartedAt(),
                 t.getSubmittedAt(),
-                t.getCompletedAt());
+                t.getCompletedAt(),
+                includeImage ? image(t) : null);
+    }
+
+    private String image(Task task) {
+        byte[] image = task.getImageData() != null ? task.getImageData()
+                : task.getRecurringTemplate() != null ? task.getRecurringTemplate().getImageData() : null;
+        return image == null ? null : Base64.getEncoder().encodeToString(image);
     }
 
     public List<TaskResponse> toResponses(List<Task> tasks, Instant now) {

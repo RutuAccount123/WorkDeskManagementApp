@@ -21,5 +21,6 @@ public record TaskRequest(
         String dueAt,
         String status,
         Long workflowId,
-        BigDecimal estimatedHours) {
+        BigDecimal estimatedHours,
+        @Size(max = 7000000, message = "image: is too large") String image) {
 }

@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import App from '@/app/App.jsx';
 import { ADMIN_NAV, EMPLOYEE_NAV } from '@/config/navigation.js';
 import { tokenStore } from '@/services/http.js';
-import { taskService } from '@/services/index.js';
+import { recurringService, taskService } from '@/services/index.js';
 
 const idOf = async (title) => (await taskService.list({ q: title, scope: 'all' })).find((t) => t.title === title).id;
 
@@ -91,6 +91,24 @@ describe('permissions in the screens', () => {
     const back = await screen.findByRole('link', { name: /All employees/ });
     expect(back).toHaveAttribute('href', '/employees');
   });
+
+  it('admin employee detail reuses the employee profile dashboard and shows the add-image action', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-1');
+    start('/employees/3');
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Rahul Patil' })).toBeInTheDocument();
+    expect(screen.getByText('rahul@company.com')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add image' })).toBeInTheDocument();
+    const photoButton = screen.getByRole('button', { name: 'Choose profile photo for Rahul Patil' });
+    const photoInput = screen.getByLabelText('Choose profile photo');
+    const openPicker = vi.spyOn(photoInput, 'click');
+    await user.click(photoButton);
+    expect(openPicker).toHaveBeenCalledOnce();
+    expect(screen.queryByText('Add photo')).not.toBeInTheDocument();
+    expect(screen.queryByText('Remove image')).not.toBeInTheDocument();
+    openPicker.mockRestore();
+  });
 });
 
 describe('task page', () => {
@@ -159,17 +177,40 @@ describe('workflows (FMS) pages', () => {
 });
 
 describe('assign a task form', () => {
+  it.each([
+    ['admin', 'mock-1'],
+    ['employee', 'mock-3'],
+  ])('shows the reviewer option when assigning as %s', async (_role, token) => {
+    const user = userEvent.setup();
+    tokenStore.set(token);
+    start('/tasks');
+    await user.click(await screen.findByRole('button', { name: 'Assign a task' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Assign a task' });
+    const reviewer = within(dialog).getByLabelText('Reviewed by');
+    expect(reviewer).toBeDisabled();
+    expect(reviewer).toHaveTextContent('Select assignee first');
+
+    const assign = within(dialog).getByRole('group', { name: 'Assign to' });
+    await user.click(within(assign).getByRole('checkbox', { name: 'Select all employees except me' }));
+    expect(reviewer).toBeEnabled();
+    expect(reviewer).toHaveValue(token === 'mock-1' ? '1' : '3');
+    expect(within(assign).getByRole('checkbox', { name: /Me \(/ })).not.toBeChecked();
+    expect(within(assign).getAllByRole('checkbox').filter((checkbox) => checkbox.checked)).toHaveLength(5);
+  });
+
   it('switching from "me" to someone else picks a real reviewer', async () => {
     const user = userEvent.setup();
     tokenStore.set('mock-3'); // Rahul
     start('/tasks');
     await user.click(await screen.findByRole('button', { name: 'Assign a task' }));
     const dialog = await screen.findByRole('dialog', { name: 'Assign a task' });
-    const assign = within(dialog).getByLabelText('Assign to');
-    await waitFor(() => expect(within(assign).getAllByRole('option').length).toBeGreaterThan(2));
-    await user.selectOptions(assign, '3'); // me
+    const assign = within(dialog).getByRole('group', { name: 'Assign to' });
+    const rahul = await within(assign).findByRole('checkbox', { name: /Me \(Rahul Patil\)/ });
+    const priya = await within(assign).findByRole('checkbox', { name: /Priya Sharma/ });
+    await user.click(rahul); // me
     expect(within(dialog).getByLabelText('Reviewed by')).toHaveValue('none');
-    await user.selectOptions(assign, '2'); // Priya
+    await user.click(rahul);
+    await user.click(priya); // Priya
     const reviewer = within(dialog).getByLabelText('Reviewed by');
     expect(reviewer).toHaveValue('3');
     expect(within(dialog).getByText(/Priya Sharma will submit the work, and you will approve it/)).toBeInTheDocument();
@@ -181,11 +222,105 @@ describe('assign a task form', () => {
     await user.click(await screen.findByRole('button', { name: 'Assign a task' }));
     const dialog = await screen.findByRole('dialog');
     await user.type(within(dialog).getByLabelText('Title'), 'Send cement rate list');
-    const assign = within(dialog).getByLabelText('Assign to');
-    await waitFor(() => expect(within(assign).getAllByRole('option').length).toBeGreaterThan(2));
-    await user.selectOptions(assign, '5');
+    const assign = within(dialog).getByRole('group', { name: 'Assign to' });
+    const amit = await within(assign).findByRole('checkbox', { name: /Amit Deshmukh/ });
+    await user.click(amit);
     await user.click(within(dialog).getByRole('button', { name: 'Assign task' }));
-    expect(await screen.findByText('Send cement rate list')).toBeInTheDocument();
+    const taskItem = (await screen.findByText('Send cement rate list')).closest('li');
+    expect(within(taskItem).getByText('Reviewed by: Rahul Patil')).toBeInTheDocument();
+  });
+
+  it('creates independent task copies for multiple selected people', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');
+    start('/tasks?scope=created');
+    await user.click(await screen.findByRole('button', { name: 'Assign a task' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Assign a task' });
+    await user.type(within(dialog).getByLabelText('Title'), 'Prepare shared site checklist');
+    const assign = within(dialog).getByRole('group', { name: 'Assign to' });
+    const priya = await within(assign).findByRole('checkbox', { name: /Priya Sharma/ });
+    const sneha = await within(assign).findByRole('checkbox', { name: /Sneha Kulkarni/ });
+    await user.click(priya);
+    await user.click(sneha);
+    expect(within(dialog).getByText(/A separate task will be created for each selected person/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Assign task' }));
+
+    await waitFor(() => expect(screen.getAllByText('Prepare shared site checklist')).toHaveLength(2));
+    const taskItems = screen.getAllByText('Prepare shared site checklist').map((title) => title.closest('li'));
+    taskItems.forEach((taskItem) => {
+      expect(within(taskItem).getByText('Reviewed by: Rahul Patil')).toBeInTheDocument();
+    });
+  });
+
+  it('creates a weekly repeating task and reviewer for each selected person', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');
+    start('/tasks?scope=created');
+    await user.click(await screen.findByRole('button', { name: 'Assign a task' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Assign a task' });
+    await user.type(within(dialog).getByLabelText('Title'), 'Weekly shared safety check');
+    const assign = within(dialog).getByRole('group', { name: 'Assign to' });
+    await user.click(await within(assign).findByRole('checkbox', { name: /Priya Sharma/ }));
+    await user.click(await within(assign).findByRole('checkbox', { name: /Sneha Kulkarni/ }));
+    await user.selectOptions(within(dialog).getByLabelText('Repeat'), 'WEEKLY');
+    expect(within(dialog).getByLabelText('Reviewed by')).toHaveValue('3');
+    await user.click(within(dialog).getByRole('button', { name: 'Create repeating task' }));
+
+    await waitFor(async () => {
+      const templates = await recurringService.list();
+      expect(templates.filter((template) => template.title === 'Weekly shared safety check')).toHaveLength(2);
+    });
+  });
+});
+
+describe('bulk task approval', () => {
+  it('lets a reviewer select all submitted tasks and approve them together', async () => {
+    tokenStore.set('mock-1');
+    const first = await taskService.create({ title: 'Bulk approval task one', assigneeId: 2, reviewerId: 3 });
+    const second = await taskService.create({ title: 'Bulk approval task two', assigneeId: 4, reviewerId: 3 });
+
+    tokenStore.set('mock-2');
+    await taskService.changeStatus(first.id, 'IN_PROGRESS');
+    await taskService.changeStatus(first.id, 'SUBMITTED');
+    tokenStore.set('mock-4');
+    await taskService.changeStatus(second.id, 'IN_PROGRESS');
+    await taskService.changeStatus(second.id, 'SUBMITTED');
+
+    tokenStore.set('mock-3');
+    const user = userEvent.setup();
+    start('/tasks?scope=review&status=SUBMITTED');
+    expect(await screen.findByText('Bulk approval task one')).toBeInTheDocument();
+    expect(await screen.findByText('Bulk approval task two')).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: /Select all submitted tasks/ }));
+    await user.click(screen.getByRole('button', { name: /Approve selected \(\d+\)/ }));
+
+    await waitFor(async () => {
+      expect((await taskService.get(first.id)).status).toBe('COMPLETED');
+      expect((await taskService.get(second.id)).status).toBe('COMPLETED');
+    });
+    expect(screen.queryByText('Bulk approval task one')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bulk approval task two')).not.toBeInTheDocument();
+  });
+});
+
+describe('task attachment preview', () => {
+  it('opens the uploaded image in a larger preview from the task detail page', async () => {
+    tokenStore.set('mock-1');
+    const task = await taskService.create({
+      title: 'Review attached plan',
+      assigneeId: 2,
+      reviewerId: 1,
+      image: 'dGVzdC1pbWFnZQ==',
+    });
+    const user = userEvent.setup();
+    start(`/tasks/${task.id}`);
+
+    expect(await screen.findByRole('img', { name: 'Task reference' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'See attachment' }));
+    const preview = await screen.findByRole('dialog', { name: 'Task attachment' });
+    expect(within(preview).getByRole('img', { name: 'Task attachment' })).toBeInTheDocument();
+    await user.click(within(preview).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog', { name: 'Task attachment' })).not.toBeInTheDocument();
   });
 });
 

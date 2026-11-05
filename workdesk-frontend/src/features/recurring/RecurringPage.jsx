@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { employeeService, recurringService } from '@/services/index.js';
+import { useAuth } from '@/features/auth/AuthContext.jsx';
 import { DAYS, PRIORITIES, PRIORITY_LABEL, dayLabel, fmtDate, isoDay } from '@/utils/format.js';
+import { encodeImage } from '@/utils/image.js';
 import Modal from '@/components/ui/Modal.jsx';
 
 const EMPTY = {
@@ -9,15 +11,19 @@ const EMPTY = {
 };
 
 function TemplateForm({ template, employees, onClose, onSaved }) {
+  const { user } = useAuth();
+  const [image, setImage] = useState(template?.image || '');
   const [form, setForm] = useState(template
     ? {
       ...EMPTY, ...template, assigneeId: template.assignee.id, dayOfWeek: template.dayOfWeek || 'MONDAY',
+      reviewerId: template.reviewer?.id ? String(template.reviewer.id)
+        : template.assignee.id === user.id ? 'none' : String(template.createdBy?.id || user.id),
       startDate: template.startDate || isoDay(), scheduleEnabled: Boolean(template.scheduledTime),
       scheduledTime: template.scheduledTime ? template.scheduledTime.slice(0, 5) : '',
       durationMinutes: template.durationMinutes == null ? '20' : String(template.durationMinutes),
       dueTime: template.dueTime.slice(0, 5), estimatedHours: template.estimatedHours == null ? '' : String(template.estimatedHours),
     }
-    : EMPTY);
+    : { ...EMPTY, reviewerId: String(user.id) });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -35,6 +41,8 @@ function TemplateForm({ template, employees, onClose, onSaved }) {
       scheduledTime: form.scheduleEnabled ? form.scheduledTime : null,
       durationMinutes: form.scheduleEnabled ? Number(form.durationMinutes) : null,
       estimatedHours: form.scheduleEnabled || form.estimatedHours === '' ? null : Number(form.estimatedHours),
+      reviewerId: form.reviewerId === 'none' ? null : Number(form.reviewerId),
+      image: image || null,
     };
     try {
       const saved = template
@@ -54,7 +62,11 @@ function TemplateForm({ template, employees, onClose, onSaved }) {
         <label>Details<textarea rows={3} value={form.description || ''} onChange={set('description')} /></label>
         <div className="grid-2">
           <label>Assign to
-            <select value={form.assigneeId} onChange={set('assigneeId')} required>
+            <select value={form.assigneeId} onChange={(e) => setForm({
+              ...form, assigneeId: e.target.value,
+              reviewerId: e.target.value === String(user.id) ? 'none'
+                : String(form.reviewerId) === e.target.value ? String(user.id) : form.reviewerId,
+            })} required>
               <option value="">Choose a person</option>
               {employees.filter((e) => e.active).map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
             </select>
@@ -65,6 +77,24 @@ function TemplateForm({ template, employees, onClose, onSaved }) {
             </select>
           </label>
         </div>
+        <div className="grid-2">
+          <label>Reviewed by
+            <select value={form.reviewerId} onChange={set('reviewerId')}>
+              {String(form.assigneeId) === String(user.id) && <option value="none">No review needed</option>}
+              {employees.filter((e) => e.active && String(e.id) !== String(form.assigneeId))
+                .map((e) => <option key={e.id} value={e.id}>{e.id === user.id ? `Me (${e.fullName})` : e.fullName}</option>)}
+            </select>
+          </label>
+          <label>Task reference image
+            <input type="file" accept="image/*" onChange={async (event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              try { setImage(await encodeImage(file)); setError(''); }
+              catch (err) { setError(err.message); }
+            }} />
+          </label>
+        </div>
+        {image && <img className="task-reference-image" src={`data:image/jpeg;base64,${image}`} alt="Task reference" />}
         <div className="grid-3">
           <label>Repeats
             <select value={form.frequency} onChange={set('frequency')}>
@@ -141,7 +171,7 @@ export default function Recurring() {
   const [error, setError] = useState('');
 
   const load = () => recurringService.list().then(setList).catch((e) => setError(e.message));
-  useEffect(() => { load(); employeeService.list().then(setEmployees).catch(() => {}); }, []);
+  useEffect(() => { load(); employeeService.directory().then(setEmployees).catch(() => {}); }, []);
 
   const act = async (fn, okText) => {
     setError(''); setMessage('');

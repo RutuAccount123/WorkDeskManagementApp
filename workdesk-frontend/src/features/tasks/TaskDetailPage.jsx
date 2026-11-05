@@ -11,6 +11,7 @@ import StartRunDialog from '@/features/workflows/StartRunDialog.jsx';
 import { freqText } from '@/features/workflows/workflowFormat.js';
 import FmsTaskSheet from '@/features/workflows/FmsTaskSheet.jsx';
 import AddWorkForm from '@/features/my-work/AddWorkForm.jsx';
+import Modal from '@/components/ui/Modal.jsx';
 import TaskForm from './TaskForm.jsx';
 import { ACTION_TEXT, actionsFor, yourTurn } from './taskActions.js';
 
@@ -34,6 +35,7 @@ export default function TaskDetailPage() {
   const [linked, setLinked] = useState([]);
   const [linkedRuns, setLinkedRuns] = useState([]);
   const [starting, setStarting] = useState(null);
+  const [showAttachment, setShowAttachment] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -174,10 +176,16 @@ export default function TaskDetailPage() {
             </section>
           )}
 
-          {!isFlow && task.description && checks.length === 0 && (
+          {!isFlow && (task.description || task.image) && checks.length === 0 && (
             <section className="panel">
-              <h2 className="section-title">Details</h2>
-              <p className="description">{task.description}</p>
+              <h2 className="section-title">Task instructions</h2>
+              {task.description && <p className="description">{task.description}</p>}
+              {task.image && (
+                <>
+                  <img className="task-reference-image" src={`data:image/jpeg;base64,${task.image}`} alt="Task reference" />
+                  <button className="btn ghost small" onClick={() => setShowAttachment(true)}>See attachment</button>
+                </>
+              )}
             </section>
           )}
 
@@ -291,6 +299,11 @@ export default function TaskDetailPage() {
       {starting && (
         <StartRunDialog workflow={starting} sourceTaskId={task.id} onClose={() => setStarting(null)}
           onStarted={() => { setStarting(null); load(); }} />
+      )}
+      {showAttachment && task.image && (
+        <Modal title="Task attachment" onClose={() => setShowAttachment(false)}>
+          <img className="task-attachment-preview" src={`data:image/jpeg;base64,${task.image}`} alt="Task attachment" />
+        </Modal>
       )}
       {editing && (task.selfAdded && !task.recurring
         ? <AddWorkForm task={task} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />

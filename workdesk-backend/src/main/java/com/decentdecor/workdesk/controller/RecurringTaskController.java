@@ -1,6 +1,7 @@
 package com.decentdecor.workdesk.controller;
 
 import com.decentdecor.workdesk.dto.recurring.RecurringRequest;
+import com.decentdecor.workdesk.dto.recurring.RecurringBatchRequest;
 import com.decentdecor.workdesk.dto.recurring.RecurringResponse;
 import com.decentdecor.workdesk.security.CurrentUser;
 import com.decentdecor.workdesk.service.RecurringTaskService;
@@ -38,6 +39,12 @@ public class RecurringTaskController {
     @PostMapping
     public ResponseEntity<RecurringResponse> create(@AuthenticationPrincipal CurrentUser me, @Valid @RequestBody RecurringRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(recurringService.create(me, request));
+    }
+
+    @PostMapping("/batch")
+    public ResponseEntity<List<RecurringResponse>> createBatch(@AuthenticationPrincipal CurrentUser me,
+                                                               @Valid @RequestBody RecurringBatchRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(recurringService.createBatch(me, request));
     }
 
     @PutMapping("/{id}")

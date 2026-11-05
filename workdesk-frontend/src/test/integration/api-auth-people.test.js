@@ -1,7 +1,7 @@
 // Integration: screens → services → http → demo backend (same rules as the real API).
 import { describe, expect, it } from 'vitest';
-import { authService, employeeService } from '@/services/index.js';
-import { tokenStore } from '@/services/http.js';
+import { authService, employeeService, profilePhotoService } from '@/services/index.js';
+import { http, tokenStore } from '@/services/http.js';
 import { ADMIN, PRIYA, signIn } from '../helpers.js';
 
 describe('sign in', () => {
@@ -55,6 +55,22 @@ describe('people & employees', () => {
     expect(upd.designation).toBe('HR Executive');
     await expect(employeeService.setActive(1, false)).rejects.toThrow('cannot deactivate your own account');
     await expect(employeeService.update(1, { fullName: 'System Admin', email: ADMIN, role: 'EMPLOYEE' })).rejects.toThrow('own admin role');
+  });
+  it('admin can add and manage a photo on an employee profile', async () => {
+    await signIn(ADMIN);
+    const employee = await employeeService.create({
+      fullName: 'Photo Employee', email: 'photo.employee@company.com', password: 'Start@1234', role: 'EMPLOYEE',
+    });
+    await profilePhotoService.save('AQID', employee.id);
+    const photo = await http(`/api/employees/${employee.id}/photo`, { raw: true });
+    expect(photo.status).toBe(200);
+    expect(photo.headers.get('content-type')).toBe('image/jpeg');
+
+    await signIn(PRIYA);
+    await expect(profilePhotoService.get(employee.id)).rejects.toThrow('permission');
+    await signIn(ADMIN);
+    await profilePhotoService.remove(employee.id);
+    expect(await profilePhotoService.get(employee.id)).toBeNull();
   });
   it('a missing name gives a clear error, not a crash', async () => {
     await signIn(ADMIN);

@@ -18,5 +18,7 @@ public record RecurringRequest(
         BigDecimal estimatedHours,
         String startDate,
         String scheduledTime,
-        Integer durationMinutes) {
+        Integer durationMinutes,
+        Long reviewerId,
+        @Size(max = 7000000, message = "image: is too large") String image) {
 }

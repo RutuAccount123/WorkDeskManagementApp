@@ -92,11 +92,12 @@ function isOverdue(t) {
   return OPEN.includes(t.status) && t.dueAt && new Date(t.dueAt) < new Date()
     && (t.estimatedHours == null || t.startedAt != null);
 }
-function taskOut(t) {
+function taskOut(t, includeImage = false) {
   return {
     id: t.id, title: t.title, description: t.description,
     assignee: empRef(t.assigneeId), createdBy: empRef(t.createdById),
-    priority: t.priority, status: t.status, dueAt: t.dueAt, estimatedHours: t.estimatedHours ?? null, overdue: !!isOverdue(t),
+    priority: t.priority, status: t.status, dueAt: t.dueAt, scheduledAt: t.scheduledAt || null,
+    estimatedHours: t.estimatedHours ?? null, overdue: !!isOverdue(t),
     recurring: t.recurringTemplateId != null,
     repeat: t.recurringTemplateId != null ? (db.recurring.find((r) => r.id === t.recurringTemplateId)?.frequency || null) : null,
     linkedWorkflowId: t.workflowId || null,
@@ -104,6 +105,7 @@ function taskOut(t) {
     reviewer: empRef(reviewerOf(t)),
     workflow: t.workflowRunId ? workflowInfo(t) : null,
     checklist: t.checklist || [],
+    image: includeImage ? (t.image || null) : null,
     createdAt: t.createdAt, updatedAt: t.updatedAt, startedAt: t.startedAt,
     submittedAt: t.submittedAt, completedAt: t.completedAt,
   };
@@ -122,6 +124,9 @@ function templateOut(t) {
     active: t.active, lastGeneratedOn: t.lastGeneratedOn, createdAt: t.createdAt,
     createdBy: empRef(t.createdById), selfOwned: t.createdById === t.assigneeId,
     workflowId: t.workflowId || null,
+    reviewer: empRef(t.reviewerId ?? (t.createdById !== t.assigneeId ? t.createdById : null)),
+    startDate: t.startDate || null, scheduledTime: t.scheduledTime || null, durationMinutes: t.durationMinutes || null,
+    image: t.image || null,
   };
 }
 
@@ -278,8 +283,13 @@ const holidayOn = (day) => (db.holidays || []).find((h) => h.date === day);
 function templateRunsOn(tpl, day) {
   const d = new Date(`${day}T00:00`);
   if (holidayOn(day)) return false;
+  if (day < (tpl.startDate || '0000-00-00')) return false;
   if (tpl.frequency === 'DAILY') return d.getDay() !== 0;
-  return WEEKDAY_NAMES[d.getDay()] === tpl.dayOfWeek;
+  if (tpl.frequency === 'WEEKLY') return WEEKDAY_NAMES[d.getDay()] === tpl.dayOfWeek;
+  const start = new Date(`${tpl.startDate}T00:00`);
+  if (tpl.frequency === 'MONTHLY') return d.getDate() === start.getDate();
+  if (tpl.frequency === 'YEARLY') return d.getDate() === start.getDate() && d.getMonth() === start.getMonth();
+  return false;
 }
 const alreadyCreated = (tpl, day) =>
   db.tasks.some((t) => t.recurringTemplateId === tpl.id && t.dueAt && localDay(new Date(t.dueAt)) === day);
@@ -291,7 +301,10 @@ function createFromTemplate(tpl, day) {
     assigneeId: tpl.assigneeId, createdById: tpl.createdById, priority: tpl.priority, status: 'TODO',
     dueAt: due, createdAt: nowIso(), updatedAt: nowIso(), startedAt: null, submittedAt: null, completedAt: null,
     estimatedHours: tpl.estimatedHours ?? null,
+    scheduledAt: tpl.scheduledTime ? new Date(`${day}T${tpl.scheduledTime}`).toISOString() : null,
     recurringTemplateId: tpl.id, dueSoonReminded: false, overdueReminded: false,
+    reviewerId: tpl.reviewerId ?? (tpl.createdById !== tpl.assigneeId ? tpl.createdById : null),
+    image: tpl.image || null,
     workflowId: tpl.workflowId || null,
   };
   db.tasks.push(t);
@@ -691,6 +704,41 @@ function route(method, path, query, body, me) {
       return null;
     }
   }
+  if (seg[0] === 'employees' && seg[2] === 'photo') {
+    needAdmin();
+    const employee = db.employees.find((person) => person.id === id);
+    if (!employee) throw new HttpError(404, 'Employee not found');
+    if (method === 'GET') {
+      if (!employee.profilePhoto) return new Response(null, { status: 204 });
+      const binary = atob(employee.profilePhoto);
+      return new Response(Uint8Array.from(binary, (char) => char.charCodeAt(0)), {
+        headers: { 'Content-Type': 'image/jpeg' },
+      });
+    }
+    if (method === 'PUT') {
+      const image = String(body.image || '');
+      if (!image || image.length > 7_000_000) throw bad('Choose an image smaller than 5 MB');
+      employee.profilePhoto = image;
+      save();
+      return null;
+    }
+    if (method === 'DELETE') {
+      delete employee.profilePhoto;
+      save();
+      return null;
+    }
+  }
+
+  if (path === '/api/tasks/batch' && method === 'POST') {
+    if (!Array.isArray(body.assigneeIds) || body.assigneeIds.length < 2 || body.assigneeIds.length > 50) {
+      throw bad('Choose between 2 and 50 people for a multi-assignee task');
+    }
+    if (new Set(body.assigneeIds.map(Number)).size !== body.assigneeIds.length) {
+      throw bad('Choose each employee only once');
+    }
+    return body.assigneeIds.map((assigneeId) =>
+      route('POST', '/api/tasks', query, { ...body.task, assigneeId }, me));
+  }
 
   // ----- people directory: everyone can see who they can assign work to
   if (seg[0] === 'people' && method === 'GET') {
@@ -738,6 +786,14 @@ function route(method, path, query, body, me) {
 
   // ----- tasks
   if (seg[0] === 'tasks') {
+    if (seg[1] === 'batch' && seg[2] === 'approve' && method === 'POST') {
+      if (!Array.isArray(body.taskIds) || body.taskIds.length < 1 || body.taskIds.length > 500) {
+        throw bad('Choose between 1 and 500 tasks to approve');
+      }
+      if (new Set(body.taskIds.map(Number)).size !== body.taskIds.length) throw bad('Choose each task only once');
+      return body.taskIds.map((taskId) =>
+        route('POST', `/api/tasks/${Number(taskId)}/status`, query, { status: 'COMPLETED' }, me));
+    }
     if (!id && method === 'GET') {
       const statuses = query.getAll('status');
       // scope: assigned (to me) | created (by me, for others) | review (I am the reviewer). Admin default: everyone.
@@ -782,6 +838,7 @@ function route(method, path, query, body, me) {
         estimatedHours, createdAt: now, updatedAt: now,
         startedAt: status === 'TODO' ? null : now, submittedAt: status === 'COMPLETED' ? now : null, completedAt: status === 'COMPLETED' ? now : null,
         recurringTemplateId: null, dueSoonReminded: false, overdueReminded: false, reviewerId,
+        image: body.image || null,
         workflowId: linkedWorkflowId(body.workflowId),
       };
       db.tasks.push(t);
@@ -908,6 +965,7 @@ function route(method, path, query, body, me) {
       }
       Object.assign(t, { title: body.title.trim(), description: body.description || '', priority: body.priority, dueAt: due,
         estimatedHours, updatedAt: nowIso() });
+      if (body.image) t.image = body.image;
       if (changes.length) log(id, me.id, 'UPDATED', null, null, `Changed ${changes.join(', ')}`);
       return taskOut(t);
     }
@@ -918,25 +976,42 @@ function route(method, path, query, body, me) {
       db.notifications = db.notifications.filter((n) => n.taskId !== id);
       return null;
     }
-    return taskOut(t);
+    return method === 'GET' ? taskOut(t, true) : taskOut(t);
   }
 
-  // ----- recurring: admins manage all; employees manage their own daily/weekly tasks
+  // ----- recurring tasks
   if (seg[0] === 'recurring') {
-    const visible = isAdmin ? db.recurring : db.recurring.filter((r) => r.assigneeId === me.id);
+    if (path === '/api/recurring/batch' && method === 'POST') {
+      if (!Array.isArray(body.assigneeIds) || body.assigneeIds.length < 2 || body.assigneeIds.length > 50) {
+        throw bad('Choose between 2 and 50 people for a multi-assignee repeating task');
+      }
+      if (new Set(body.assigneeIds.map(Number)).size !== body.assigneeIds.length) throw bad('Choose each employee only once');
+      return body.assigneeIds.map((assigneeId) =>
+        route('POST', '/api/recurring', query, { ...body.task, assigneeId }, me));
+    }
+    const visible = isAdmin ? db.recurring : db.recurring.filter((r) => r.assigneeId === me.id || r.createdById === me.id);
     if (!id && method === 'GET') return [...visible].sort((a, b) => a.title.localeCompare(b.title)).map(templateOut);
     const apply = (tpl) => {
       if (!body.title?.trim()) throw bad('title: must not be blank');
-      if (!['DAILY', 'WEEKLY'].includes(body.frequency)) throw bad('Choose how often this task repeats');
+      if (!['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(body.frequency)) throw bad('Choose how often this task repeats');
       if (body.frequency === 'WEEKLY' && !body.dayOfWeek) throw bad('Choose a day of the week for weekly tasks');
       if (body.frequency === 'WEEKLY' && body.dayOfWeek === 'SUNDAY') throw bad('Sunday is the weekly off. Choose Monday to Saturday.');
       const estimatedHours = parseEstimatedHours(body.estimatedHours);
-      const a = isAdmin ? activeAssignee(body.assigneeId) : me;
+      const a = body.assigneeId ? activeAssignee(body.assigneeId) : me;
+      const reviewerId = pickReviewer(body.reviewerId, a.id, a.id === me.id ? null : me.id);
+      if (body.frequency === 'WEEKLY' && body.dayOfWeek === 'SUNDAY') throw bad('Sunday is the weekly off. Choose Monday to Saturday.');
+      if (['MONTHLY', 'YEARLY'].includes(body.frequency) && !body.startDate) throw bad('Choose the date this task should repeat on');
+      const scheduledTime = body.scheduledTime || null;
+      const dueTime = scheduledTime
+        ? new Date(new Date(`2000-01-01T${scheduledTime}`).getTime() + Number(body.durationMinutes || 0) * 60000).toTimeString().slice(0, 8)
+        : (body.dueTime || '18:00').length === 5 ? `${body.dueTime || '18:00'}:00` : body.dueTime;
       Object.assign(tpl, {
         title: body.title.trim(), description: body.description || '', assigneeId: a.id, priority: body.priority || 'MEDIUM',
         frequency: body.frequency, dayOfWeek: body.frequency === 'WEEKLY' ? body.dayOfWeek : null,
-        dueTime: (body.dueTime || '18:00').length === 5 ? `${body.dueTime || '18:00'}:00` : body.dueTime,
+        startDate: body.startDate || localDay(new Date()), scheduledTime, durationMinutes: body.durationMinutes || null,
+        dueTime,
         estimatedHours,
+        reviewerId, image: body.image || tpl.image || null,
         workflowId: body.workflowId === undefined ? (tpl.workflowId || null) : linkedWorkflowId(body.workflowId),
       });
       return tpl;
@@ -950,7 +1025,7 @@ function route(method, path, query, body, me) {
     const tpl = visible.find((x) => x.id === id);
     if (!tpl) throw notFound('Repeating task');
     // employees may only change repeating tasks they set up themselves
-    if (!isAdmin && method !== 'GET' && tpl.createdById !== me.id) throw forbidden('Only your admin can change this repeating task');
+    if (!isAdmin && method !== 'GET' && tpl.createdById !== me.id) throw forbidden('Only the person who assigned this repeating task can change it');
     if (seg[2] === 'active') {
       tpl.active = query.get('value') === 'true';
       if (!tpl.active) removeFutureCopies(tpl.id); else runRecurring();

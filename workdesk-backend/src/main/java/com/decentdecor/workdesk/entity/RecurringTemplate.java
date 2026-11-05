@@ -37,6 +37,9 @@ public class RecurringTemplate {
     @Column(name = "description", nullable = false)
     private String description = "";
 
+    @Column(name = "image_data")
+    private byte[] imageData;
+
     /** Who does the work. */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "assignee_id")
@@ -46,6 +49,10 @@ public class RecurringTemplate {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by_id")
     private Employee createdBy;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reviewer_id")
+    private Employee reviewer;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "priority", nullable = false, length = 10)
@@ -118,6 +125,14 @@ public class RecurringTemplate {
         this.description = description;
     }
 
+    public byte[] getImageData() {
+        return imageData;
+    }
+
+    public void setImageData(byte[] imageData) {
+        this.imageData = imageData;
+    }
+
     public Employee getAssignee() {
         return assignee;
     }
@@ -132,6 +147,14 @@ public class RecurringTemplate {
 
     public void setCreatedBy(Employee createdBy) {
         this.createdBy = createdBy;
+    }
+
+    public Employee getReviewer() {
+        return reviewer;
+    }
+
+    public void setReviewer(Employee reviewer) {
+        this.reviewer = reviewer;
     }
 
     public Priority getPriority() {

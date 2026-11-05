@@ -25,12 +25,14 @@ const SCOPES = [
 ];
 
 export default function Tasks() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const [params, setParams] = useSearchParams();
   const [tasks, setTasks] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState('');
+  const [selectedTaskIds, setSelectedTaskIds] = useState([]);
+  const [approving, setApproving] = useState(false);
 
   const scope = params.get('scope') || (isAdmin ? 'all' : 'assigned');
   const view = params.get('status') || 'open';
@@ -71,7 +73,40 @@ export default function Tasks() {
   }, [scope, view, assigneeId, priority, overdue, dueToday, completedThisWeek, q]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setSelectedTaskIds([]); }, [scope, view, assigneeId, priority, overdue, dueToday, completedThisWeek, q]);
   useEffect(() => { if (isAdmin) employeeService.list().then(setEmployees).catch(() => {}); }, [isAdmin]);
+
+  const reviewableTasks = tasks
+    ? groupFmsTasks(tasks).filter((task) => task.status === 'SUBMITTED'
+      && (isAdmin || task.reviewer?.id === user.id))
+    : [];
+  const reviewableIds = reviewableTasks.map((task) => task.id);
+  const allReviewableSelected = reviewableIds.length > 0
+    && reviewableIds.every((id) => selectedTaskIds.includes(id));
+  const toggleReviewableSelection = () => {
+    setSelectedTaskIds((selected) => allReviewableSelected
+      ? selected.filter((id) => !reviewableIds.includes(id))
+      : [...new Set([...selected, ...reviewableIds])]);
+  };
+  const toggleTaskSelection = (id) => {
+    setSelectedTaskIds((selected) => selected.includes(id)
+      ? selected.filter((selectedId) => selectedId !== id)
+      : [...selected, id]);
+  };
+  const approveSelected = async () => {
+    if (!selectedTaskIds.length) return;
+    setApproving(true);
+    setError('');
+    try {
+      await taskService.approveMany(selectedTaskIds);
+      setSelectedTaskIds([]);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setApproving(false);
+    }
+  };
 
   return (
     <div className="page">
@@ -124,8 +159,20 @@ export default function Tasks() {
       </div>
 
       {error && <p className="error">{error}</p>}
+      {reviewableTasks.length > 0 && (
+        <div className="row task-bulk-actions">
+          <label className="check">
+            <input type="checkbox" checked={allReviewableSelected} onChange={toggleReviewableSelection} />
+            Select all submitted tasks ({reviewableTasks.length})
+          </label>
+          <button className="btn primary" disabled={!selectedTaskIds.length || approving} onClick={approveSelected}>
+            {approving ? 'Approving…' : `Approve selected${selectedTaskIds.length ? ` (${selectedTaskIds.length})` : ''}`}
+          </button>
+        </div>
+      )}
       {tasks === null ? <p className="muted">Loading…</p> : (
         <TaskBoard tasks={tasks} onOpen={(id) => setParam('open', String(id))} showAssignee={scope !== 'assigned'} cardLayout
+          selectableTaskIds={reviewableIds} selectedTaskIds={selectedTaskIds} onToggleTask={toggleTaskSelection}
           emptyText={scope === 'review' ? 'Nothing waiting for your review.'
             : scope === 'created' ? 'You haven’t assigned any matching tasks to others.'
               : view === 'open' ? 'No open tasks match these filters.' : `No ${STATUS_LABEL[view]?.toLowerCase() || ''} tasks match these filters.`} />

@@ -113,6 +113,86 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void batchTaskAssignmentCreatesIndependentTasksForEachAssignee() throws Exception {
+        MvcResult created = mvc.perform(as(admin, post("/api/tasks/batch"))
+                        .content(mapper.writeValueAsString(java.util.Map.of(
+                                "assigneeIds", java.util.List.of(2, 3),
+                                "task", java.util.Map.of("title", "Shared checklist", "priority", "HIGH", "reviewerId", 1)))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].assignee.id").value(2))
+                .andExpect(jsonPath("$[1].assignee.id").value(3))
+                .andExpect(jsonPath("$[0].reviewer.id").value(1))
+                .andExpect(jsonPath("$[1].reviewer.id").value(1))
+                .andReturn();
+        JsonNode tasks = read(created);
+        String firstId = tasks.get(0).get("id").asText();
+        String secondId = tasks.get(1).get("id").asText();
+        assertThat(firstId).isNotEqualTo(secondId);
+
+        String priya = login("priya@company.com", "Employee@123");
+        mvc.perform(as(priya, post("/api/tasks/" + firstId + "/status").content(json("status", "IN_PROGRESS"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+        String rahul = login("rahul@company.com", "Employee@123");
+        mvc.perform(as(rahul, get("/api/tasks/" + secondId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("TODO"));
+    }
+
+    @Test
+    void reviewerCanApproveMultipleSubmittedTasksInOneRequest() throws Exception {
+        JsonNode first = read(mvc.perform(as(admin, post("/api/tasks"))
+                        .content(json("title", "Bulk review first", "assigneeId", 2, "reviewerId", 3)))
+                .andExpect(status().isCreated()).andReturn());
+        JsonNode second = read(mvc.perform(as(admin, post("/api/tasks"))
+                        .content(json("title", "Bulk review second", "assigneeId", 4, "reviewerId", 3)))
+                .andExpect(status().isCreated()).andReturn());
+
+        String priya = login("priya@company.com", "Employee@123");
+        mvc.perform(as(priya, post("/api/tasks/" + first.get("id").asText() + "/status")
+                        .content(json("status", "IN_PROGRESS"))))
+                .andExpect(status().isOk());
+        mvc.perform(as(priya, post("/api/tasks/" + first.get("id").asText() + "/status")
+                        .content(json("status", "SUBMITTED"))))
+                .andExpect(status().isOk());
+
+        String sneha = login("sneha@company.com", "Employee@123");
+        mvc.perform(as(sneha, post("/api/tasks/" + second.get("id").asText() + "/status")
+                        .content(json("status", "IN_PROGRESS"))))
+                .andExpect(status().isOk());
+        mvc.perform(as(sneha, post("/api/tasks/" + second.get("id").asText() + "/status")
+                        .content(json("status", "SUBMITTED"))))
+                .andExpect(status().isOk());
+
+        String reviewer = login("rahul@company.com", "Employee@123");
+        mvc.perform(as(reviewer, post("/api/tasks/batch/approve"))
+                        .content(json("taskIds", java.util.List.of(
+                                first.get("id").asLong(), second.get("id").asLong()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$[1].status").value("COMPLETED"));
+    }
+
+    @Test
+    void employeeCanBatchAssignTasksWithOneSharedReviewer() throws Exception {
+        String priya = login("priya@company.com", "Employee@123");
+        mvc.perform(as(priya, post("/api/tasks/batch"))
+                        .content(json("assigneeIds", java.util.List.of(3, 4),
+                                "task", java.util.Map.of(
+                                        "title", "Employee shared task",
+                                        "priority", "MEDIUM",
+                                        "reviewerId", 2))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].assignee.id").value(3))
+                .andExpect(jsonPath("$[1].assignee.id").value(4))
+                .andExpect(jsonPath("$[0].reviewer.id").value(2))
+                .andExpect(jsonPath("$[1].reviewer.id").value(2));
+    }
+
+    @Test
     void profilePhotoCanBeChangedAndRemovedByItsOwner() throws Exception {
         String[] employee = newEmployee("Profile Photo");
         mvc.perform(as(employee[1], get("/api/profile/photo")))
@@ -135,6 +215,29 @@ class ApiIntegrationTest {
                 .andExpect(status().isNoContent());
         mvc.perform(as(employee[1], get("/api/profile/photo")))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void adminsCanManageEmployeePhotosButEmployeesCannotAccessTheAdminPhotoRoute() throws Exception {
+        String[] employee = newEmployee("Admin Photo");
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(4, 4, BufferedImage.TYPE_INT_RGB), "png", png);
+        String encoded = Base64.getEncoder().encodeToString(png.toByteArray());
+        String photoPath = "/api/employees/" + employee[0] + "/photo";
+
+        mvc.perform(as(admin, put(photoPath).content(json("image", encoded))))
+                .andExpect(status().isNoContent());
+        MvcResult photo = mvc.perform(as(admin, get(photoPath)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "image/jpeg"))
+                .andReturn();
+        assertThat(photo.getResponse().getContentAsByteArray()).startsWith((byte) 0xff, (byte) 0xd8);
+        mvc.perform(as(employee[1], get(photoPath))).andExpect(status().isForbidden());
+        mvc.perform(as(employee[1], put(photoPath).content(json("image", encoded))))
+                .andExpect(status().isForbidden());
+        mvc.perform(as(employee[1], get("/api/profile/photo")))
+                .andExpect(status().isOk());
+        mvc.perform(as(admin, delete(photoPath))).andExpect(status().isNoContent());
     }
 
     @Test

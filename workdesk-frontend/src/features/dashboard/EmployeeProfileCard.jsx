@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { reportService, profilePhotoService } from '@/services/index.js';
 import { personColor } from '@/utils/colors.js';
+import { encodeImage } from '@/utils/image.js';
+import { fmtDate } from '@/utils/format.js';
 
-export default function EmployeeProfileCard({ user, today, refreshKey }) {
+export default function EmployeeProfileCard({ user, employeeId, today, todayError, refreshKey }) {
   const [photo, setPhoto] = useState(null);
   const [performance, setPerformance] = useState(null);
   const [photoError, setPhotoError] = useState('');
   const [performanceError, setPerformanceError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [photoActionsOpen, setPhotoActionsOpen] = useState(false);
   const inputRef = useRef(null);
   const photoRef = useRef(null);
 
@@ -17,16 +20,12 @@ export default function EmployeeProfileCard({ user, today, refreshKey }) {
     setPhoto(url);
   };
 
-  const loadPhoto = async () => {
-    const url = await profilePhotoService.get();
-    replacePhoto(url);
-  };
-
   useEffect(() => {
     let active = true;
-    profilePhotoService.get()
+    replacePhoto(null);
+    profilePhotoService.get(employeeId)
       .then((url) => {
-        if (active) setPhoto(url);
+        if (active) replacePhoto(url);
         else if (url) URL.revokeObjectURL(url);
       })
       .catch((error) => active && setPhotoError(error.message));
@@ -35,36 +34,26 @@ export default function EmployeeProfileCard({ user, today, refreshKey }) {
       if (photoRef.current) URL.revokeObjectURL(photoRef.current);
       photoRef.current = null;
     };
-  }, []);
+  }, [employeeId]);
 
   useEffect(() => {
     let active = true;
-    reportService.performance()
+    reportService.performance({ employeeId })
       .then((result) => active && setPerformance(result))
       .catch((error) => active && setPerformanceError(error.message));
     return () => { active = false; };
-  }, [refreshKey]);
+  }, [employeeId, refreshKey]);
 
   const upload = async (file) => {
     if (!file) return;
     setPhotoError('');
-    if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) {
-      setPhotoError('Choose an image file smaller than 10 MB.');
-      return;
-    }
-
+    setPhotoActionsOpen(false);
     setBusy(true);
     try {
-      const bitmap = await createImageBitmap(file);
-      const scale = Math.min(1, 512 / Math.max(bitmap.width, bitmap.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-      canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      bitmap.close();
-      const base64 = canvas.toDataURL('image/jpeg', 0.82).split(',')[1];
-      await profilePhotoService.save(base64);
-      await loadPhoto();
+      const base64 = await encodeImage(file);
+      await profilePhotoService.save(base64, employeeId);
+      const url = await profilePhotoService.get(employeeId);
+      replacePhoto(url);
     } catch (error) {
       setPhotoError(error.message || 'Could not upload this image.');
     } finally {
@@ -75,15 +64,21 @@ export default function EmployeeProfileCard({ user, today, refreshKey }) {
 
   const removePhoto = async () => {
     setPhotoError('');
+    setPhotoActionsOpen(false);
     setBusy(true);
     try {
-      await profilePhotoService.remove();
+      await profilePhotoService.remove(employeeId);
       replacePhoto(null);
     } catch (error) {
-      setPhotoError(error.message);
+      setPhotoError(error.message || 'Could not remove this image.');
     } finally {
       setBusy(false);
     }
+  };
+
+  const openPhotoPicker = () => {
+    setPhotoActionsOpen(false);
+    inputRef.current?.click();
   };
 
   const completion = performance?.completionRate ?? 0;
@@ -91,19 +86,24 @@ export default function EmployeeProfileCard({ user, today, refreshKey }) {
   return (
     <section className="panel employee-profile-card" aria-label="Employee profile and progress">
       <div className="employee-profile-photo-column">
-        <div className="employee-profile-photo" style={{ background: personColor(user.fullName) }}>
+        <button type="button" className="employee-profile-photo" style={{ background: personColor(user.fullName) }}
+          disabled={busy} onClick={openPhotoPicker} aria-label={`Choose profile photo for ${user.fullName}`}>
           {photo
             ? <img src={photo} alt={`${user.fullName} profile`} />
             : <span aria-hidden="true">{user.fullName.charAt(0).toUpperCase()}</span>}
-        </div>
-        <div className="employee-photo-actions">
-          <input ref={inputRef} className="sr-only" type="file" accept="image/*"
-            aria-label="Choose profile photo" onChange={(event) => upload(event.target.files?.[0])} />
-          <button type="button" className="link-btn" disabled={busy} onClick={() => inputRef.current?.click()}>
-            {busy ? 'Saving…' : photo ? 'Change photo' : 'Add photo'}
-          </button>
-          {photo && <button type="button" className="link-btn danger" disabled={busy} onClick={removePhoto}>Remove</button>}
-        </div>
+        </button>
+        <button type="button" className="link-btn" disabled={busy}
+          onClick={() => photo ? setPhotoActionsOpen((open) => !open) : openPhotoPicker()}>
+          {photo ? 'Change image' : 'Add image'}
+        </button>
+        {photo && photoActionsOpen && (
+          <div className="employee-photo-options" aria-label="Profile image actions">
+            <button type="button" className="link-btn" disabled={busy} onClick={openPhotoPicker}>Select new image</button>
+            <button type="button" className="link-btn danger" disabled={busy} onClick={removePhoto}>Remove image</button>
+          </div>
+        )}
+        <input ref={inputRef} className="sr-only" type="file" accept="image/*"
+          aria-label="Choose profile photo" onChange={(event) => upload(event.target.files?.[0])} />
       </div>
 
       <div className="employee-profile-main">
@@ -118,6 +118,7 @@ export default function EmployeeProfileCard({ user, today, refreshKey }) {
           <div><dt>Email</dt><dd>{user.email}</dd></div>
           <div><dt>Employee code</dt><dd>{user.employeeCode || '—'}</dd></div>
           <div><dt>Phone</dt><dd>{user.phone || '—'}</dd></div>
+          {user.createdAt && <div><dt>Joined</dt><dd>{fmtDate(user.createdAt)}</dd></div>}
         </dl>
 
         <div className="employee-profile-progress">
@@ -137,6 +138,7 @@ export default function EmployeeProfileCard({ user, today, refreshKey }) {
             <span><b>{performance?.overdue ?? '—'}</b> Overdue</span>
           </div>
         </div>
+        {todayError && <p className="error small" role="alert">{todayError}</p>}
         {photoError && <p className="error small" role="alert">{photoError}</p>}
       </div>
     </section>

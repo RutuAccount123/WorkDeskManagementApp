@@ -29,14 +29,14 @@ describe('repeating tasks', () => {
     const tomorrow = addDays(new Date(new Date().setHours(0, 0, 0, 0)), 1);
     expect((await copiesOf('Weekly vendor call')).filter((t) => new Date(t.dueAt) >= tomorrow)).toHaveLength(0);
   });
-  it('employees only see and change their own', async () => {
+  it('employees see their templates and can create repeating work for another person', async () => {
     await signIn(PRIYA);
     const list = await recurringService.list();
     expect(list.every((r) => r.assignee.id === 2)).toBe(true);
     const adminMade = list.find((r) => !r.selfOwned);
     if (adminMade) await expect(recurringService.setActive(adminMade.id, false)).rejects.toThrow('Only your admin');
-    const own = await recurringService.create({ title: 'My daily plan', frequency: 'DAILY', assigneeId: 5 });
-    expect(own.assignee.id).toBe(2); // always for themselves
+    const assigned = await recurringService.create({ title: 'My daily plan', frequency: 'DAILY', assigneeId: 5 });
+    expect(assigned.assignee.id).toBe(5);
   });
 });
 

@@ -1,25 +1,50 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { employeeService } from '@/services/index.js';
+import { employeeService, profilePhotoService } from '@/services/index.js';
 import { useAuth } from '@/features/auth/AuthContext.jsx';
 import Modal from '@/components/ui/Modal.jsx';
+import { encodeImage } from '@/utils/image.js';
+import { personColor } from '@/utils/colors.js';
 
 const EMPTY = { employeeCode: '', fullName: '', email: '', password: '', role: 'EMPLOYEE', department: '', designation: '', phone: '' };
 
 function EmployeeForm({ employee, onClose, onSaved }) {
   const [form, setForm] = useState(employee ? { ...EMPTY, ...employee, password: '' } : EMPTY);
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoActionsOpen, setPhotoActionsOpen] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const photoInputRef = useRef(null);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  useEffect(() => {
+    if (!photoFile) {
+      setPhotoPreview(null);
+      return undefined;
+    }
+    const url = URL.createObjectURL(photoFile);
+    setPhotoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photoFile]);
 
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
+      const photoData = !employee && photoFile ? await encodeImage(photoFile) : null;
       const saved = employee
         ? await employeeService.update(employee.id, form)
         : await employeeService.create(form);
+      if (photoData) {
+        try {
+          await profilePhotoService.save(photoData, saved.id);
+        } catch (photoError) {
+          onSaved(saved, `Employee was created, but the profile photo could not be uploaded: ${photoError.message}`);
+          return;
+        }
+      }
       onSaved(saved);
     } catch (err) {
       setError(err.message);
@@ -30,6 +55,41 @@ function EmployeeForm({ employee, onClose, onSaved }) {
   return (
     <Modal title={employee ? `Edit ${employee.fullName}` : 'Add employee'} onClose={onClose}>
       <form className="form" onSubmit={submit}>
+        {!employee && (
+          <div className="employee-photo-picker-wrap">
+            <button type="button" className="employee-profile-photo employee-form-photo"
+              style={{ background: personColor(form.fullName) }}
+              onClick={() => photoInputRef.current?.click()}
+              aria-label="Choose profile photo">
+              {photoPreview
+                ? <img src={photoPreview} alt="Selected employee profile" />
+                : <span aria-hidden="true">{form.fullName.trim().charAt(0).toUpperCase() || '?'}</span>}
+            </button>
+            <button type="button" className="link-btn"
+              onClick={() => photoFile ? setPhotoActionsOpen((open) => !open) : photoInputRef.current?.click()}>
+              {photoFile ? 'Change image' : 'Add image'}
+            </button>
+            {photoFile && photoActionsOpen && (
+              <div className="employee-photo-options" aria-label="Profile image actions">
+                <button type="button" className="link-btn" onClick={() => {
+                  setPhotoActionsOpen(false);
+                  photoInputRef.current?.click();
+                }}>Select new image</button>
+                <button type="button" className="link-btn danger" onClick={() => {
+                  setPhotoFile(null);
+                  setPhotoActionsOpen(false);
+                }}>Remove image</button>
+              </div>
+            )}
+            <input ref={photoInputRef} className="sr-only" type="file" accept="image/*"
+              aria-label="Choose profile photo"
+              onChange={(event) => {
+                setPhotoFile(event.target.files?.[0] || null);
+                setPhotoActionsOpen(false);
+                event.target.value = '';
+              }} />
+          </div>
+        )}
         <div className="grid-2">
           <label>Full name<input value={form.fullName} onChange={set('fullName')} required autoFocus /></label>
           <label>Employee code<input value={form.employeeCode || ''} onChange={set('employeeCode')} placeholder="Optional" /></label>
@@ -138,7 +198,11 @@ export default function Employees() {
       )}
       {editing && (
         <EmployeeForm employee={editing.id ? editing : null} onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); load(); }} />
+          onSaved={(_saved, photoError) => {
+            setEditing(null);
+            load();
+            if (photoError) setError(photoError);
+          }} />
       )}
     </div>
   );

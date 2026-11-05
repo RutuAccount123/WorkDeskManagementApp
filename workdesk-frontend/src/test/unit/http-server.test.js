@@ -34,6 +34,54 @@ describe('http against the real backend', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(400, { message: 'title: must not be blank' })));
     await expect(http('/api/tasks', { method: 'POST', body: {} })).rejects.toThrow('title: must not be blank');
   });
+  it('preserves the server status on errors', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(405, { message: 'This action is not supported here' })));
+    await expect(http('/api/tasks/batch', { method: 'POST', body: {} })).rejects.toMatchObject({
+      message: 'This action is not supported here',
+      status: 405,
+    });
+  });
+  it('creates multi-assignee tasks individually if the backend lacks the batch endpoint', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(json(405, { message: 'This action is not supported here' }))
+      .mockResolvedValueOnce(json(201, { id: 21, assignee: { id: 2 } }))
+      .mockResolvedValueOnce(json(201, { id: 22, assignee: { id: 3 } }));
+    vi.stubGlobal('fetch', fetch);
+
+    const tasks = await taskService.createForAssignees([2, 3], { title: 'Shared work', reviewerId: 1 });
+
+    expect(tasks.map((task) => task.assignee.id)).toEqual([2, 3]);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch.mock.calls.slice(1).map(([, request]) => JSON.parse(request.body))).toEqual([
+      { title: 'Shared work', reviewerId: 1, assigneeId: 2 },
+      { title: 'Shared work', reviewerId: 1, assigneeId: 3 },
+    ]);
+  });
+  it('explains when single-task creation is also rejected after batch fallback', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(json(405, { message: 'This action is not supported here' }))
+      .mockResolvedValueOnce(json(405, { message: 'This action is not supported here' }));
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(taskService.createForAssignees([2, 3], { title: 'Shared work', reviewerId: 1 }))
+      .rejects.toThrow('The backend rejected single-task creation (HTTP 405), so no tasks were created');
+  });
+  it('approves selected tasks individually if the backend lacks the batch approval endpoint', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(json(405, { message: 'This action is not supported here' }))
+      .mockResolvedValueOnce(json(200, { id: 21, status: 'COMPLETED' }))
+      .mockResolvedValueOnce(json(200, { id: 22, status: 'COMPLETED' }));
+    vi.stubGlobal('fetch', fetch);
+
+    const approved = await taskService.approveMany([21, 22]);
+
+    expect(approved.map((task) => task.status)).toEqual(['COMPLETED', 'COMPLETED']);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch.mock.calls.slice(1).map(([url, request]) => [url, JSON.parse(request.body)])).toEqual([
+      ['https://api.example.com/api/tasks/21/status', { status: 'COMPLETED' }],
+      ['https://api.example.com/api/tasks/22/status', { status: 'COMPLETED' }],
+    ]);
+  });
   it('falls back to the status code when the error has no body', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('oops', { status: 500 })));
     await expect(http('/api/tasks')).rejects.toThrow('Request failed (500)');

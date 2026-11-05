@@ -85,9 +85,10 @@ public class RecurringGenerator {
         Task t = new Task();
         t.setTitle(tpl.getTitle());
         t.setDescription(tpl.getDescription());
+        t.setImageData(tpl.getImageData());
         t.setAssignee(tpl.getAssignee());
         t.setCreatedBy(tpl.getCreatedBy());
-        t.setReviewer(selfOwned ? null : tpl.getCreatedBy());
+        t.setReviewer(tpl.getReviewer());
         t.setPriority(tpl.getPriority());
         t.setStatus(TaskStatus.TODO);
         Instant scheduledAt = tpl.getScheduledTime() == null ? null : time.at(day, tpl.getScheduledTime());

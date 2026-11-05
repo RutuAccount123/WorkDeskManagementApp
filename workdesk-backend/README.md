@@ -208,7 +208,7 @@ except sign-in and health. Errors are always `{"status": 400, "message": "..."}`
 | Sign in | `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/change-password` |
 | People | `GET /api/people` |
 | Employees (admin) | `GET/POST /api/employees`, `GET/PUT /api/employees/{id}`, `PATCH …/active?value=`, `POST …/reset-password` |
-| Tasks | `GET /api/tasks?scope=&status=&assigneeId=&priority=&overdue=&q=&workFrom=&workTo=`, `POST`, `GET/PUT/DELETE /api/tasks/{id}`, `POST …/status`, `POST …/comments`, `GET …/activity`, `POST …/checklist` |
+| Tasks | `GET /api/tasks?scope=&status=&assigneeId=&priority=&overdue=&q=&workFrom=&workTo=`, `POST` (single task), `POST /api/tasks/batch` (`assigneeIds` plus shared `task` including optional `reviewerId`), `POST /api/tasks/batch/approve` (`taskIds`, atomic bulk approval), `GET/PUT/DELETE /api/tasks/{id}`, `POST …/status`, `POST …/comments`, `GET …/activity`, `POST …/checklist` |
 | Daily & weekly | `GET/POST /api/recurring`, `PUT/DELETE /api/recurring/{id}`, `PATCH …/active`, `POST …/generate-now` |
 | Holidays | `GET /api/holidays?year=` or `?from=&to=`; admin: `POST`, `PUT/DELETE /api/holidays/{id}` |
 | FMS | `GET/POST /api/workflows`, `GET/PUT/DELETE /api/workflows/{id}`, `PATCH …/active`, `POST …/start-now`, `GET …/{id}/runs?from=&to=`, `GET /api/workflows/runs?date=` or `?taskId=`, `GET /api/workflows/runs/{runId}`, `POST …/runs/{runId}/form` |

@@ -38,13 +38,33 @@ public class ProfilePhotoService {
 
     @Transactional(readOnly = true)
     public Optional<byte[]> get(CurrentUser user) {
-        Long employeeId = people.me(user).getId();
+        return get(people.me(user).getId());
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<byte[]> getForEmployee(CurrentUser user, Long employeeId) {
+        people.requireAdmin(user);
+        people.get(employeeId);
+        return get(employeeId);
+    }
+
+    private Optional<byte[]> get(Long employeeId) {
         return photos.findById(employeeId).map(ProfilePhoto::getImageData);
     }
 
     @Transactional
     public void save(CurrentUser user, String encodedImage) {
-        Long employeeId = people.me(user).getId();
+        save(people.me(user).getId(), encodedImage);
+    }
+
+    @Transactional
+    public void saveForEmployee(CurrentUser user, Long employeeId, String encodedImage) {
+        people.requireAdmin(user);
+        people.get(employeeId);
+        save(employeeId, encodedImage);
+    }
+
+    private void save(Long employeeId, String encodedImage) {
         if (encodedImage == null || encodedImage.isBlank() || encodedImage.length() > MAX_ENCODED_BYTES * 4L / 3L + 8) {
             throw new BadRequestException("Choose an image smaller than 5 MB");
         }
@@ -108,5 +128,12 @@ public class ProfilePhotoService {
     @Transactional
     public void remove(CurrentUser user) {
         photos.deleteById(people.me(user).getId());
+    }
+
+    @Transactional
+    public void removeForEmployee(CurrentUser user, Long employeeId) {
+        people.requireAdmin(user);
+        people.get(employeeId);
+        photos.deleteById(employeeId);
     }
 }

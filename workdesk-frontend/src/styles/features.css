@@ -13,6 +13,13 @@
 .task-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; background: var(--surface); }
 .task-list-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 12px; border: 0; border-radius: 0; overflow: visible; background: transparent; }
 .task-list-cards > li { min-width: 0; }
+.task-list-selectable:not(.task-list-cards) > .task-list-item-selectable { display: flex; align-items: center; }
+.task-list-selectable.task-list-cards > .task-list-item-selectable {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px;
+}
+.task-list-item-selectable > .task-row { min-width: 0; }
+.task-select { display: grid; place-items: center; padding: 8px; }
+.task-select input { width: 18px; height: 18px; accent-color: var(--primary); }
 .task-list-cards .task-row { height: 100%; min-height: 100px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-sm); }
 .task-list-cards .task-row:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
 .task-list-cards .task-title { white-space: normal; }
@@ -32,6 +39,7 @@
 .perf-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
 .perf-head .section-title { margin: 0; }
 .team-controls { display: flex; align-items: center; gap: 10px; }
+.task-bulk-actions { justify-content: space-between; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
 .team-controls select { width: auto; }
 .team-search { width: 220px; }
 .team { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
@@ -88,9 +96,19 @@
 .wv-summary { font-size: var(--fs-sm); color: var(--muted); }
 .employee-profile-card { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 24px; align-items: center; }
 .employee-profile-photo-column { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.employee-profile-photo { width: 148px; height: 148px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; color: #fff; font-size: 4rem; font-weight: 700; box-shadow: 0 0 0 6px var(--surface-2); }
+.employee-profile-photo { width: 148px; height: 148px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; overflow: hidden; color: #fff; font-size: 4rem; font-weight: 700; box-shadow: 0 0 0 6px var(--surface-2); cursor: pointer; }
+.employee-profile-photo:focus-visible { outline: 3px solid var(--primary); outline-offset: 7px; }
+.employee-profile-photo:disabled { cursor: wait; }
 .employee-profile-photo img { width: 100%; height: 100%; object-fit: cover; }
-.employee-photo-actions { display: flex; align-items: center; gap: 12px; }
+.employee-photo-picker-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.employee-photo-options { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.employee-form-photo { width: 88px; height: 88px; font-size: 2.4rem; }
+.assignee-picker { min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.assignee-picker legend { padding: 0 5px; font-weight: 600; }
+.assignee-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; max-height: 220px; overflow-y: auto; }
+.assignee-option { display: flex; align-items: center; gap: 9px; padding: 8px; border-radius: var(--r-sm); background: var(--surface-2); cursor: pointer; }
+.assignee-option input { flex: 0 0 auto; }
+.assignee-option span { display: flex; flex-direction: column; }
 .employee-profile-main { min-width: 0; }
 .employee-profile-heading { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .employee-profile-heading h2 { font-size: var(--fs-xl); }
@@ -678,6 +696,9 @@ button.run-body:hover strong { color: var(--primary); }
 
 /* ================= full task page ================= */
 .task-page { gap: 18px; }
+.task-reference-image { display: block; max-width: 100%; max-height: 420px; object-fit: contain; margin-top: 12px; border-radius: var(--r-md); }
+.modal:has(.task-attachment-preview) { width: min(1100px, 100%); }
+.task-attachment-preview { display: block; max-width: 100%; max-height: calc(100vh - 180px); margin: 0 auto; object-fit: contain; }
 .task-page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .task-page-head h1 { margin: 4px 0 10px; }
 .task-chips { gap: 8px; }

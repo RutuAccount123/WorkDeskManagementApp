@@ -30,7 +30,9 @@ export async function http(path, { method = 'GET', body, raw = false } = {}) {
     throw new Error('Your session has ended. Please sign in again.');
   }
   if (res.status >= 400) {
-    throw new Error(res.data?.message || `Request failed (${res.status})`);
+    const error = new Error(res.data?.message || `Request failed (${res.status})`);
+    error.status = res.status;
+    throw error;
   }
   if (raw) return res.data instanceof Response ? res.data : res.response;
   if (res.status === 204) return null;
