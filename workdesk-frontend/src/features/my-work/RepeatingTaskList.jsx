@@ -2,7 +2,17 @@ import { useEffect, useState } from 'react';
 import { recurringService } from '@/services/index.js';
 import { dayLabel, fmtDate } from '@/utils/format.js';
 
-/** Employee: their daily and weekly tasks (their own, and the ones admin set up for them). */
+function scheduleLabel(task) {
+  if (task.frequency === 'DAILY') return 'Mon–Sat';
+  if (task.frequency === 'WEEKLY') return `Every ${dayLabel(task.dayOfWeek)}`;
+  if (task.frequency === 'MONTHLY') {
+    return task.startDate ? `Monthly on day ${Number(task.startDate.slice(-2))}` : 'Monthly';
+  }
+  if (task.frequency === 'YEARLY') return task.startDate ? `Yearly on ${task.startDate}` : 'Yearly';
+  return 'Schedule unavailable';
+}
+
+/** Employee: repeating tasks (their own, and the ones admin set up for them). */
 export default function RepeatingTaskList({ refreshKey, onChanged }) {
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
@@ -19,10 +29,10 @@ export default function RepeatingTaskList({ refreshKey, onChanged }) {
 
   return (
     <section className="panel">
-      <h2 className="section-title">My daily &amp; weekly tasks</h2>
+      <h2 className="section-title">My repeating tasks</h2>
       {error && <p className="error">{error}</p>}
       {list.length === 0 ? (
-        <p className="muted">None yet. Use <strong>Add my work</strong> and choose “Every day” or “Every week”.</p>
+        <p className="muted">No repeating tasks yet.</p>
       ) : (
         <ul className="repeat-list">
           {list.map((t) => (
@@ -33,7 +43,7 @@ export default function RepeatingTaskList({ refreshKey, onChanged }) {
               <span className="repeat-main">
                 <strong>{t.title}</strong>
                 <small className="muted">
-                  {t.frequency === 'DAILY' ? 'Mon–Sat' : `Every ${dayLabel(t.dayOfWeek)}`}, by {t.dueTime.slice(0, 5)}
+                  {scheduleLabel(t)}, by {t.dueTime.slice(0, 5)}
                   {t.estimatedHours != null && ` · ${t.estimatedHours} estimated hours`}
                   {' · '}{t.selfOwned ? 'set by you' : `set by ${t.createdBy?.fullName || 'admin'}`}
                   {!t.active && ' · paused'}

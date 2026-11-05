@@ -50,6 +50,11 @@ describe('date helpers', () => {
     expect(fromMonthKey('2026-10').getMonth()).toBe(9);
   });
   it('dayLabel capitalises a weekday', () => expect(dayLabel('MONDAY')).toBe('Monday'));
+  it('dayLabel handles missing values from incomplete API data', () => {
+    expect(dayLabel(null)).toBe('—');
+    expect(dayLabel(undefined)).toBe('—');
+    expect(dayLabel('')).toBe('—');
+  });
 });
 
 describe('relativeDue', () => {

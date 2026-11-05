@@ -13,7 +13,9 @@ export const STATUS_LABEL = {
 export const PRIORITY_LABEL = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' };
 export const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 export const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
-export const dayLabel = (d) => d.charAt(0) + d.slice(1).toLowerCase();
+export const dayLabel = (d) => (typeof d === 'string' && d.trim()
+  ? d.charAt(0) + d.slice(1).toLowerCase()
+  : '—');
 
 const dtFmt = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 const dFmt = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
