@@ -1,19 +1,19 @@
 /* =====================================================================
-   THEME LAYER — plain solid colours: violet accent + flat pastel cards.
+   THEME LAYER — fresh green accents, deep forest navigation and soft mint cards.
    Loaded last, so it styles on top of the base components.
    ===================================================================== */
 
-/* ---------- side menu: solid deep violet ---------- */
+/* ---------- side menu: solid forest green ---------- */
 .sidebar { background: var(--nav-solid); }
-.brand-mark { background: var(--button-bg); }
+.brand-mark { background: var(--button-bg); color: #17381A; }
 .nav-item.active { background: var(--nav-active); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
-.nav-item.active::before { background: #F0ABFC; }
-.nav-item.active svg { color: #F0ABFC; }
+.nav-item.active::before { background: var(--accent); }
+.nav-item.active svg { color: var(--accent); }
 .mobile-tabs { background: var(--nav-solid); }
 
 /* ---------- buttons: solid primary ---------- */
 .btn.primary { background: var(--button-bg); box-shadow: none; }
-.btn.primary:hover:not(:disabled) { background: var(--primary-hover); filter: none; }
+.btn.primary:hover:not(:disabled) { background: #68E344; filter: none; }
 
 /* ---------- welcome banner (dashboard & my work) ---------- */
 .page-head.hero {
@@ -22,10 +22,10 @@
 }
 .page-head.hero h1 { color: #fff; font-size: var(--fs-2xl); font-weight: 800; }
 .page-head.hero p { color: rgba(255, 255, 255, 0.85); }
-.page-head.hero .btn.primary { background: #FFFFFF; color: var(--primary-text); }
-.page-head.hero .btn.primary:hover:not(:disabled) { background: #F3EEFF; }
-.page-head.hero .btn.ghost { background: #5B21B6; border-color: #8B5CF6; color: #fff; }
-.page-head.hero .btn.ghost:hover:not(:disabled) { background: #4C1D95; }
+.page-head.hero .btn.primary { background: var(--accent); color: #17381A; }
+.page-head.hero .btn.primary:hover:not(:disabled) { background: #6FE446; }
+.page-head.hero .btn.ghost { background: #145A34; border-color: #54D621; color: #fff; }
+.page-head.hero .btn.ghost:hover:not(:disabled) { background: #10482B; }
 
 /* ---------- panels: soft lift ---------- */
 .panel { border-color: transparent; box-shadow: var(--shadow-md); }
@@ -33,7 +33,7 @@
 /* ---------- headline cards: pastel fill, bold icon & number ---------- */
 .stat {
   position: relative; overflow: hidden; border: 0; padding: 20px 22px;
-  background: var(--card-fill, var(--pastel-violet)); box-shadow: none;
+  background: var(--card-fill, var(--pastel-green)); box-shadow: none;
 }
 a.stat:hover { box-shadow: var(--shadow-md); border: 0; }
 .stat-icon { width: 50px; height: 50px; border-radius: 14px; background: var(--tone-line, var(--primary)); color: #fff; box-shadow: none; }
@@ -41,13 +41,13 @@ a.stat:hover { box-shadow: var(--shadow-md); border: 0; }
 .stat-label { color: var(--text-2); }
 .tone-overdue { --card-fill: var(--pastel-rose); --tone-line: #F43F5E; --tone: #BE123C; }
 .tone-today { --card-fill: var(--pastel-peach); --tone-line: #F97316; --tone: #C2410C; }
-.tone-review { --card-fill: var(--pastel-violet); --tone-line: #8B5CF6; --tone: #6D28D9; }
+.tone-review { --card-fill: var(--pastel-green); --tone-line: #79A94D; --tone: #3F751F; }
 .tone-progress { --card-fill: var(--pastel-sky); --tone-line: #0EA5E9; --tone: #0369A1; }
-.tone-done { --card-fill: var(--pastel-mint); --tone-line: #10B981; --tone: #047857; }
+.tone-done { --card-fill: var(--pastel-mint); --tone-line: var(--primary); --tone: #267A25; }
 
 /* ---------- employee cards: tinted header band ---------- */
 .member { border: 0; border-top: 0; padding: 0; overflow: hidden; box-shadow: var(--shadow-md); }
-.member:hover { box-shadow: 0 6px 18px rgba(76, 29, 149, 0.12); }
+.member:hover { box-shadow: 0 6px 18px rgba(28, 67, 38, 0.12); }
 .member-top { padding: 16px 18px 14px; background: color-mix(in srgb, var(--member-color) 10%, white); }
 .member-top .avatar { box-shadow: 0 0 0 3px #fff; }
 .member-counts, .member-work, .member-empty, .member-more { margin: 0 18px; }
@@ -57,28 +57,24 @@ a.stat:hover { box-shadow: var(--shadow-md); border: 0; }
 .member-counts span { border-radius: 10px; }
 
 /* ---------- reminder banners: flat pastel ---------- */
-.reminder { border: 0; background: var(--pastel-violet); box-shadow: none; }
+.reminder { border: 0; background: var(--pastel-green); box-shadow: none; }
 .reminder.has-late { background: var(--pastel-rose); }
 .holiday-next { background: var(--pastel-peach); }
 
 /* ---------- performance score: solid colours ---------- */
-.score-bg-high { background: #10B981; }
+.score-bg-high { background: var(--primary); }
 .score-bg-good { background: var(--primary); }
 
 /* ---------- tabs & segmented control in the accent ---------- */
-.segmented { background: var(--pastel-violet); }
+.segmented { background: var(--pastel-green); }
 .segmented button.on { color: var(--primary-text); }
 .scope-tabs button.on { color: var(--primary); border-bottom-color: var(--accent); }
 
 /* ---------- task lists & calendar ---------- */
 .task-list { border-color: var(--border); }
-.task-row:hover, .work-item:hover { background: var(--pastel-violet); }
-.week-day.is-today, .month-cell.is-today { background: #FBF8FF; }
+.task-row:hover, .work-item:hover { background: var(--pastel-green); }
+.week-day.is-today, .month-cell.is-today { background: #F2F8EF; }
 .day-col { background: var(--surface-2); }
 .dc-todo { background: #FFFBF6; }
 .dc-progress { background: #F7FBFF; }
-.dc-done { background: #F6FDF9; }
-
-/* ---------- login: solid violet ---------- */
-.login-side { background: var(--nav-solid); }
-.login-steps li::before { border-top-color: #F0ABFC; }
+.dc-done { background: #F0F8F1; }

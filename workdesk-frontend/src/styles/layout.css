@@ -26,9 +26,9 @@
 .nav-item:hover { background: var(--nav-hover); color: var(--nav-text-strong); text-decoration: none; }
 .nav-item.active { background: var(--nav-active); color: var(--nav-text-strong); font-weight: 600; }
 .nav-item.active::before {
-  content: ''; position: absolute; left: -14px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: #818CF8;
+  content: ''; position: absolute; left: -14px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent);
 }
-.nav-item.active svg { color: #A5B4FC; }
+.nav-item.active svg { color: var(--accent); }
 .sidebar-user {
   margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px 8px 0;
   border-top: 1px solid rgba(255,255,255,0.07);

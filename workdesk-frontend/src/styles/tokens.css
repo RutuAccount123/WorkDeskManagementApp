@@ -1,55 +1,54 @@
 /* =====================================================================
-   DESIGN TOKENS — change the look of the whole app from this one file.
-   Plain solid colours only: deep violet sidebar, violet accent, flat pastel cards.
+   DESIGN TOKENS — fresh lime accents, deep forest navigation and mint surfaces.
    ===================================================================== */
 :root {
   /* surfaces */
-  --bg: #F6F4FC;
+  --bg: #F4F8F3;
   --surface: #FFFFFF;
-  --surface-2: #F9F8FE;
-  --border: #ECE8F6;
-  --border-strong: #D6CFEA;
+  --surface-2: #F7FAF6;
+  --border: #E5EDE3;
+  --border-strong: #CFDCCB;
 
   /* text (deep navy, never pure black) */
-  --text: #1F1636;
-  --text-2: #463C5E;
-  --muted: #776D8F;
+  --text: #203326;
+  --text-2: #465B4A;
+  --muted: #718174;
 
   /* sidebar (the dark part) */
-  --nav-bg: #2E1065;
-  --nav-bg-2: #2E1065;
-  --nav-text: #C9BEE8;
+  --nav-bg: #123B2A;
+  --nav-bg-2: #123B2A;
+  --nav-text: #C6DDCC;
   --nav-text-strong: #FFFFFF;
-  --nav-section: #9184BA;
+  --nav-section: #91B49B;
   --nav-hover: rgba(255, 255, 255, 0.08);
   --nav-active: rgba(255, 255, 255, 0.14);
 
   /* brand accent (the rich colour) */
-  --primary: #7C3AED;
-  --primary-hover: #6D28D9;
-  --primary-soft: #F3EEFF;
-  --primary-text: #5B21B6;
-  --on-primary: #FFFFFF;
+  --primary: #2E7D16;
+  --primary-hover: #256214;
+  --primary-soft: #EDFAE7;
+  --primary-text: #246A12;
+  --on-primary: #17381A;
 
   /* solid accent colours (no gradients) */
-  --accent: #EC4899;
-  --hero-bg: #6D28D9;      /* welcome banner */
-  --button-bg: #7C3AED;    /* main buttons */
-  --nav-solid: #2E1065;    /* side menu */
+  --accent: #54D621;
+  --hero-bg: #1B6632;
+  --button-bg: #54D621;
+  --nav-solid: #123B2A;
 
   /* faint pastel card fills */
-  --pastel-violet: #F3EEFF;
-  --pastel-pink: #FDEEF6;
+  --pastel-green: #EFF9E9;
+  --pastel-pink: #EFF9E9;
   --pastel-peach: #FFF1E6;
-  --pastel-mint: #E8FAF1;
+  --pastel-mint: #EAF7E5;
   --pastel-sky: #E9F5FF;
   --pastel-rose: #FFEDEF;
 
   /* status: strong text on a faint tint */
   --todo: #B54708;      --todo-bg: #FEF6EE;      --todo-line: #F79009;
   --progress: #175CD3;  --progress-bg: #EFF6FF;  --progress-line: #2E90FA;
-  --review: #6941C6;    --review-bg: #F4F1FF;    --review-line: #7A5AF8;
-  --done: #067647;      --done-bg: #ECFDF3;      --done-line: #17B26A;
+  --review: #3F751F;    --review-bg: #EFF6E7;    --review-line: #79A94D;
+  --done: #267A25;      --done-bg: #ECF9E8;      --done-line: #2E7D16;
   --overdue: #B42318;   --overdue-bg: #FEF3F2;   --overdue-line: #F04438;
   --back: #93370D;      --back-bg: #FFFAEB;      --back-line: #FDB022;
   --holiday: #C4320A;   --holiday-bg: #FFF4ED;   --holiday-line: #FB6514;
@@ -71,10 +70,10 @@
   --r-md: 12px;
   --r-lg: 18px;
   --r-pill: 999px;
-  --shadow-sm: 0 1px 3px rgba(76, 29, 149, 0.06);
-  --shadow-md: 0 2px 6px rgba(76, 29, 149, 0.06), 0 10px 24px rgba(76, 29, 149, 0.08);
+  --shadow-sm: 0 1px 3px rgba(35, 91, 24, 0.06);
+  --shadow-md: 0 2px 6px rgba(35, 91, 24, 0.06), 0 10px 24px rgba(35, 91, 24, 0.08);
   --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.16);
-  --focus: 0 0 0 4px rgba(124, 58, 237, 0.18);
+  --focus: 0 0 0 4px rgba(84, 214, 33, 0.28);
 
   /* layout */
   --sidebar-w: 256px;

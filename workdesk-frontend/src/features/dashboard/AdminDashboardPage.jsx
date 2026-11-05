@@ -83,7 +83,7 @@ export default function Overview() {
         <Stat value={stats?.completedThisWeek} label="Done this week" tone="done" icon="check" to={isAdmin ? '/tasks?status=COMPLETED&completedThisWeek=1' : undefined} />
       </div>
 
-      {isAdmin && <TeamOverview refreshKey={tasks} onOpen={setOpenId} />}
+      {isAdmin && <TeamOverview refreshKey={tasks} onOpen={setOpenId} employees={employees} />}
 
       {isAdmin && review.length > 0 && (
         <section className="panel">
