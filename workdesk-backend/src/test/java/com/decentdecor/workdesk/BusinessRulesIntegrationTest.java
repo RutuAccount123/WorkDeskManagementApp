@@ -272,15 +272,16 @@ class BusinessRulesIntegrationTest {
     }
 
     @Test
-    void employeesManageOnlyTheirOwnRepeatingWork() throws Exception {
+    void employeesCanCreateRepeatingWorkForOthersButCannotChangeAdminAssignments() throws Exception {
         Person p = person("Self Twelve");
         Person other = person("Other Thirteen");
-        JsonNode own = ok(p.token(), post("/api/recurring"), map("title", "My plan", "frequency", "DAILY", "assigneeId", other.id()));
-        assertThat(own.at("/assignee/id").asLong()).isEqualTo(p.id());   // always for themselves
-        assertThat(own.get("selfOwned").asBoolean()).isTrue();
+        JsonNode assigned = ok(p.token(), post("/api/recurring"), map("title", "My plan", "frequency", "DAILY", "assigneeId", other.id()));
+        assertThat(assigned.at("/assignee/id").asLong()).isEqualTo(other.id());
+        assertThat(assigned.get("selfOwned").asBoolean()).isFalse();
+        assertThat(assigned.at("/createdBy/id").asLong()).isEqualTo(p.id());
         JsonNode fromAdmin = ok(admin, post("/api/recurring"), map("title", "Admin plan", "frequency", "DAILY", "assigneeId", p.id()));
         call(p.token(), patch("/api/recurring/" + fromAdmin.get("id").asLong() + "/active?value=false"), null)
-                .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value("Only your admin can change this repeating task"));
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value("Only the person who assigned this repeating task can change it"));
         call(other.token(), patch("/api/recurring/" + fromAdmin.get("id").asLong() + "/active?value=false"), null).andExpect(status().isNotFound());
     }
 

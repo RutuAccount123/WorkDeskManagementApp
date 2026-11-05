@@ -114,59 +114,66 @@ class ApiIntegrationTest {
 
     @Test
     void batchTaskAssignmentCreatesIndependentTasksForEachAssignee() throws Exception {
+        String[] firstAssignee = newEmployee("Batch Assignee One");
+        String[] secondAssignee = newEmployee("Batch Assignee Two");
+        String[] reviewer = newEmployee("Batch Reviewer");
+        long firstAssigneeId = Long.parseLong(firstAssignee[0]);
+        long secondAssigneeId = Long.parseLong(secondAssignee[0]);
+        long reviewerId = Long.parseLong(reviewer[0]);
+
         MvcResult created = mvc.perform(as(admin, post("/api/tasks/batch"))
                         .content(mapper.writeValueAsString(java.util.Map.of(
-                                "assigneeIds", java.util.List.of(2, 3),
-                                "task", java.util.Map.of("title", "Shared checklist", "priority", "HIGH", "reviewerId", 1)))))
+                                "assigneeIds", java.util.List.of(firstAssigneeId, secondAssigneeId),
+                                "task", java.util.Map.of("title", "Shared checklist", "priority", "HIGH", "reviewerId", reviewerId)))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].assignee.id").value(2))
-                .andExpect(jsonPath("$[1].assignee.id").value(3))
-                .andExpect(jsonPath("$[0].reviewer.id").value(1))
-                .andExpect(jsonPath("$[1].reviewer.id").value(1))
+                .andExpect(jsonPath("$[0].assignee.id").value(firstAssigneeId))
+                .andExpect(jsonPath("$[1].assignee.id").value(secondAssigneeId))
+                .andExpect(jsonPath("$[0].reviewer.id").value(reviewerId))
+                .andExpect(jsonPath("$[1].reviewer.id").value(reviewerId))
                 .andReturn();
         JsonNode tasks = read(created);
         String firstId = tasks.get(0).get("id").asText();
         String secondId = tasks.get(1).get("id").asText();
         assertThat(firstId).isNotEqualTo(secondId);
 
-        String priya = login("priya@company.com", "Employee@123");
-        mvc.perform(as(priya, post("/api/tasks/" + firstId + "/status").content(json("status", "IN_PROGRESS"))))
+        mvc.perform(as(firstAssignee[1], post("/api/tasks/" + firstId + "/status").content(json("status", "IN_PROGRESS"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
-        String rahul = login("rahul@company.com", "Employee@123");
-        mvc.perform(as(rahul, get("/api/tasks/" + secondId)))
+        mvc.perform(as(secondAssignee[1], get("/api/tasks/" + secondId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("TODO"));
     }
 
     @Test
     void reviewerCanApproveMultipleSubmittedTasksInOneRequest() throws Exception {
+        String[] firstAssignee = newEmployee("Approval Assignee One");
+        String[] secondAssignee = newEmployee("Approval Assignee Two");
+        String[] reviewer = newEmployee("Approval Reviewer");
         JsonNode first = read(mvc.perform(as(admin, post("/api/tasks"))
-                        .content(json("title", "Bulk review first", "assigneeId", 2, "reviewerId", 3)))
+                        .content(json("title", "Bulk review first", "assigneeId", Long.parseLong(firstAssignee[0]),
+                                "reviewerId", Long.parseLong(reviewer[0]))))
                 .andExpect(status().isCreated()).andReturn());
         JsonNode second = read(mvc.perform(as(admin, post("/api/tasks"))
-                        .content(json("title", "Bulk review second", "assigneeId", 4, "reviewerId", 3)))
+                        .content(json("title", "Bulk review second", "assigneeId", Long.parseLong(secondAssignee[0]),
+                                "reviewerId", Long.parseLong(reviewer[0]))))
                 .andExpect(status().isCreated()).andReturn());
 
-        String priya = login("priya@company.com", "Employee@123");
-        mvc.perform(as(priya, post("/api/tasks/" + first.get("id").asText() + "/status")
+        mvc.perform(as(firstAssignee[1], post("/api/tasks/" + first.get("id").asText() + "/status")
                         .content(json("status", "IN_PROGRESS"))))
                 .andExpect(status().isOk());
-        mvc.perform(as(priya, post("/api/tasks/" + first.get("id").asText() + "/status")
+        mvc.perform(as(firstAssignee[1], post("/api/tasks/" + first.get("id").asText() + "/status")
                         .content(json("status", "SUBMITTED"))))
                 .andExpect(status().isOk());
 
-        String sneha = login("sneha@company.com", "Employee@123");
-        mvc.perform(as(sneha, post("/api/tasks/" + second.get("id").asText() + "/status")
+        mvc.perform(as(secondAssignee[1], post("/api/tasks/" + second.get("id").asText() + "/status")
                         .content(json("status", "IN_PROGRESS"))))
                 .andExpect(status().isOk());
-        mvc.perform(as(sneha, post("/api/tasks/" + second.get("id").asText() + "/status")
+        mvc.perform(as(secondAssignee[1], post("/api/tasks/" + second.get("id").asText() + "/status")
                         .content(json("status", "SUBMITTED"))))
                 .andExpect(status().isOk());
 
-        String reviewer = login("rahul@company.com", "Employee@123");
-        mvc.perform(as(reviewer, post("/api/tasks/batch/approve"))
+        mvc.perform(as(reviewer[1], post("/api/tasks/batch/approve"))
                         .content(json("taskIds", java.util.List.of(
                                 first.get("id").asLong(), second.get("id").asLong()))))
                 .andExpect(status().isOk())
@@ -177,19 +184,25 @@ class ApiIntegrationTest {
 
     @Test
     void employeeCanBatchAssignTasksWithOneSharedReviewer() throws Exception {
-        String priya = login("priya@company.com", "Employee@123");
-        mvc.perform(as(priya, post("/api/tasks/batch"))
-                        .content(json("assigneeIds", java.util.List.of(3, 4),
+        String[] assigner = newEmployee("Employee Batch Assigner");
+        String[] firstAssignee = newEmployee("Employee Batch Assignee One");
+        String[] secondAssignee = newEmployee("Employee Batch Assignee Two");
+        String[] reviewer = newEmployee("Employee Batch Reviewer");
+        long reviewerId = Long.parseLong(reviewer[0]);
+
+        mvc.perform(as(assigner[1], post("/api/tasks/batch"))
+                        .content(json("assigneeIds", java.util.List.of(
+                                        Long.parseLong(firstAssignee[0]), Long.parseLong(secondAssignee[0])),
                                 "task", java.util.Map.of(
                                         "title", "Employee shared task",
                                         "priority", "MEDIUM",
-                                        "reviewerId", 2))))
+                                        "reviewerId", reviewerId))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].assignee.id").value(3))
-                .andExpect(jsonPath("$[1].assignee.id").value(4))
-                .andExpect(jsonPath("$[0].reviewer.id").value(2))
-                .andExpect(jsonPath("$[1].reviewer.id").value(2));
+                .andExpect(jsonPath("$[0].assignee.id").value(Long.parseLong(firstAssignee[0])))
+                .andExpect(jsonPath("$[1].assignee.id").value(Long.parseLong(secondAssignee[0])))
+                .andExpect(jsonPath("$[0].reviewer.id").value(reviewerId))
+                .andExpect(jsonPath("$[1].reviewer.id").value(reviewerId));
     }
 
     @Test
