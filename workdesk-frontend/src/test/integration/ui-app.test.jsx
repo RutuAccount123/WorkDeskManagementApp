@@ -164,6 +164,12 @@ describe('permissions in the screens', () => {
     tokenStore.set(login.token);
     expect((await employeeService.directory()).map((person) => person.department)).toEqual(['Tech']);
     expect((await employeeService.list()).map((person) => person.department)).toEqual(['Tech']);
+    start('/');
+    await screen.findByRole('heading', { level: 1, name: /Good/ });
+    const departmentFilter = await screen.findByRole('combobox', { name: 'Department' });
+    expect(departmentFilter).toHaveValue('Tech');
+    expect(within(departmentFilter).getAllByRole('option')).toHaveLength(1);
+    expect(within(departmentFilter).getByRole('option', { name: 'Tech' })).toBeInTheDocument();
   });
 
   it('an employee cannot open admin pages (sent back home)', async () => {

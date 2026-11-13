@@ -169,6 +169,43 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void updatingExistingAdminPersistsDepartmentScopeThroughNextSignIn() throws Exception {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String techEmail = "tech.employee." + suffix + "@company.com";
+        mvc.perform(as(admin, post("/api/employees"))
+                        .content(json("fullName", "Tech Team Member", "email", techEmail, "password", "Start@1234",
+                                "role", "EMPLOYEE", "department", "Tech")))
+                .andExpect(status().isCreated());
+
+        String adminEmail = "tech.admin." + suffix + "@company.com";
+        JsonNode existingAdmin = read(mvc.perform(as(admin, post("/api/employees"))
+                        .content(json("fullName", "Existing Department Admin", "email", adminEmail, "password", "Start@1234",
+                                "role", "ADMIN", "department", "Management")))
+                .andExpect(status().isCreated()).andReturn());
+
+        mvc.perform(as(admin, put("/api/employees/" + existingAdmin.path("id").asText()))
+                        .content(json("fullName", "Existing Department Admin", "email", adminEmail,
+                                "role", "ADMIN", "department", "Management", "departmentAdmin", true,
+                                "accessibleDepartments", java.util.List.of("Tech"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("ADMIN"))
+                .andExpect(jsonPath("$.department").value("Management"))
+                .andExpect(jsonPath("$.departmentAdmin").value(true))
+                .andExpect(jsonPath("$.accessibleDepartments[0]").value("Tech"));
+
+        String departmentAdmin = login(adminEmail, "Start@1234");
+        mvc.perform(as(departmentAdmin, get("/api/auth/me")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("ADMIN"))
+                .andExpect(jsonPath("$.departmentAdmin").value(true))
+                .andExpect(jsonPath("$.accessibleDepartments[0]").value("Tech"));
+        JsonNode visibleEmployees = read(mvc.perform(as(departmentAdmin, get("/api/employees")))
+                .andExpect(status().isOk()).andReturn());
+        assertThat(visibleEmployees).hasSize(1);
+        assertThat(visibleEmployees.get(0).path("department").asText()).isEqualTo("Tech");
+    }
+
+    @Test
     void wrongPasswordAndUnknownEmailGetTheSameAnswer() throws Exception {
         for (String email : new String[] {"admin@company.com", "nobody@company.com"}) {
             mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)

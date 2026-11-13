@@ -26,6 +26,7 @@ export default function TeamOverview({ refreshKey, onOpen, employees = [], depar
     ? [...allowedDepartments].sort((a, b) => a.localeCompare(b))
     : [...new Set(visibleEmployees.map((employee) => employee.department?.trim()).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b));
+  const singleAllowedDepartment = departmentAdmin && departments.length === 1 ? departments[0] : null;
 
   useEffect(() => {
     setTeam(null);
@@ -52,8 +53,9 @@ export default function TeamOverview({ refreshKey, onOpen, employees = [], depar
   const allPeople = [...teamById.values()]
     .filter((member) => !departmentAdmin || allowedDepartments.has(member.employee.department))
     .sort((a, b) => a.employee.fullName.localeCompare(b.employee.fullName));
+  const selectedDepartment = singleAllowedDepartment || department;
   const shown = allPeople.filter((m) =>
-    (!department || m.employee.department?.trim() === department)
+    (!selectedDepartment || m.employee.department?.trim() === selectedDepartment)
       && (!q || `${m.employee.fullName} ${m.employee.department}`.toLowerCase().includes(q.toLowerCase())));
   const periodLabel = period === 'today' ? 'today' : period === 'week' ? 'this week' : 'this month';
 
@@ -65,8 +67,8 @@ export default function TeamOverview({ refreshKey, onOpen, employees = [], depar
           <p className="muted small" style={{ margin: '4px 0 0' }}>Click a name to see their full record, or a task to open it.</p>
         </div>
         <div className="team-controls">
-          <select value={department} onChange={(e) => setDepartment(e.target.value)} aria-label="Department">
-            <option value="">{departmentAdmin ? 'All allowed departments' : 'All departments'}</option>
+          <select value={selectedDepartment} onChange={(e) => setDepartment(e.target.value)} aria-label="Department">
+            {!singleAllowedDepartment && <option value="">{departmentAdmin ? 'All allowed departments' : 'All departments'}</option>}
             {departments.map((name) => <option key={name} value={name}>{name}</option>)}
           </select>
           <select value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Work period">
