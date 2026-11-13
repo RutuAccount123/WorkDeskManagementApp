@@ -103,12 +103,14 @@ public class NotificationService {
         LocalDate today = time.today();
         if (digests.existsById(new DigestLog.Key(me.getId(), today))) return;
         digests.save(new DigestLog(me.getId(), today));
-        send(me, null, NotificationType.DAILY_DIGEST, me.isAdmin() ? adminSummary(today) : employeeSummary(me, today));
+        send(me, null, NotificationType.DAILY_DIGEST, me.isAdmin() ? adminSummary(me, today) : employeeSummary(me, today));
     }
 
-    private String adminSummary(LocalDate today) {
+    private String adminSummary(Employee admin, LocalDate today) {
         Instant now = time.now();
-        List<Task> open = tasks.findAll().stream().filter(t -> t.getStatus().isOpen()).toList();
+        List<Task> open = tasks.findAll().stream()
+                .filter(t -> people.canViewDepartment(admin, t.getAssignee().getDepartment()))
+                .filter(t -> t.getStatus().isOpen()).toList();
         long review = open.stream().filter(t -> t.getStatus() == TaskStatus.SUBMITTED).count();
         long late = open.stream().filter(t -> t.isOverdue(now)).count();
         long due = open.stream().filter(t -> time.dayOf(t.workAt()).equals(today)).count();

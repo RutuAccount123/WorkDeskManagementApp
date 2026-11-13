@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import App from '@/app/App.jsx';
 import { ADMIN_NAV, EMPLOYEE_NAV } from '@/config/navigation.js';
 import { tokenStore } from '@/services/http.js';
-import { recurringService, taskService } from '@/services/index.js';
+import { authService, employeeService, recurringService, taskService } from '@/services/index.js';
 
 const idOf = async (title) => (await taskService.list({ q: title, scope: 'all' })).find((t) => t.title === title).id;
 
@@ -79,6 +79,93 @@ describe('admin dashboard stat cards', () => {
 });
 
 describe('permissions in the screens', () => {
+  it('department admins get scoped navigation and read-only employee/task screens', async () => {
+    tokenStore.set('mock-1');
+    await employeeService.create({
+      fullName: 'Accounts Department Admin', email: 'accounts.admin@company.com', password: 'Start@1234',
+      role: 'ADMIN', department: 'Purchase', departmentAdmin: true, accessibleDepartments: ['Accounts', 'Projects'],
+    });
+    const login = await authService.login('accounts.admin@company.com', 'Start@1234');
+    tokenStore.set(login.token);
+    const user = userEvent.setup();
+    start('/');
+
+    await screen.findByRole('heading', { level: 1, name: /Good/ });
+    const departmentFilter = await screen.findByRole('combobox', { name: 'Department' });
+    expect(departmentFilter).toHaveValue('');
+    expect(within(departmentFilter).getByRole('option', { name: 'All allowed departments' })).toBeInTheDocument();
+    expect(within(departmentFilter).getByRole('option', { name: 'Accounts' })).toBeInTheDocument();
+    expect(within(departmentFilter).getByRole('option', { name: 'Projects' })).toBeInTheDocument();
+    expect(within(departmentFilter).queryByRole('option', { name: 'Purchase' })).not.toBeInTheDocument();
+    expect(within(departmentFilter).queryByRole('option', { name: 'Management' })).not.toBeInTheDocument();
+    const sidebar = document.querySelector('.sidebar');
+    expect(within(sidebar).getByRole('link', { name: 'Employees' })).toBeInTheDocument();
+    expect(within(sidebar).queryByRole('link', { name: /Workflows|Repeating tasks/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Assign a task' })).not.toBeInTheDocument();
+
+    await user.click(within(sidebar).getByRole('link', { name: 'Employees' }));
+    await screen.findByRole('heading', { level: 1, name: 'Employees' });
+    expect(screen.queryByRole('button', { name: 'Add employee' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Priya Sharma' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sneha Kulkarni' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Rahul Patil' })).not.toBeInTheDocument();
+
+    await user.click(within(sidebar).getByRole('link', { name: 'Tasks' }));
+    await screen.findByRole('heading', { level: 1, name: 'Tasks' });
+    expect(screen.queryByRole('button', { name: 'Assign a task' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add my work' })).not.toBeInTheDocument();
+  });
+
+  it('full admins can set an admin home department separately from multiple access departments', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-1');
+    start('/employees');
+    await user.click(await screen.findByRole('button', { name: 'Add employee' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Access' }), 'DEPARTMENT_ADMIN');
+
+    const homeDepartment = screen.getByRole('textbox', { name: /Department/ });
+    await user.type(homeDepartment, 'Purchase');
+    await user.click(screen.getByRole('checkbox', { name: 'Accounts' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Projects' }));
+    expect(homeDepartment).toHaveValue('Purchase');
+    expect(screen.getByRole('checkbox', { name: 'Accounts' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Projects' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Purchase' })).not.toBeChecked();
+
+    await user.type(screen.getByRole('textbox', { name: 'Full name' }), 'Purchase Department Admin');
+    await user.type(screen.getByRole('textbox', { name: 'Work email' }), 'purchase.admin@company.com');
+    await user.type(screen.getByRole('textbox', { name: 'First password' }), 'Start@1234');
+    await user.click(within(screen.getByRole('dialog', { name: 'Add employee' })).getByRole('button', { name: 'Add employee' }));
+    expect(await screen.findByText('Department admin (view-only: Accounts, Projects)')).toBeInTheDocument();
+  });
+
+  it('saving an existing admin as a Tech department admin keeps the Tech-only scope', async () => {
+    tokenStore.set('mock-1');
+    await employeeService.create({
+      fullName: 'Tech Team Member', email: 'tech.employee@company.com', password: 'Start@1234',
+      role: 'EMPLOYEE', department: 'Tech',
+    });
+    await employeeService.create({
+      fullName: 'Existing Admin', email: 'existing.admin@company.com', password: 'Start@1234',
+      role: 'ADMIN', department: 'Management',
+    });
+    const user = userEvent.setup();
+    start('/employees');
+    const row = (await screen.findByRole('row', { name: /Existing Admin/ }));
+    await user.click(within(row).getByRole('button', { name: 'Edit' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Existing Admin' });
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Access' }), 'DEPARTMENT_ADMIN');
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Tech' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByText('Department admin (view-only: Tech)')).toBeInTheDocument();
+    const login = await authService.login('existing.admin@company.com', 'Start@1234');
+    tokenStore.set(login.token);
+    expect((await employeeService.directory()).map((person) => person.department)).toEqual(['Tech']);
+    expect((await employeeService.list()).map((person) => person.department)).toEqual(['Tech']);
+  });
+
   it('an employee cannot open admin pages (sent back home)', async () => {
     tokenStore.set('mock-3');
     start('/employees');

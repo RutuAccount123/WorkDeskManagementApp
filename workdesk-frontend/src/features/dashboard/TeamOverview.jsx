@@ -8,21 +8,24 @@ import { personColor } from '@/utils/colors.js';
 const SHOW = 5; // tasks listed per person before "+ more"
 
 /**
- * Management view: one card per employee showing TODAY'S ACTUAL WORK —
+ * Management view: one card per person showing TODAY'S ACTUAL WORK —
  * counts in colour, then the task list with status. Click a task to open it.
  */
-export default function TeamOverview({ refreshKey, onOpen, employees = [] }) {
+export default function TeamOverview({ refreshKey, onOpen, employees = [], departmentAdmin = false, accessibleDepartments = [] }) {
   const [team, setTeam] = useState(null);
   const [q, setQ] = useState('');
   const [period, setPeriod] = useState('today');
   const [department, setDepartment] = useState('');
   const [error, setError] = useState('');
 
-  const departments = [...new Set(
-    employees
-      .map((employee) => employee.department?.trim())
-      .filter(Boolean),
-  )].sort((a, b) => a.localeCompare(b));
+  const allowedDepartments = new Set(accessibleDepartments);
+  const visibleEmployees = departmentAdmin
+    ? employees.filter((employee) => allowedDepartments.has(employee.department))
+    : employees;
+  const departments = departmentAdmin
+    ? [...allowedDepartments].sort((a, b) => a.localeCompare(b))
+    : [...new Set(visibleEmployees.map((employee) => employee.department?.trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
 
   useEffect(() => {
     setTeam(null);
@@ -34,7 +37,22 @@ export default function TeamOverview({ refreshKey, onOpen, employees = [] }) {
   }, [period, refreshKey]);
 
   if (team === null) return <section className="panel"><p className="muted">Loading team…</p></section>;
-  const shown = team.filter((m) =>
+  const teamById = new Map(team.map((member) => [member.employee.id, member]));
+  visibleEmployees.forEach((employee) => {
+    if (!teamById.has(employee.id)) {
+      teamById.set(employee.id, {
+        employee,
+        range: { todo: 0, inProgress: 0, done: 0 },
+        rangeTasks: [],
+        rangeOverdue: 0,
+        month: { score: null },
+      });
+    }
+  });
+  const allPeople = [...teamById.values()]
+    .filter((member) => !departmentAdmin || allowedDepartments.has(member.employee.department))
+    .sort((a, b) => a.employee.fullName.localeCompare(b.employee.fullName));
+  const shown = allPeople.filter((m) =>
     (!department || m.employee.department?.trim() === department)
       && (!q || `${m.employee.fullName} ${m.employee.department}`.toLowerCase().includes(q.toLowerCase())));
   const periodLabel = period === 'today' ? 'today' : period === 'week' ? 'this week' : 'this month';
@@ -48,7 +66,7 @@ export default function TeamOverview({ refreshKey, onOpen, employees = [] }) {
         </div>
         <div className="team-controls">
           <select value={department} onChange={(e) => setDepartment(e.target.value)} aria-label="Department">
-            <option value="">All departments</option>
+            <option value="">{departmentAdmin ? 'All allowed departments' : 'All departments'}</option>
             {departments.map((name) => <option key={name} value={name}>{name}</option>)}
           </select>
           <select value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Work period">
@@ -56,15 +74,15 @@ export default function TeamOverview({ refreshKey, onOpen, employees = [] }) {
             <option value="week">This week</option>
             <option value="month">This month</option>
           </select>
-          {team.length > 4 && (
+          {allPeople.length > 4 && (
             <input type="search" className="team-search" placeholder="Find a person" value={q}
               onChange={(e) => setQ(e.target.value)} aria-label="Find a person" />
           )}
         </div>
       </div>
 
-      {error ? <p className="error">{error}</p> : team.length === 0 ? <p className="muted">No employees yet. <Link to="/employees">Add your team</Link>.</p> : (
-        shown.length === 0 ? <p className="muted">No employees match this department or search.</p> : (
+      {error ? <p className="error">{error}</p> : allPeople.length === 0 ? <p className="muted">No people yet. <Link to="/employees">Add your team</Link>.</p> : (
+        shown.length === 0 ? <p className="muted">No people match this department or search.</p> : (
           <ul className="team">
             {shown.map(({ employee: e, range, rangeTasks, rangeOverdue, month }) => {
               const color = personColor(e.fullName);

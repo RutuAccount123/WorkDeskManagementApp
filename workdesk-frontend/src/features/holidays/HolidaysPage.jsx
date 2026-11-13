@@ -48,7 +48,7 @@ function HolidayForm({ holiday, onClose, onSaved }) {
 
 /** Office holiday calendar. Admin adds/edits/deletes; employees can see it. */
 export default function Holidays() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isFullAdmin } = useAuth();
   const [year, setYear] = useState(new Date().getFullYear());
   const [list, setList] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -70,7 +70,7 @@ export default function Holidays() {
       <header className="page-head">
         <div>
           <h1>Holidays</h1>
-          <p className="muted">{isAdmin ? 'Days the office is closed. Everyone sees these on their calendar.' : 'Days the office is closed.'}</p>
+          <p className="muted">{isFullAdmin ? 'Days the office is closed. Everyone sees these on their calendar.' : 'Days the office is closed.'}</p>
         </div>
         <div className="row">
           <div className="wv-nav">
@@ -78,7 +78,7 @@ export default function Holidays() {
             <span className="perf-month">{year}</span>
             <button className="btn ghost small" onClick={() => setYear(year + 1)} aria-label="Next year">›</button>
           </div>
-          {isAdmin && <button className="btn primary" onClick={() => setEditing({})}>Add a holiday</button>}
+          {isFullAdmin && <button className="btn primary" onClick={() => setEditing({})}>Add a holiday</button>}
         </div>
       </header>
 
@@ -93,7 +93,7 @@ export default function Holidays() {
 
       {error && <p className="error">{error}</p>}
       {list === null ? <p className="muted">Loading…</p> : list.length === 0 ? (
-        <p className="empty">No holidays added for {year} yet.{isAdmin && ' Use “Add a holiday”.'}</p>
+        <p className="empty">No holidays added for {year} yet.{isFullAdmin && ' Use “Add a holiday”.'}</p>
       ) : (
         <ul className="holiday-list">
           {list.map((h) => {
@@ -109,7 +109,7 @@ export default function Holidays() {
                   <strong>{h.name}</strong>
                   <small className="muted">{longDate.format(d)}{h.note && ` · ${h.note}`}</small>
                 </span>
-                {isAdmin && (
+                {isFullAdmin && (
                   <span className="row-actions">
                     <button className="link-btn" onClick={() => setEditing(h)}>Edit</button>
                     <button className="link-btn danger" onClick={() => remove(h)}>Delete</button>

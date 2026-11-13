@@ -1,14 +1,14 @@
 import { NavLink } from 'react-router-dom';
 import { APP_NAME } from '@/config/env.js';
-import { ADMIN_NAV, EMPLOYEE_NAV } from '@/config/navigation.js';
+import { ADMIN_NAV, DEPARTMENT_ADMIN_NAV, EMPLOYEE_NAV } from '@/config/navigation.js';
 import { useAuth } from '@/features/auth/AuthContext.jsx';
 import Icon from '@/components/ui/Icon.jsx';
 import { personColor } from '@/utils/colors.js';
 
 /** Dark left menu: brand, grouped navigation, signed-in user. */
 export default function Sidebar() {
-  const { user, isAdmin, logout } = useAuth();
-  const groups = isAdmin ? ADMIN_NAV : EMPLOYEE_NAV;
+  const { user, isAdmin, isDepartmentAdmin, logout } = useAuth();
+  const groups = isDepartmentAdmin ? DEPARTMENT_ADMIN_NAV : isAdmin ? ADMIN_NAV : EMPLOYEE_NAV;
 
   return (
     <aside className="sidebar">
@@ -36,7 +36,7 @@ export default function Sidebar() {
           <span className="avatar" style={{ background: personColor(user.fullName) }}>{user.fullName.charAt(0)}</span>
           <span className="user-text">
             <strong>{user.fullName}</strong>
-            <small>{isAdmin ? 'Administrator' : user.designation || 'Employee'}</small>
+            <small>{isDepartmentAdmin ? 'Department admin' : isAdmin ? 'Administrator' : user.designation || 'Employee'}</small>
           </span>
         </NavLink>
         <button className="icon-btn on-dark" onClick={logout} aria-label="Sign out" title="Sign out">
@@ -49,8 +49,9 @@ export default function Sidebar() {
 
 /** Bottom tab bar used on phones instead of the sidebar. */
 export function MobileTabs() {
-  const { isAdmin } = useAuth();
-  const items = (isAdmin ? ADMIN_NAV : EMPLOYEE_NAV).flatMap((g) => g.items).slice(0, 5); // phones show the first five
+  const { isAdmin, isDepartmentAdmin } = useAuth();
+  const nav = isDepartmentAdmin ? DEPARTMENT_ADMIN_NAV : isAdmin ? ADMIN_NAV : EMPLOYEE_NAV;
+  const items = nav.flatMap((g) => g.items).slice(0, 5); // phones show the first five
   return (
     <nav className="mobile-tabs" aria-label="Main">
       {items.map((n) => (

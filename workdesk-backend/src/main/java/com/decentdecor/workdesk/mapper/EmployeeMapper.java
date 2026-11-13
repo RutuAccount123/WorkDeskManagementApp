@@ -12,7 +12,8 @@ public class EmployeeMapper {
 
     public EmployeeResponse toResponse(Employee e) {
         return new EmployeeResponse(e.getId(), e.getEmployeeCode(), e.getFullName(), e.getEmail(), e.getRole().name(),
-                e.getDepartment(), e.getDesignation(), e.getPhone(), e.isActive(), e.getCreatedAt());
+                e.getDepartment(), e.getDesignation(), e.getPhone(), e.isActive(), e.getCreatedAt(), e.isDepartmentAdmin(),
+                e.getAccessibleDepartments().stream().sorted().toList());
     }
 
     public PersonResponse toPerson(Employee e) {

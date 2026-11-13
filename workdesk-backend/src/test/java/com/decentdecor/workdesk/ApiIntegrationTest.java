@@ -102,6 +102,73 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void departmentAdminIsReadOnlyAndScopedAcrossPeopleReportsAndTasks() throws Exception {
+        String email = "accounts.admin." + UUID.randomUUID().toString().substring(0, 8) + "@company.com";
+        JsonNode created = read(mvc.perform(as(admin, post("/api/employees"))
+                        .content(json("fullName", "Accounts Department Admin", "email", email, "password", "Start@1234",
+                                "role", "ADMIN", "department", "Purchase", "departmentAdmin", true,
+                                "accessibleDepartments", java.util.List.of("Accounts", "Projects"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.departmentAdmin").value(true))
+                .andExpect(jsonPath("$.department").value("Purchase"))
+                .andExpect(jsonPath("$.accessibleDepartments.length()").value(2))
+                .andReturn());
+        String departmentAdmin = login(email, "Start@1234");
+
+        JsonNode people = read(mvc.perform(as(departmentAdmin, get("/api/people")))
+                .andExpect(status().isOk()).andReturn());
+        for (JsonNode person : people) {
+            assertThat(person.get("department").asText()).isIn("Accounts", "Projects");
+        }
+
+        JsonNode employees = read(mvc.perform(as(departmentAdmin, get("/api/employees")))
+                .andExpect(status().isOk()).andReturn());
+        for (JsonNode person : employees) {
+            assertThat(person.get("department").asText()).isIn("Accounts", "Projects");
+        }
+        mvc.perform(as(departmentAdmin, get("/api/employees/3"))).andExpect(status().isNotFound());
+        mvc.perform(as(departmentAdmin, get("/api/employees/3/photo"))).andExpect(status().isNotFound());
+
+        JsonNode team = read(mvc.perform(as(departmentAdmin, get("/api/reports/team")))
+                .andExpect(status().isOk()).andReturn());
+        for (JsonNode person : team) {
+            assertThat(person.path("employee").path("department").asText()).isIn("Accounts", "Projects");
+        }
+        mvc.perform(as(departmentAdmin, get("/api/reports/performance?employeeId=3")))
+                .andExpect(status().isNotFound());
+        JsonNode summary = read(mvc.perform(as(departmentAdmin, get("/api/reports/employees?from=2026-10-01&to=2026-11-13")))
+                .andExpect(status().isOk()).andReturn());
+        for (JsonNode row : summary) assertThat(row.get("department").asText()).isIn("Accounts", "Projects");
+
+        JsonNode allTasks = read(mvc.perform(as(admin, get("/api/tasks?scope=all")))
+                .andExpect(status().isOk()).andReturn());
+        JsonNode outsideTask = null;
+        for (JsonNode task : allTasks) {
+            String department = task.path("assignee").path("department").asText();
+            if (!"Accounts".equals(department) && !"Projects".equals(department)) {
+                outsideTask = task;
+                break;
+            }
+        }
+        assertThat(outsideTask).isNotNull();
+        JsonNode departmentTasks = read(mvc.perform(as(departmentAdmin, get("/api/tasks?scope=all")))
+                .andExpect(status().isOk()).andReturn());
+        for (JsonNode task : departmentTasks) {
+            assertThat(task.path("assignee").path("department").asText()).isIn("Accounts", "Projects");
+        }
+        mvc.perform(as(departmentAdmin, get("/api/tasks/" + outsideTask.path("id").asText())))
+                .andExpect(status().isNotFound());
+
+        mvc.perform(as(departmentAdmin, post("/api/tasks"))
+                        .content(json("title", "View-only admin cannot assign", "assigneeId", 2)))
+                .andExpect(status().isForbidden());
+        mvc.perform(as(departmentAdmin, post("/api/employees"))
+                        .content(json("fullName", "Should not be created", "email", "blocked@company.com",
+                                "password", "Start@1234", "role", "EMPLOYEE", "department", "Accounts")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void wrongPasswordAndUnknownEmailGetTheSameAnswer() throws Exception {
         for (String email : new String[] {"admin@company.com", "nobody@company.com"}) {
             mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)

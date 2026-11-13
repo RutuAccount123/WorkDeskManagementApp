@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalDouble;
+import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
@@ -76,8 +77,7 @@ public class ReportService {
     @Transactional(readOnly = true)
     public DashboardResponse dashboard(CurrentUser user) {
         Employee me = people.me(user);
-        List<Task> visible = TaskGroups.onePerWorkflowRun(me.isAdmin()
-                ? tasks.findAll() : tasks.findByAssigneeId(me.getId()));
+        List<Task> visible = TaskGroups.onePerWorkflowRun(tasksFor(me));
         Instant now = time.now();
         LocalDate today = time.today();
         Instant dayStart = time.startOf(today);
@@ -105,7 +105,7 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public List<TeamMemberResponse> team(CurrentUser user, String periodValue) {
-        people.requireAdmin(user);
+        Employee me = people.requireAdminRole(user);
         Instant now = time.now();
         LocalDate today = time.today();
         Instant dayStart = time.startOf(today);
@@ -131,11 +131,13 @@ public class ReportService {
         Instant rangeStartInstant = time.startOf(rangeStart);
         Instant rangeEndInstant = time.startOf(rangeEnd);
         YearMonth month = YearMonth.from(today);
-        Map<Long, List<Task>> byPerson = TaskGroups.onePerWorkflowRun(tasks.findAll()).stream()
+        Map<Long, List<Task>> byPerson = TaskGroups.onePerWorkflowRun(tasksFor(me)).stream()
                 .collect(Collectors.groupingBy(t -> t.getAssignee().getId()));
 
         List<TeamMemberResponse> out = new ArrayList<>();
-        for (Employee e : employees.findByRole(Role.EMPLOYEE).stream().sorted(BY_NAME).toList()) {
+        for (Employee e : employees.findAll().stream()
+                .filter(e -> people.canViewDepartment(me, e.getDepartment()))
+                .sorted(BY_NAME).toList()) {
             List<Task> mine = byPerson.getOrDefault(e.getId(), List.of());
             List<Task> todayList = TodayWork.on(mine, dayStart, dayEnd);
             List<Task> rangeList = TodayWork.on(mine, rangeStartInstant, rangeEndInstant);
@@ -199,15 +201,17 @@ public class ReportService {
     /** One row per person for a date range (admin). Also used for the Excel download. */
     @Transactional(readOnly = true)
     public List<EmployeeSummaryRow> employeeSummary(CurrentUser user, LocalDate from, LocalDate to) {
-        people.requireAdmin(user);
+        Employee me = people.requireAdminRole(user);
         checkRange(from, to);
         Instant a = time.startOf(from);
         Instant b = time.startOf(to.plusDays(1));
         Instant now = time.now();
-        Map<Long, List<Task>> byPerson = tasks.findAll().stream().collect(Collectors.groupingBy(t -> t.getAssignee().getId()));
+        Map<Long, List<Task>> byPerson = tasksFor(me).stream().collect(Collectors.groupingBy(t -> t.getAssignee().getId()));
 
         List<EmployeeSummaryRow> rows = new ArrayList<>();
-        for (Employee e : employees.findAll().stream().sorted(BY_NAME).toList()) {
+        for (Employee e : employees.findAll().stream()
+                .filter(e -> people.canViewDepartment(me, e.getDepartment()))
+                .sorted(BY_NAME).toList()) {
             List<Task> mine = TaskGroups.onePerWorkflowRun(byPerson.getOrDefault(e.getId(), List.of()));
             List<Task> open = mine.stream().filter(t -> t.getStatus().isOpen()).toList();
             boolean touched = mine.stream().anyMatch(t -> between(t.getCreatedAt(), a, b) || between(t.getCompletedAt(), a, b)
@@ -236,8 +240,14 @@ public class ReportService {
     public List<DailyRow> daily(CurrentUser user, LocalDate from, LocalDate to, Long employeeId) {
         Employee me = people.me(user);
         checkRange(from, to);
-        Long who = me.isAdmin() ? employeeId : me.getId();
-        List<Task> list = TaskGroups.onePerWorkflowRun(who == null ? tasks.findAll() : tasks.findByAssigneeId(who));
+        List<Task> list;
+        if (me.isDepartmentAdmin()) {
+            list = employeeId == null ? tasksFor(me) : tasks.findByAssigneeId(people.visibleToAdmin(me, employeeId).getId());
+        } else {
+            Long who = me.isAdmin() ? employeeId : me.getId();
+            list = who == null ? tasks.findAll() : tasks.findByAssigneeId(who);
+        }
+        list = TaskGroups.onePerWorkflowRun(list);
         List<DailyRow> rows = new ArrayList<>();
         for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
             LocalDate day = d;
@@ -256,7 +266,14 @@ public class ReportService {
 
     /** Admins may look at anyone (default themselves); employees always see themselves. */
     private Employee target(Employee me, Long employeeId) {
-        return me.isAdmin() && employeeId != null ? people.get(employeeId) : me;
+        return me.isAdmin() && employeeId != null ? people.visibleToAdmin(me, employeeId) : me;
+    }
+
+    private List<Task> tasksFor(Employee me) {
+        if (!me.isDepartmentAdmin()) return me.isAdmin() ? tasks.findAll() : tasks.findByAssigneeId(me.getId());
+        return tasks.findAll().stream()
+                .filter(task -> people.canViewDepartment(me, task.getAssignee().getDepartment()))
+                .toList();
     }
 
     private Performance performance(List<Task> tasksOfPerson, Long employeeId, YearMonth month, Instant now) {

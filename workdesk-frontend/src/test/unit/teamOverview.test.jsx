@@ -25,9 +25,9 @@ describe('TeamOverview', () => {
       <MemoryRouter>
         <TeamOverview
           employees={[
-            { role: 'EMPLOYEE', department: 'Purchase' },
-            { role: 'EMPLOYEE', department: 'Accounts' },
-            { role: 'ADMIN', department: 'Management' },
+            { id: 1, fullName: 'Priya Sharma', role: 'EMPLOYEE', department: 'Accounts' },
+            { id: 2, fullName: 'Rahul Patil', role: 'EMPLOYEE', department: 'Purchase' },
+            { id: 3, fullName: 'System Admin', role: 'ADMIN', department: 'Management' },
           ]}
         />
       </MemoryRouter>,
@@ -43,5 +43,26 @@ describe('TeamOverview', () => {
 
     expect(screen.getByText('Rahul Patil')).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText('Priya Sharma')).not.toBeInTheDocument());
+  });
+
+  it('shows administrator profiles alongside employee profiles', async () => {
+    vi.spyOn(reportService, 'team').mockResolvedValue([
+      member(2, 'Priya Sharma', 'Accounts'),
+    ]);
+
+    render(
+      <MemoryRouter>
+        <TeamOverview
+          employees={[
+            { id: 1, fullName: 'System Admin', department: 'Management', designation: 'Administrator', role: 'ADMIN', active: true },
+            { id: 2, fullName: 'Priya Sharma', department: 'Accounts', role: 'EMPLOYEE', active: true },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    const adminProfile = await screen.findByRole('link', { name: /System Admin/ });
+    expect(adminProfile).toHaveAttribute('href', '/employees/1');
+    expect(screen.getByText('Priya Sharma')).toBeInTheDocument();
   });
 });

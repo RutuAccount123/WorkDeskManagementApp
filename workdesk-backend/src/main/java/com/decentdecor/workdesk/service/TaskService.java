@@ -103,6 +103,7 @@ public class TaskService {
     public List<TaskResponse> list(CurrentUser user, TaskFilter f) {
         Employee me = people.me(user);
         boolean admin = me.isAdmin();
+        boolean departmentAdmin = me.isDepartmentAdmin();
         String scope = Texts.isBlank(f.scope()) ? (admin ? "all" : "assigned") : f.scope();
         if (!SCOPES.contains(scope)) throw new BadRequestException("Unknown scope: " + scope);
 
@@ -131,6 +132,7 @@ public class TaskService {
         }
         if (f.workFrom() != null) spec = spec.and(TaskSpecifications.workAtOrAfter(time.startOf(f.workFrom())));
         if (f.workTo() != null) spec = spec.and(TaskSpecifications.workBefore(time.startOf(f.workTo().plusDays(1))));
+        if (departmentAdmin) spec = spec.and(TaskSpecifications.assignedToDepartments(me.getAccessibleDepartments()));
 
         List<Task> found = new ArrayList<>(tasks.findAll(spec));
         found.sort(Comparator.comparing(Task::getDueAt, Comparator.nullsLast(Comparator.naturalOrder()))
@@ -154,6 +156,7 @@ public class TaskService {
     /** POST /api/tasks */
     @Transactional
     public TaskResponse create(CurrentUser user, TaskRequest req) {
+        people.requireNotDepartmentAdmin(user);
         return createOne(user, req, taskImages.normalize(req.image()));
     }
 
@@ -210,6 +213,7 @@ public class TaskService {
     /** Creates independent copies in one transaction so the selection succeeds or fails together. */
     @Transactional
     public List<TaskResponse> createBatch(CurrentUser user, TaskBatchRequest request) {
+        people.requireNotDepartmentAdmin(user);
         List<Long> assigneeIds = request.assigneeIds();
         if (new HashSet<>(assigneeIds).size() != assigneeIds.size()) {
             throw new BadRequestException("Choose each employee only once");
@@ -226,6 +230,7 @@ public class TaskService {
     /** Approves selected tasks atomically using the normal reviewer/admin status rules. */
     @Transactional
     public List<TaskResponse> approveBatch(CurrentUser user, TaskBatchApprovalRequest request) {
+        people.requireNotDepartmentAdmin(user);
         List<Long> taskIds = request.taskIds();
         if (new HashSet<>(taskIds).size() != taskIds.size()) {
             throw new BadRequestException("Choose each task only once");
@@ -240,6 +245,7 @@ public class TaskService {
     /** PUT /api/tasks/{id} — admin, or whoever assigned / added it. */
     @Transactional
     public TaskResponse update(CurrentUser user, Long id, TaskRequest req) {
+        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Task t = visibleTask(id, me, true);
         if (!TaskRules.canEdit(t, me)) throw new ForbiddenException("Only the person who assigned this task can change it");
@@ -297,6 +303,7 @@ public class TaskService {
     /** DELETE /api/tasks/{id}. Its history and notifications go with it. */
     @Transactional
     public void delete(CurrentUser user, Long id) {
+        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Task t = visibleTask(id, me, true);
         if (!TaskRules.canEdit(t, me)) throw new ForbiddenException();
@@ -308,6 +315,7 @@ public class TaskService {
     /** POST /api/tasks/{id}/status */
     @Transactional
     public TaskResponse changeStatus(CurrentUser user, Long id, String toValue, String comment) {
+        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Task t = visibleTask(id, me, true);
         TaskStatus to = Enums.parse(TaskStatus.class, toValue, null, "Choose a valid status");
@@ -362,6 +370,7 @@ public class TaskService {
     /** POST /api/tasks/{id}/comments — everyone involved is told, except the writer. */
     @Transactional
     public ActivityResponse comment(CurrentUser user, Long id, String comment) {
+        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Task t = visibleTask(id, me, false);
         String text = comment.trim();
@@ -376,6 +385,7 @@ public class TaskService {
     /** POST /api/tasks/{id}/checklist — tick or untick one How step of an FMS step. */
     @Transactional
     public TaskResponse tick(CurrentUser user, Long id, ChecklistTickRequest req) {
+        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Task t = visibleTask(id, me, true);
         if (!t.getAssignee().getId().equals(me.getId()) && !me.isAdmin()) {
@@ -399,7 +409,11 @@ public class TaskService {
     /** A task the person may open (admins: any). lock = lock the row for changing. Otherwise "Task not found". */
     private Task visibleTask(Long id, Employee me, boolean lock) {
         Task t = (lock ? tasks.findByIdForUpdate(id) : tasks.findById(id)).orElseThrow(() -> NotFoundException.of("Task"));
-        if (!TaskRules.canSee(t, me)) throw NotFoundException.of("Task");
+        if (me.isDepartmentAdmin()) {
+            if (!people.canViewDepartment(me, t.getAssignee().getDepartment())) throw NotFoundException.of("Task");
+        } else if (!TaskRules.canSee(t, me)) {
+            throw NotFoundException.of("Task");
+        }
         return t;
     }
 

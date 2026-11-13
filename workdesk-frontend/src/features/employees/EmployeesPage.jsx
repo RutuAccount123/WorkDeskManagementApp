@@ -6,10 +6,15 @@ import Modal from '@/components/ui/Modal.jsx';
 import { encodeImage } from '@/utils/image.js';
 import { personColor } from '@/utils/colors.js';
 
-const EMPTY = { employeeCode: '', fullName: '', email: '', password: '', role: 'EMPLOYEE', department: '', designation: '', phone: '' };
+const EMPTY = { employeeCode: '', fullName: '', email: '', password: '', role: 'EMPLOYEE', departmentAdmin: false, accessibleDepartments: [], department: '', designation: '', phone: '' };
 
-function EmployeeForm({ employee, onClose, onSaved }) {
-  const [form, setForm] = useState(employee ? { ...EMPTY, ...employee, password: '' } : EMPTY);
+function EmployeeForm({ employee, departments, onClose, onSaved }) {
+  const [form, setForm] = useState(employee ? {
+    ...EMPTY,
+    ...employee,
+    accessibleDepartments: employee.accessibleDepartments || (employee.departmentAdmin ? [employee.department].filter(Boolean) : []),
+    password: '',
+  } : EMPTY);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [photoActionsOpen, setPhotoActionsOpen] = useState(false);
@@ -17,6 +22,21 @@ function EmployeeForm({ employee, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   const photoInputRef = useRef(null);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const setAccess = (event) => {
+    const access = event.target.value;
+    setForm({
+      ...form,
+      role: access === 'EMPLOYEE' ? 'EMPLOYEE' : 'ADMIN',
+      departmentAdmin: access === 'DEPARTMENT_ADMIN',
+      accessibleDepartments: access === 'DEPARTMENT_ADMIN' && form.departmentAdmin ? form.accessibleDepartments : [],
+    });
+  };
+  const toggleAccessibleDepartment = (department) => (event) => {
+    const selected = new Set(form.accessibleDepartments || []);
+    if (event.target.checked) selected.add(department);
+    else selected.delete(department);
+    setForm({ ...form, accessibleDepartments: [...selected] });
+  };
 
   useEffect(() => {
     if (!photoFile) {
@@ -30,6 +50,10 @@ function EmployeeForm({ employee, onClose, onSaved }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (form.departmentAdmin && form.accessibleDepartments.length === 0) {
+      setError('Choose at least one department this admin can access.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -99,14 +123,31 @@ function EmployeeForm({ employee, onClose, onSaved }) {
           <label>Phone<input value={form.phone || ''} onChange={set('phone')} /></label>
         </div>
         <div className="grid-2">
-          <label>Department<input value={form.department || ''} onChange={set('department')} placeholder="e.g. Purchase" /></label>
+          <label>Department
+            <input value={form.department || ''} onChange={set('department')} placeholder="e.g. Purchase"
+              required={form.departmentAdmin} />
+            {form.departmentAdmin && <small className="muted">This is the admin’s own department, not their access limit.</small>}
+          </label>
           <label>Designation<input value={form.designation || ''} onChange={set('designation')} /></label>
         </div>
+        {form.departmentAdmin && (
+          <fieldset className="department-access-list">
+            <legend>Departments this admin can access (select at least one)</legend>
+            {departments.map((name) => (
+              <label key={name}>
+                <input type="checkbox" checked={(form.accessibleDepartments || []).includes(name)}
+                  onChange={toggleAccessibleDepartment(name)} />
+                {name}
+              </label>
+            ))}
+          </fieldset>
+        )}
         <div className="grid-2">
           <label>Access
-            <select value={form.role} onChange={set('role')}>
+            <select value={form.role === 'EMPLOYEE' ? 'EMPLOYEE' : form.departmentAdmin ? 'DEPARTMENT_ADMIN' : 'ADMIN'} onChange={setAccess}>
               <option value="EMPLOYEE">Employee: sees own tasks</option>
-              <option value="ADMIN">Admin: manages everyone</option>
+              <option value="DEPARTMENT_ADMIN">Department admin: view selected departments</option>
+              <option value="ADMIN">Admin: manages all departments</option>
             </select>
           </label>
           {!employee && (
@@ -127,7 +168,7 @@ function EmployeeForm({ employee, onClose, onSaved }) {
 }
 
 export default function Employees() {
-  const { user } = useAuth();
+  const { user, isFullAdmin } = useAuth();
   const [list, setList] = useState(null);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState('');
@@ -163,7 +204,7 @@ export default function Employees() {
           <h1>Employees</h1>
           <p className="muted">{list ? `${list.filter((e) => e.active).length} active` : ' '}</p>
         </div>
-        <button className="btn primary" onClick={() => setEditing({})}>Add employee</button>
+        {isFullAdmin && <button className="btn primary" onClick={() => setEditing({})}>Add employee</button>}
       </header>
       {error && <p className="error">{error}</p>}
       {list === null ? <p className="muted">Loading…</p> : (
@@ -181,15 +222,19 @@ export default function Employees() {
                   </td>
                   <td>{e.department || '—'}</td>
                   <td>{e.email}</td>
-                  <td>{e.role === 'ADMIN' ? 'Admin' : 'Employee'}</td>
+                  <td>{e.departmentAdmin
+                    ? `Department admin (view-only: ${(e.accessibleDepartments?.length ? e.accessibleDepartments : [e.department].filter(Boolean)).join(', ')})`
+                    : e.role === 'ADMIN' ? 'Admin' : 'Employee'}</td>
                   <td>{e.active ? 'Active' : 'Inactive'}</td>
-                  <td className="row-actions">
-                    <button className="link-btn" onClick={() => setEditing(e)}>Edit</button>
-                    <button className="link-btn" onClick={() => resetPassword(e)}>Reset password</button>
-                    {e.id !== user.id && (
-                      <button className="link-btn" onClick={() => toggle(e)}>{e.active ? 'Deactivate' : 'Reactivate'}</button>
-                    )}
-                  </td>
+                  {isFullAdmin ? (
+                    <td className="row-actions">
+                      <button className="link-btn" onClick={() => setEditing(e)}>Edit</button>
+                      <button className="link-btn" onClick={() => resetPassword(e)}>Reset password</button>
+                      {e.id !== user.id && (
+                        <button className="link-btn" onClick={() => toggle(e)}>{e.active ? 'Deactivate' : 'Reactivate'}</button>
+                      )}
+                    </td>
+                  ) : <td />}
                 </tr>
               ))}
             </tbody>
@@ -197,7 +242,9 @@ export default function Employees() {
         </div>
       )}
       {editing && (
-        <EmployeeForm employee={editing.id ? editing : null} onClose={() => setEditing(null)}
+        <EmployeeForm employee={editing.id ? editing : null}
+          departments={[...new Set((list || []).map((e) => e.department?.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))}
+          onClose={() => setEditing(null)}
           onSaved={(_saved, photoError) => {
             setEditing(null);
             load();

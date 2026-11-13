@@ -1,6 +1,7 @@
 package com.decentdecor.workdesk.dto.employee;
 
 import java.time.Instant;
+import java.util.List;
 
 /** A full employee record. Never contains the password. */
 public record EmployeeResponse(
@@ -13,5 +14,7 @@ public record EmployeeResponse(
         String designation,
         String phone,
         boolean active,
-        Instant createdAt) {
+        Instant createdAt,
+        boolean departmentAdmin,
+        List<String> accessibleDepartments) {
 }

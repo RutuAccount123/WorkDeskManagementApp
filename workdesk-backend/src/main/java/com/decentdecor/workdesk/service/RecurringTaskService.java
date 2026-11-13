@@ -58,6 +58,7 @@ public class RecurringTaskService {
 
     @Transactional(readOnly = true)
     public List<RecurringResponse> list(CurrentUser user) {
+        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         List<RecurringTemplate> list = me.isAdmin() ? templates.findAllByOrderByTitleAsc()
                 : templates.findByAssigneeIdOrCreatedByIdOrderByTitleAsc(me.getId(), me.getId());
@@ -67,6 +68,7 @@ public class RecurringTaskService {
     /** Creates it and makes the copies for the next 7 days straight away. */
     @Transactional
     public RecurringResponse create(CurrentUser user, RecurringRequest req) {
+        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         RecurringTemplate tpl = new RecurringTemplate();
         tpl.setCreatedBy(me);
@@ -80,6 +82,7 @@ public class RecurringTaskService {
 
     @Transactional
     public List<RecurringResponse> createBatch(CurrentUser user, RecurringBatchRequest request) {
+        people.requireNotDepartmentAdmin(user);
         List<Long> assigneeIds = request.assigneeIds();
         if (new HashSet<>(assigneeIds).size() != assigneeIds.size()) {
             throw new BadRequestException("Choose each employee only once");
@@ -97,6 +100,7 @@ public class RecurringTaskService {
     /** Edit: future untouched copies are removed and made again with the new details. */
     @Transactional
     public RecurringResponse update(CurrentUser user, Long id, RecurringRequest req) {
+        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         RecurringTemplate tpl = find(id, me, true);
         apply(tpl, req, me);
@@ -109,6 +113,7 @@ public class RecurringTaskService {
 
     @Transactional
     public RecurringResponse setActive(CurrentUser user, Long id, boolean active) {
+        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         RecurringTemplate tpl = find(id, me, true);
         tpl.setActive(active);
@@ -125,6 +130,7 @@ public class RecurringTaskService {
     /** Past copies stay in everyone's record. */
     @Transactional
     public void delete(CurrentUser user, Long id) {
+        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         find(id, me, true);
         generator.removeFutureCopies(id);
@@ -134,6 +140,7 @@ public class RecurringTaskService {
     /** "Create today's task" now. */
     @Transactional
     public void generateNow(CurrentUser user, Long id) {
+        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         RecurringTemplate tpl = find(id, me, true);
         if (generator.hasCopyOn(tpl, time.today())) throw new BadRequestException("Today’s task for this template has already been created");

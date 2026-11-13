@@ -29,6 +29,10 @@ public final class TaskSpecifications {
         return (root, query, cb) -> cb.equal(root.get("assignee").get("id"), employeeId);
     }
 
+    public static Specification<Task> assignedToDepartments(Collection<String> departments) {
+        return (root, query, cb) -> root.get("assignee").get("department").in(departments);
+    }
+
     /** Work I assigned to someone else. */
     public static Specification<Task> assignedByToOthers(Long employeeId) {
         return (root, query, cb) -> cb.and(

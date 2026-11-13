@@ -26,7 +26,7 @@ function Stat({ value, label, tone, icon, to }) {
 
 /** Admin: company-wide picture. Employee: their own work. */
 export default function Overview() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isDepartmentAdmin, isFullAdmin } = useAuth();
   const [stats, setStats] = useState(null);
   const [tasks, setTasks] = useState(null);
   const [people, setPeople] = useState([]);
@@ -67,9 +67,11 @@ export default function Overview() {
       <header className="page-head hero">
         <div>
           <h1>{greeting}, {user.fullName.split(' ')[0]}</h1>
-          <p className="muted">{isAdmin ? 'Here is where everyone’s work stands.' : 'Here is what’s on your plate.'}</p>
+          <p className="muted">{isDepartmentAdmin
+            ? 'Here is where your selected departments’ work stands.'
+            : isAdmin ? 'Here is where everyone’s work stands.' : 'Here is what’s on your plate.'}</p>
         </div>
-        {isAdmin && <button className="btn primary" onClick={() => setEditing({})}>Assign a task</button>}
+        {isFullAdmin && <button className="btn primary" onClick={() => setEditing({})}>Assign a task</button>}
       </header>
 
       {error && <p className="error">{error}</p>}
@@ -83,7 +85,8 @@ export default function Overview() {
         <Stat value={stats?.completedThisWeek} label="Done this week" tone="done" icon="check" to={isAdmin ? '/tasks?status=COMPLETED&completedThisWeek=1' : undefined} />
       </div>
 
-      {isAdmin && <TeamOverview refreshKey={tasks} onOpen={setOpenId} employees={employees} />}
+      {isAdmin && <TeamOverview refreshKey={tasks} onOpen={setOpenId} employees={employees}
+        departmentAdmin={isDepartmentAdmin} accessibleDepartments={user.accessibleDepartments || []} />}
 
       {isAdmin && review.length > 0 && (
         <section className="panel">
@@ -129,7 +132,7 @@ export default function Overview() {
       )}
 
       <TaskPanel openId={openId} onClose={() => setOpenId(null)} />
-      {editing && (
+      {editing && isFullAdmin && (
         <TaskForm task={editing.id ? editing : null} employees={employees}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
       )}

@@ -39,6 +39,18 @@ export const EMPLOYEE_NAV = [
   },
 ];
 
+export const DEPARTMENT_ADMIN_NAV = [
+  {
+    section: 'Department overview',
+    items: [
+      { to: '/', label: 'Dashboard', short: 'Home', icon: 'dashboard' },
+      { to: '/tasks', label: 'Tasks', icon: 'tasks' },
+      { to: '/employees', label: 'Employees', short: 'People', icon: 'people' },
+      { to: '/reports', label: 'Reports', icon: 'reports' },
+    ],
+  },
+];
+
 /** Titles for pages that are not in the side menu, matched in order. */
 export const PAGE_TITLES = [
   [/^\/employees\/\d+/, 'Employee profile'],

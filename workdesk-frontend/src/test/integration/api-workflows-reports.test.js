@@ -146,10 +146,13 @@ describe('reports', () => {
     expect(d.totalOpen).toBe(d.todo + d.inProgress + d.awaitingReview);
     expect(Object.values(d.openByPriority).reduce((a, b) => a + b, 0)).toBe(d.totalOpen);
   });
-  it('team view is admin only and has one card per employee', async () => {
+  it('team view is admin only and has one card per person, including administrators', async () => {
     await asUser(ADMIN);
     const team = await reportService.team();
-    expect(team.map((m) => m.employee.fullName)).toEqual(['Amit Deshmukh', 'Priya Sharma', 'Rahul Patil', 'Sneha Kulkarni']);
+    expect(team.map((m) => m.employee.fullName)).toEqual([
+      'Amit Deshmukh', 'Priya Sharma', 'Rahul Patil', 'Sneha Kulkarni', 'System Admin',
+    ]);
+    expect(team.find((m) => m.employee.role === 'ADMIN')?.employee.fullName).toBe('System Admin');
     team.forEach((m) => expect(m.today.total).toBe(m.today.todo + m.today.inProgress + m.today.done));
     const week = await reportService.team('week');
     const month = await reportService.team('month');

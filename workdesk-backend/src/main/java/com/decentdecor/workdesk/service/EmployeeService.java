@@ -16,8 +16,10 @@ import com.decentdecor.workdesk.util.Enums;
 import com.decentdecor.workdesk.util.OfficeTime;
 import com.decentdecor.workdesk.util.Texts;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -51,20 +53,24 @@ public class EmployeeService {
     /** GET /api/people — active people, sorted by name. */
     @Transactional(readOnly = true)
     public List<PersonResponse> people(CurrentUser user) {
-        people.me(user);
-        return employees.findByActiveTrue().stream().sorted(BY_NAME).map(mapper::toPerson).toList();
+        Employee me = people.me(user);
+        return employees.findByActiveTrue().stream()
+                .filter(e -> people.canViewDepartment(me, e.getDepartment()))
+                .sorted(BY_NAME).map(mapper::toPerson).toList();
     }
 
     @Transactional(readOnly = true)
     public List<EmployeeResponse> list(CurrentUser user) {
-        people.requireAdmin(user);
-        return employees.findAll().stream().sorted(BY_NAME).map(mapper::toResponse).toList();
+        Employee me = people.requireAdminRole(user);
+        return employees.findAll().stream()
+                .filter(e -> people.canViewDepartment(me, e.getDepartment()))
+                .sorted(BY_NAME).map(mapper::toResponse).toList();
     }
 
     @Transactional(readOnly = true)
     public EmployeeResponse get(CurrentUser user, Long id) {
-        people.requireAdmin(user);
-        return mapper.toResponse(people.get(id));
+        Employee me = people.requireAdminRole(user);
+        return mapper.toResponse(people.visibleToAdmin(me, id));
     }
 
     /** Adds a person with a first password (only the BCrypt hash is stored). */
@@ -75,7 +81,7 @@ public class EmployeeService {
         if (problem != null) throw new BadRequestException(problem);
         String email = checkEmail(req.email(), null);
         Employee e = new Employee();
-        copy(req, e, email);
+        copy(req, e, email, accessibleDepartments(req));
         e.setPasswordHash(encoder.encode(req.password()));
         e.setActive(true);
         e.setCreatedAt(time.now());
@@ -88,9 +94,13 @@ public class EmployeeService {
         Employee e = people.get(id);
         String email = checkEmail(req.email(), id);
         Role newRole = role(req.role());
+        Set<String> accessibleDepartments = accessibleDepartments(req);
         if (e.getId().equals(me.getId()) && newRole != Role.ADMIN) throw new BadRequestException("You cannot remove your own admin role");
-        if (e.getRole() != newRole) e.signOutEverywhere();   // a role change takes effect at once
-        copy(req, e, email);
+        String department = Texts.trimToNull(req.department());
+        if (e.getRole() != newRole || e.isDepartmentAdminAccess() != req.departmentAdmin()
+                || !java.util.Objects.equals(e.getDepartment(), department)
+                || !e.getAccessibleDepartments().equals(accessibleDepartments)) e.signOutEverywhere();
+        copy(req, e, email, accessibleDepartments);
         return mapper.toResponse(e);
     }
 
@@ -129,12 +139,40 @@ public class EmployeeService {
         return Enums.parse(Role.class, value, null, "role: choose Admin or Employee");
     }
 
-    private static void copy(EmployeeRequest req, Employee e, String email) {
+    private static Set<String> accessibleDepartments(EmployeeRequest req) {
+        Role role = role(req.role());
+        String department = Texts.trimToNull(req.department());
+        if (req.departmentAdmin() && role != Role.ADMIN) {
+            throw new BadRequestException("Department access is only available to admins");
+        }
+        if (req.departmentAdmin() && department == null) {
+            throw new BadRequestException("Choose the admin's home department");
+        }
+        LinkedHashSet<String> accessibleDepartments = new LinkedHashSet<>();
+        if (req.departmentAdmin() && req.accessibleDepartments() != null) {
+            for (String value : req.accessibleDepartments()) {
+                String accessibleDepartment = Texts.trimToNull(value);
+                if (accessibleDepartment == null) throw new BadRequestException("Choose valid departments for access");
+                if (accessibleDepartment.length() > 80) throw new BadRequestException("Department names must be 80 characters or fewer");
+                accessibleDepartments.add(accessibleDepartment);
+            }
+        }
+        if (req.departmentAdmin() && accessibleDepartments.isEmpty()) {
+            throw new BadRequestException("Choose at least one department this admin can access");
+        }
+        return accessibleDepartments;
+    }
+
+    private static void copy(EmployeeRequest req, Employee e, String email, Set<String> accessibleDepartments) {
+        Role role = role(req.role());
+        String department = Texts.trimToNull(req.department());
         e.setEmployeeCode(Texts.trimToNull(req.employeeCode()));
         e.setFullName(req.fullName().trim());
         e.setEmail(email);
-        e.setRole(role(req.role()));
-        e.setDepartment(Texts.trimToNull(req.department()));
+        e.setRole(role);
+        e.setDepartment(department);
+        e.setDepartmentAdmin(req.departmentAdmin());
+        e.setAccessibleDepartments(accessibleDepartments);
         e.setDesignation(Texts.trimToNull(req.designation()));
         e.setPhone(Texts.trimToNull(req.phone()));
     }

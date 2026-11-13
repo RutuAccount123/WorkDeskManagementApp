@@ -18,7 +18,7 @@ function DayBar({ row, max }) {
 }
 
 export default function Reports() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isDepartmentAdmin } = useAuth();
   const [from, setFrom] = useState(isoDay(new Date(Date.now() - 29 * 86400000)));
   const [to, setTo] = useState(isoDay());
   const [employeeId, setEmployeeId] = useState('');
@@ -77,7 +77,7 @@ export default function Reports() {
         <label className="inline">To<input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} /></label>
         {isAdmin && (
           <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} aria-label="Daily view for">
-            <option value="">Daily view: everyone</option>
+            <option value="">{isDepartmentAdmin ? 'Daily view: everyone in department' : 'Daily view: everyone'}</option>
             {employees.map((e) => <option key={e.id} value={e.id}>Daily view: {e.fullName}</option>)}
           </select>
         )}

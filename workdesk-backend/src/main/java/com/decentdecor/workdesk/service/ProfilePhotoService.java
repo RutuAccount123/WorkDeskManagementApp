@@ -1,5 +1,6 @@
 package com.decentdecor.workdesk.service;
 
+import com.decentdecor.workdesk.entity.Employee;
 import com.decentdecor.workdesk.entity.ProfilePhoto;
 import com.decentdecor.workdesk.exception.BadRequestException;
 import com.decentdecor.workdesk.repository.ProfilePhotoRepository;
@@ -43,9 +44,9 @@ public class ProfilePhotoService {
 
     @Transactional(readOnly = true)
     public Optional<byte[]> getForEmployee(CurrentUser user, Long employeeId) {
-        people.requireAdmin(user);
-        people.get(employeeId);
-        return get(employeeId);
+        Employee me = people.requireAdminRole(user);
+        Employee target = people.visibleToAdmin(me, employeeId);
+        return get(target.getId());
     }
 
     private Optional<byte[]> get(Long employeeId) {

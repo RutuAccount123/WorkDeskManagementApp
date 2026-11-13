@@ -26,13 +26,37 @@ public class People {
 
     public Employee requireAdmin(CurrentUser user) {
         Employee me = me(user);
+        if (!me.isFullAdmin()) throw new ForbiddenException();
+        return me;
+    }
+
+    public Employee requireAdminRole(CurrentUser user) {
+        Employee me = me(user);
         if (!me.isAdmin()) throw new ForbiddenException();
+        return me;
+    }
+
+    public Employee requireNotDepartmentAdmin(CurrentUser user) {
+        Employee me = me(user);
+        if (me.isDepartmentAdmin()) throw new ForbiddenException("Department admins have view-only access");
         return me;
     }
 
     public Employee get(Long id) {
         if (id == null) throw NotFoundException.of("Employee");
         return employees.findById(id).orElseThrow(() -> NotFoundException.of("Employee"));
+    }
+
+    public Employee visibleToAdmin(Employee admin, Long id) {
+        Employee target = get(id);
+        if (!canViewDepartment(admin, target.getDepartment())) {
+            throw NotFoundException.of("Employee");
+        }
+        return target;
+    }
+
+    public boolean canViewDepartment(Employee admin, String department) {
+        return !admin.isDepartmentAdmin() || admin.getAccessibleDepartments().contains(department);
     }
 
     /** Someone who can be given work: must exist and be active. */

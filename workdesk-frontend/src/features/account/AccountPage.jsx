@@ -32,7 +32,9 @@ export default function Account() {
           <div><dt>Name</dt><dd>{user.fullName}</dd></div>
           <div><dt>Email</dt><dd>{user.email}</dd></div>
           <div><dt>Department</dt><dd>{user.department || '—'}</dd></div>
-          <div><dt>Access</dt><dd>{user.role === 'ADMIN' ? 'Admin' : 'Employee'}</dd></div>
+          <div><dt>Access</dt><dd>{user.departmentAdmin
+            ? `Department admin · ${(user.accessibleDepartments?.length ? user.accessibleDepartments : [user.department].filter(Boolean)).join(', ')}`
+            : user.role === 'ADMIN' ? 'Admin' : 'Employee'}</dd></div>
         </dl>
       </section>
       <section className="panel">

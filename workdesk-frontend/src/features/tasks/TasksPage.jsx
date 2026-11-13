@@ -25,7 +25,7 @@ const SCOPES = [
 ];
 
 export default function Tasks() {
-  const { isAdmin, user } = useAuth();
+  const { isAdmin, isDepartmentAdmin, user } = useAuth();
   const [params, setParams] = useSearchParams();
   const [tasks, setTasks] = useState(null);
   const [employees, setEmployees] = useState([]);
@@ -117,7 +117,7 @@ export default function Tasks() {
         </div>
         <div className="row">
           {!isAdmin && <button className="btn ghost" onClick={() => setEditing({ own: true })}>Add my work</button>}
-          <button className="btn primary" onClick={() => setEditing({})}>Assign a task</button>
+          {!isDepartmentAdmin && <button className="btn primary" onClick={() => setEditing({})}>Assign a task</button>}
         </div>
       </header>
 
@@ -159,7 +159,7 @@ export default function Tasks() {
       </div>
 
       {error && <p className="error">{error}</p>}
-      {reviewableTasks.length > 0 && (
+      {!isDepartmentAdmin && reviewableTasks.length > 0 && (
         <div className="row task-bulk-actions">
           <label className="check">
             <input type="checkbox" checked={allReviewableSelected} onChange={toggleReviewableSelection} />
@@ -172,14 +172,14 @@ export default function Tasks() {
       )}
       {tasks === null ? <p className="muted">Loading…</p> : (
         <TaskBoard tasks={tasks} onOpen={(id) => setParam('open', String(id))} showAssignee={scope !== 'assigned'} cardLayout
-          selectableTaskIds={reviewableIds} selectedTaskIds={selectedTaskIds} onToggleTask={toggleTaskSelection}
+          selectableTaskIds={isDepartmentAdmin ? [] : reviewableIds} selectedTaskIds={selectedTaskIds} onToggleTask={toggleTaskSelection}
           emptyText={scope === 'review' ? 'Nothing waiting for your review.'
             : scope === 'created' ? 'You haven’t assigned any matching tasks to others.'
               : view === 'open' ? 'No open tasks match these filters.' : `No ${STATUS_LABEL[view]?.toLowerCase() || ''} tasks match these filters.`} />
       )}
 
       <TaskPanel openId={openId} onClose={() => { const next = new URLSearchParams(params); next.delete('open'); setParams(next, { replace: true }); }} />
-      {editing && (editing.own
+      {editing && !isDepartmentAdmin && (editing.own
         ? <AddWorkForm onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
         : <TaskForm task={null} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />)}
     </div>

@@ -1,6 +1,6 @@
 // Integration: screens → services → http → demo backend (same rules as the real API).
 import { describe, expect, it } from 'vitest';
-import { authService, employeeService, profilePhotoService } from '@/services/index.js';
+import { authService, employeeService, profilePhotoService, reportService, taskService } from '@/services/index.js';
 import { http, tokenStore } from '@/services/http.js';
 import { ADMIN, PRIYA, signIn } from '../helpers.js';
 
@@ -55,6 +55,49 @@ describe('people & employees', () => {
     expect(upd.designation).toBe('HR Executive');
     await expect(employeeService.setActive(1, false)).rejects.toThrow('cannot deactivate your own account');
     await expect(employeeService.update(1, { fullName: 'System Admin', email: ADMIN, role: 'EMPLOYEE' })).rejects.toThrow('own admin role');
+  });
+  it('department admins can view only their selected departments, independent of their own department', async () => {
+    await signIn(ADMIN);
+    await employeeService.create({
+      fullName: 'Accounts Department Admin', email: 'accounts.admin@company.com', password: 'Start@1234',
+      role: 'ADMIN', department: 'Purchase', departmentAdmin: true, accessibleDepartments: ['Accounts', 'Projects'],
+    });
+
+    await signIn('accounts.admin@company.com', 'Start@1234');
+    const people = await employeeService.directory();
+    expect(people.map((person) => person.department)).toEqual(expect.arrayContaining(['Accounts', 'Projects', 'Projects']));
+    expect(people).toHaveLength(3);
+    expect((await employeeService.list()).every((person) => ['Accounts', 'Projects'].includes(person.department))).toBe(true);
+    await expect(employeeService.get(3)).rejects.toThrow('Employee not found');
+    expect((await reportService.team()).every((member) => ['Accounts', 'Projects'].includes(member.employee.department))).toBe(true);
+    expect((await taskService.list({ scope: 'all' })).every((task) => ['Accounts', 'Projects'].includes(task.assignee.department))).toBe(true);
+    await expect(employeeService.create({
+      fullName: 'Blocked Person', email: 'blocked@company.com', password: 'Start@1234', role: 'EMPLOYEE',
+    })).rejects.toThrow('permission');
+    await expect(taskService.create({ title: 'Blocked assignment', assigneeId: 2 })).rejects.toThrow('view-only');
+  });
+  it('updating an existing admin to department admin restricts them to the selected department', async () => {
+    await signIn(ADMIN);
+    await employeeService.create({
+      fullName: 'Tech Team Member', email: 'tech.employee@company.com', password: 'Start@1234',
+      role: 'EMPLOYEE', department: 'Tech',
+    });
+    const existingAdmin = await employeeService.create({
+      fullName: 'Existing Admin', email: 'existing.admin@company.com', password: 'Start@1234',
+      role: 'ADMIN', department: 'Management',
+    });
+    const updated = await employeeService.update(existingAdmin.id, {
+      ...existingAdmin,
+      department: 'Management',
+      departmentAdmin: true,
+      accessibleDepartments: ['Tech'],
+    });
+    expect(updated.department).toBe('Management');
+    expect(updated.accessibleDepartments).toEqual(['Tech']);
+
+    await signIn('existing.admin@company.com', 'Start@1234');
+    expect((await employeeService.directory()).map((person) => person.department)).toEqual(['Tech']);
+    expect((await employeeService.list()).map((person) => person.department)).toEqual(['Tech']);
   });
   it('admin can add and manage a photo on an employee profile', async () => {
     await signIn(ADMIN);

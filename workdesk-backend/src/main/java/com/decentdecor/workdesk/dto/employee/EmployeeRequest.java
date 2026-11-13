@@ -2,6 +2,7 @@ package com.decentdecor.workdesk.dto.employee;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 
 /**
  * Add or edit an employee (admin).
@@ -17,5 +18,7 @@ public record EmployeeRequest(
         String role,
         @Size(max = 80, message = "department: must be 80 characters or fewer") String department,
         @Size(max = 80, message = "designation: must be 80 characters or fewer") String designation,
-        @Size(max = 30, message = "phone: must be 30 characters or fewer") String phone) {
+        @Size(max = 30, message = "phone: must be 30 characters or fewer") String phone,
+        boolean departmentAdmin,
+        List<String> accessibleDepartments) {
 }

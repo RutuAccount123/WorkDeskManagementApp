@@ -2,14 +2,20 @@ package com.decentdecor.workdesk.entity;
 
 import com.decentdecor.workdesk.entity.enums.Role;
 import jakarta.persistence.Column;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * Table: employee. A person who can sign in: an admin or an employee.
@@ -44,6 +50,14 @@ public class Employee {
     @Column(name = "department", length = 80)
     private String department;
 
+    @Column(name = "department_admin", nullable = false)
+    private boolean departmentAdmin;
+
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "employee_department_access", joinColumns = @JoinColumn(name = "employee_id"))
+    @Column(name = "department", nullable = false, length = 80)
+    private Set<String> accessibleDepartments = new LinkedHashSet<>();
+
     @Column(name = "designation", length = 80)
     private String designation;
 
@@ -62,6 +76,14 @@ public class Employee {
 
     public boolean isAdmin() {
         return role == Role.ADMIN;
+    }
+
+    public boolean isDepartmentAdmin() {
+        return isAdmin() && departmentAdmin;
+    }
+
+    public boolean isFullAdmin() {
+        return isAdmin() && !departmentAdmin;
     }
 
     /** Ends every sign-in of this person (their tokens no longer match). */
@@ -121,6 +143,22 @@ public class Employee {
 
     public void setDepartment(String department) {
         this.department = department;
+    }
+
+    public boolean isDepartmentAdminAccess() {
+        return departmentAdmin;
+    }
+
+    public void setDepartmentAdmin(boolean departmentAdmin) {
+        this.departmentAdmin = departmentAdmin;
+    }
+
+    public Set<String> getAccessibleDepartments() {
+        return accessibleDepartments;
+    }
+
+    public void setAccessibleDepartments(Set<String> accessibleDepartments) {
+        this.accessibleDepartments = new LinkedHashSet<>(accessibleDepartments);
     }
 
     public String getDesignation() {

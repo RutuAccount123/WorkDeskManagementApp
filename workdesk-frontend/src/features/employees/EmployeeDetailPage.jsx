@@ -8,9 +8,11 @@ import { groupFmsTasks } from '@/features/tasks/taskGroups.js';
 import TaskForm from '@/features/tasks/TaskForm.jsx';
 import TaskPanel from '@/features/tasks/TaskPanel.jsx';
 import WorkCalendar from '@/features/calendar/WorkCalendar.jsx';
+import { useAuth } from '@/features/auth/AuthContext.jsx';
 
 /** Admin: everything about one employee — profile, performance, and their work by day/week/month/year. */
 export default function EmployeeDetail() {
+  const { isFullAdmin } = useAuth();
   const { id } = useParams();
   const empId = Number(id);
   const [emp, setEmp] = useState(null);
@@ -66,7 +68,7 @@ export default function EmployeeDetail() {
         </div>
         <div className="row">
           <Link className="btn ghost" to={`/tasks?assigneeId=${emp.id}&status=all`}>All their tasks</Link>
-          {emp.active && <button className="btn primary" onClick={() => setAssigning(true)}>Assign a task</button>}
+          {emp.active && isFullAdmin && <button className="btn primary" onClick={() => setAssigning(true)}>Assign a task</button>}
         </div>
       </header>
 
@@ -75,7 +77,7 @@ export default function EmployeeDetail() {
       <WorkCalendar employeeId={empId} employeeName={emp.fullName} onOpen={setOpenId} refreshKey={refresh} initialView="day" />
 
       <TaskPanel openId={openId} onClose={() => setOpenId(null)} onChanged={bump} />
-      {assigning && (
+      {assigning && isFullAdmin && (
         <TaskForm task={null} employees={employees} defaultAssigneeId={emp.id}
           onClose={() => setAssigning(false)} onSaved={() => { setAssigning(false); bump(); }} />
       )}

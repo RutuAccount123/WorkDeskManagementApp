@@ -3,8 +3,10 @@ import { reportService, profilePhotoService } from '@/services/index.js';
 import { personColor } from '@/utils/colors.js';
 import { encodeImage } from '@/utils/image.js';
 import { fmtDate } from '@/utils/format.js';
+import { useAuth } from '@/features/auth/AuthContext.jsx';
 
 export default function EmployeeProfileCard({ user, employeeId, today, todayError, refreshKey }) {
+  const { isFullAdmin } = useAuth();
   const [photo, setPhoto] = useState(null);
   const [performance, setPerformance] = useState(null);
   const [photoError, setPhotoError] = useState('');
@@ -87,16 +89,16 @@ export default function EmployeeProfileCard({ user, employeeId, today, todayErro
     <section className="panel employee-profile-card" aria-label="Employee profile and progress">
       <div className="employee-profile-photo-column">
         <button type="button" className="employee-profile-photo" style={{ background: personColor(user.fullName) }}
-          disabled={busy} onClick={openPhotoPicker} aria-label={`Choose profile photo for ${user.fullName}`}>
+          disabled={!isFullAdmin || busy} onClick={openPhotoPicker} aria-label={`Choose profile photo for ${user.fullName}`}>
           {photo
             ? <img src={photo} alt={`${user.fullName} profile`} />
             : <span aria-hidden="true">{user.fullName.charAt(0).toUpperCase()}</span>}
         </button>
-        <button type="button" className="link-btn" disabled={busy}
+        {isFullAdmin && <button type="button" className="link-btn" disabled={busy}
           onClick={() => photo ? setPhotoActionsOpen((open) => !open) : openPhotoPicker()}>
           {photo ? 'Change image' : 'Add image'}
-        </button>
-        {photo && photoActionsOpen && (
+        </button>}
+        {isFullAdmin && photo && photoActionsOpen && (
           <div className="employee-photo-options" aria-label="Profile image actions">
             <button type="button" className="link-btn" disabled={busy} onClick={openPhotoPicker}>Select new image</button>
             <button type="button" className="link-btn danger" disabled={busy} onClick={removePhoto}>Remove image</button>
@@ -112,7 +114,7 @@ export default function EmployeeProfileCard({ user, employeeId, today, todayErro
             <h2>{user.fullName}</h2>
             <p className="muted">{[user.designation, user.department].filter(Boolean).join(' · ') || 'Employee'}</p>
           </div>
-          <span className="profile-role">{user.role === 'ADMIN' ? 'Administrator' : 'Employee'}</span>
+          <span className="profile-role">{user.departmentAdmin ? 'Department admin' : user.role === 'ADMIN' ? 'Administrator' : 'Employee'}</span>
         </div>
         <dl className="employee-profile-details">
           <div><dt>Email</dt><dd>{user.email}</dd></div>

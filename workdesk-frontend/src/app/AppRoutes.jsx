@@ -18,7 +18,7 @@ import AccountPage from '@/features/account/AccountPage.jsx';
 
 /** Every screen in the app, and who can open it. */
 export default function AppRoutes() {
-  const { user, isAdmin, loading } = useAuth();
+  const { user, isAdmin, isDepartmentAdmin, loading } = useAuth();
   if (loading) return <div className="boot">Loading…</div>;
   if (!user) return <LoginPage />;
 
@@ -31,17 +31,17 @@ export default function AppRoutes() {
         <Route path="tasks/:id" element={<TaskDetailPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="holidays" element={<HolidaysPage />} />
-        <Route path="workflows" element={<WorkflowsPage />} />
-        <Route path="workflows/new" element={<WorkflowEditorPage />} />
-        <Route path="workflows/:id/sheet" element={<WorkflowSheetPage />} />
-        <Route path="workflows/:id" element={<WorkflowSheetPage />} />
-        <Route path="workflows/:id/edit" element={<WorkflowEditorPage />} />
+        {!isDepartmentAdmin && <Route path="workflows" element={<WorkflowsPage />} />}
+        {!isDepartmentAdmin && <Route path="workflows/new" element={<WorkflowEditorPage />} />}
+        {!isDepartmentAdmin && <Route path="workflows/:id/sheet" element={<WorkflowSheetPage />} />}
+        {!isDepartmentAdmin && <Route path="workflows/:id" element={<WorkflowSheetPage />} />}
+        {!isDepartmentAdmin && <Route path="workflows/:id/edit" element={<WorkflowEditorPage />} />}
         <Route path="account" element={<AccountPage />} />
 
         {/* admin only */}
         {isAdmin && <Route path="employees" element={<EmployeesPage />} />}
         {isAdmin && <Route path="employees/:id" element={<EmployeeDetailPage />} />}
-        {isAdmin && <Route path="recurring" element={<RecurringPage />} />}
+        {isAdmin && !isDepartmentAdmin && <Route path="recurring" element={<RecurringPage />} />}
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

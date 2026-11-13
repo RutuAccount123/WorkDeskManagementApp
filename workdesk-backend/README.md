@@ -215,6 +215,8 @@ except sign-in and health. Errors are always `{"status": 400, "message": "..."}`
 | Notifications | `GET /api/notifications`, `GET …/unread-count`, `POST …/{id}/read`, `POST …/read-all` |
 | Reports | `GET /api/reports/dashboard`, `/team`, `/performance`, `/yearly`, `/employees`, `/employees.csv`, `/daily` |
 
+Full admins can create a **Department admin** by sending `role: "ADMIN"`, `departmentAdmin: true`, the admin's own `department`, and an `accessibleDepartments` list to `POST /api/employees`. Department admins have read-only access to the selected departments' people, profiles, tasks, and reports; their home department does not grant access unless it is selected. They cannot manage employees, tasks, workflows, recurring tasks, or holidays. Leave `departmentAdmin` false for an unrestricted admin.
+
 ---
 
 ## 8. Common problems

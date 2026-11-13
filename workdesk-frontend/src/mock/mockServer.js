@@ -79,6 +79,8 @@ function parseEstimatedHours(value) {
 const empById = (id) => db.employees.find((e) => e.id === id);
 const empRef = (id) => { const e = empById(id); return e ? { id: e.id, fullName: e.fullName, department: e.department } : null; };
 const empOut = ({ password, profilePhoto, ...e }) => e; // never send credentials or photo data
+const canViewDepartment = (admin, department) => !admin.departmentAdmin
+  || (admin.accessibleDepartments?.length ? admin.accessibleDepartments.includes(department) : admin.department === department);
 
 /**
  * Who reviews a task. The reviewer chosen when it was assigned; if none was chosen,
@@ -144,7 +146,9 @@ function notify(recipientId, taskId, type, message) {
 }
 function getTask(id, me) {
   const t = db.tasks.find((x) => x.id === id);
-  if (!t || (me.role !== 'ADMIN' && !involved(t, me))) throw notFound('Task');
+  const department = empById(t?.assigneeId)?.department;
+  if (!t || (me.role !== 'ADMIN' && !involved(t, me))
+      || !canViewDepartment(me, department)) throw notFound('Task');
   return t;
 }
 /** Validates the chosen reviewer. Empty → fallback. A person cannot review their own task. */
@@ -656,7 +660,11 @@ function route(method, path, query, body, me) {
   const seg = path.replace(/^\/api\//, '').split('/');
   const id = seg[1] ? Number(seg[1]) : null;
   const isAdmin = me?.role === 'ADMIN';
-  const needAdmin = () => { if (!isAdmin) throw forbidden(); };
+  const isDepartmentAdmin = isAdmin && me.departmentAdmin === true;
+  const isFullAdmin = isAdmin && !isDepartmentAdmin;
+  const needAdmin = () => { if (!isFullAdmin) throw forbidden(); };
+  const needAdminRole = () => { if (!isAdmin) throw forbidden(); };
+  const needWrite = () => { if (isDepartmentAdmin) throw forbidden('Department admins have view-only access'); };
   const linkedWorkflowId = (value) => {
     if (!value) return null;
     const workflowId = Number(value);
@@ -705,9 +713,10 @@ function route(method, path, query, body, me) {
     }
   }
   if (seg[0] === 'employees' && seg[2] === 'photo') {
-    needAdmin();
+    if (method === 'GET') needAdminRole();
+    else needAdmin();
     const employee = db.employees.find((person) => person.id === id);
-    if (!employee) throw new HttpError(404, 'Employee not found');
+    if (!employee || (isDepartmentAdmin && !canViewDepartment(me, employee.department))) throw new HttpError(404, 'Employee not found');
     if (method === 'GET') {
       if (!employee.profilePhoto) return new Response(null, { status: 204 });
       const binary = atob(employee.profilePhoto);
@@ -730,6 +739,7 @@ function route(method, path, query, body, me) {
   }
 
   if (path === '/api/tasks/batch' && method === 'POST') {
+    needWrite();
     if (!Array.isArray(body.assigneeIds) || body.assigneeIds.length < 2 || body.assigneeIds.length > 50) {
       throw bad('Choose between 2 and 50 people for a multi-assignee task');
     }
@@ -742,25 +752,35 @@ function route(method, path, query, body, me) {
 
   // ----- people directory: everyone can see who they can assign work to
   if (seg[0] === 'people' && method === 'GET') {
-    return db.employees.filter((e) => e.active).sort((a, b) => a.fullName.localeCompare(b.fullName))
+    return db.employees.filter((e) => e.active && (!isDepartmentAdmin || canViewDepartment(me, e.department))).sort((a, b) => a.fullName.localeCompare(b.fullName))
       .map((e) => ({ id: e.id, fullName: e.fullName, department: e.department, designation: e.designation, role: e.role, active: true }));
   }
 
   // ----- employees (admin)
   if (seg[0] === 'employees') {
-    needAdmin();
-    if (!id && method === 'GET') return [...db.employees].sort((a, b) => a.fullName.localeCompare(b.fullName)).map(empOut);
+    if (method === 'GET') needAdminRole();
+    else needAdmin();
+    if (!id && method === 'GET') {
+      return [...db.employees].filter((e) => !isDepartmentAdmin || canViewDepartment(me, e.department))
+        .sort((a, b) => a.fullName.localeCompare(b.fullName)).map(empOut);
+    }
     if (!id && method === 'POST') {
       const email = String(body.email || '').trim().toLowerCase();
       if (!body.fullName?.trim()) throw bad('fullName: must not be blank');
       if (db.employees.some((e) => e.email === email)) throw new HttpError(409, 'An employee with this email already exists');
       if (!body.password || body.password.length < 8) throw bad('password: must be at least 8 characters');
-      const e = { id: nextId(db.employees), employeeCode: body.employeeCode || null, fullName: body.fullName.trim(), email, password: body.password, role: body.role, department: body.department || null, designation: body.designation || null, phone: body.phone || null, active: true, createdAt: nowIso() };
+      const accessibleDepartments = body.departmentAdmin && Array.isArray(body.accessibleDepartments)
+        ? [...new Set(body.accessibleDepartments.map((department) => String(department).trim()).filter(Boolean))]
+        : [];
+      if (body.departmentAdmin && (body.role !== 'ADMIN' || !body.department || accessibleDepartments.length === 0)) {
+        throw bad('Choose the admin home department and at least one department they can access');
+      }
+      const e = { id: nextId(db.employees), employeeCode: body.employeeCode || null, fullName: body.fullName.trim(), email, password: body.password, role: body.role, departmentAdmin: body.departmentAdmin === true, accessibleDepartments, department: body.department || null, designation: body.designation || null, phone: body.phone || null, active: true, createdAt: nowIso() };
       db.employees.push(e);
       return empOut(e);
     }
     const e = empById(id);
-    if (!e) throw notFound('Employee');
+    if (!e || (isDepartmentAdmin && !canViewDepartment(me, e.department))) throw notFound('Employee');
     if (seg[2] === 'active') {
       const value = query.get('value') === 'true';
       if (e.id === me.id && !value) throw bad('You cannot deactivate your own account');
@@ -778,7 +798,13 @@ function route(method, path, query, body, me) {
       if (!email) throw bad('email: must not be blank');
       if (email !== e.email && db.employees.some((x) => x.email === email)) throw new HttpError(409, 'An employee with this email already exists');
       if (e.id === me.id && body.role !== 'ADMIN') throw bad('You cannot remove your own admin role');
-      Object.assign(e, { employeeCode: body.employeeCode || null, fullName: body.fullName.trim(), email, role: body.role, department: body.department || null, designation: body.designation || null, phone: body.phone || null });
+      const accessibleDepartments = body.departmentAdmin && Array.isArray(body.accessibleDepartments)
+        ? [...new Set(body.accessibleDepartments.map((department) => String(department).trim()).filter(Boolean))]
+        : [];
+      if (body.departmentAdmin && (body.role !== 'ADMIN' || !body.department || accessibleDepartments.length === 0)) {
+        throw bad('Choose the admin home department and at least one department they can access');
+      }
+      Object.assign(e, { employeeCode: body.employeeCode || null, fullName: body.fullName.trim(), email, role: body.role, departmentAdmin: body.departmentAdmin === true, accessibleDepartments, department: body.department || null, designation: body.designation || null, phone: body.phone || null });
       return empOut(e);
     }
     return empOut(e);
@@ -786,6 +812,7 @@ function route(method, path, query, body, me) {
 
   // ----- tasks
   if (seg[0] === 'tasks') {
+    if (method !== 'GET') needWrite();
     if (seg[1] === 'batch' && seg[2] === 'approve' && method === 'POST') {
       if (!Array.isArray(body.taskIds) || body.taskIds.length < 1 || body.taskIds.length > 500) {
         throw bad('Choose between 1 and 500 tasks to approve');
@@ -810,6 +837,7 @@ function route(method, path, query, body, me) {
       const workTo = query.get('workTo') ? addDays(dayStart(query.get('workTo')), 1) : null;
       return db.tasks
         .filter(inScope)
+        .filter((t) => !isDepartmentAdmin || canViewDepartment(me, empById(t.assigneeId)?.department))
         .filter((t) => (!workFrom || new Date(workDate(t)) >= workFrom) && (!workTo || new Date(workDate(t)) < workTo))
         .filter((t) => !assigneeId || t.assigneeId === Number(assigneeId))
         .filter((t) => !statuses.length || statuses.includes(t.status))
@@ -981,6 +1009,7 @@ function route(method, path, query, body, me) {
 
   // ----- recurring tasks
   if (seg[0] === 'recurring') {
+    if (isDepartmentAdmin) needWrite();
     if (path === '/api/recurring/batch' && method === 'POST') {
       if (!Array.isArray(body.assigneeIds) || body.assigneeIds.length < 2 || body.assigneeIds.length > 50) {
         throw bad('Choose between 2 and 50 people for a multi-assignee repeating task');
@@ -1055,6 +1084,7 @@ function route(method, path, query, body, me) {
 
   // ----- workflows (FMS): admins see all; others see the ones they set up or have a step in
   if (seg[0] === 'workflows') {
+    if (isDepartmentAdmin) needWrite();
     db.workflows ||= []; db.workflowRuns ||= [];
     const onTask = (taskId) => { const t = taskId && db.tasks.find((x) => x.id === taskId); return !!t && (isAdmin || involved(t, me)); };
     const mineWf = (wf) => isAdmin || wf.createdById === me.id || wf.steps.some((st) => st.assigneeId === me.id)
@@ -1233,12 +1263,16 @@ function route(method, path, query, body, me) {
 
   // ----- reports
   if (seg[0] === 'reports') {
-    const visible = isAdmin ? db.tasks : db.tasks.filter((t) => t.assigneeId === me.id);
+    const visible = isFullAdmin ? db.tasks : isDepartmentAdmin
+      ? db.tasks.filter((t) => canViewDepartment(me, empById(t.assigneeId)?.department))
+      : db.tasks.filter((t) => t.assigneeId === me.id);
+
+    const visibleEmployee = (employee) => !isDepartmentAdmin || canViewDepartment(me, employee.department);
 
     // Monthly performance + 6-month trend for one employee
     if (seg[1] === 'performance') {
       const empId = isAdmin ? Number(query.get('employeeId')) || me.id : me.id;
-      if (!empById(empId)) throw notFound('Employee');
+      if (!empById(empId) || !visibleEmployee(empById(empId))) throw notFound('Employee');
       const key = query.get('month') || monthKey(new Date());
       const [from, to] = monthRange(key);
       const trend = [];
@@ -1254,6 +1288,7 @@ function route(method, path, query, body, me) {
     // Twelve months for one employee
     if (seg[1] === 'yearly') {
       const empId = isAdmin ? Number(query.get('employeeId')) || me.id : me.id;
+      if (!empById(empId) || !visibleEmployee(empById(empId))) throw notFound('Employee');
       const year = Number(query.get('year')) || new Date().getFullYear();
       const months = [];
       for (let m = 0; m < 12; m++) {
@@ -1264,9 +1299,9 @@ function route(method, path, query, body, me) {
       return { employeeId: empId, year, ...performance(empId, new Date(year, 0, 1), new Date(year + 1, 0, 1)), months };
     }
 
-    // Admin: one card per employee — today's work, overdue, this month's score
+    // Admin: one card per person — today's work, overdue, this month's score
     if (seg[1] === 'team') {
-      needAdmin();
+      needAdminRole();
       const period = query.get('period') || 'today';
       const today = dayStart(localDay(new Date()));
       let rangeStart;
@@ -1284,7 +1319,7 @@ function route(method, path, query, body, me) {
         throw bad('Period must be today, week, or month');
       }
       const [from, to] = monthRange(monthKey(new Date()));
-      return db.employees.filter((e) => e.role === 'EMPLOYEE').sort((a, b) => a.fullName.localeCompare(b.fullName)).map((e) => {
+      return db.employees.filter(visibleEmployee).slice().sort((a, b) => a.fullName.localeCompare(b.fullName)).map((e) => {
         const p = performance(e.id, from, to);
         const todayTasks = db.tasks
           .filter((t) => t.assigneeId === e.id && t.status !== 'CANCELLED' && between(workDate(t), today, addDays(today, 1)))
@@ -1338,9 +1373,9 @@ function route(method, path, query, body, me) {
     if (to <= from) throw bad("'to' date must be on or after 'from' date");
 
     if (seg[1] === 'employees' || seg[1] === 'employees.csv') {
-      needAdmin();
+      needAdminRole();
       const rows = [];
-      [...db.employees].sort((a, b) => a.fullName.localeCompare(b.fullName)).forEach((e) => {
+      [...db.employees].filter(visibleEmployee).sort((a, b) => a.fullName.localeCompare(b.fullName)).forEach((e) => {
         const mine = db.tasks.filter((t) => t.assigneeId === e.id);
         const open = mine.filter((t) => OPEN.includes(t.status));
         const touched = mine.filter((t) => between(t.createdAt, from, to) || between(t.completedAt, from, to) || between(t.dueAt, from, to));
@@ -1365,8 +1400,11 @@ function route(method, path, query, body, me) {
     }
 
     if (seg[1] === 'daily') {
-      const empId = isAdmin ? Number(query.get('employeeId')) || null : me.id;
-      const list = db.tasks.filter((t) => !empId || t.assigneeId === empId);
+      const requestedId = isAdmin ? Number(query.get('employeeId')) || null : me.id;
+      if (requestedId && (!empById(requestedId) || !visibleEmployee(empById(requestedId)))) throw notFound('Employee');
+      const list = requestedId
+        ? db.tasks.filter((t) => t.assigneeId === requestedId)
+        : visible;
       const out = [];
       for (let d = new Date(from); d < to; d = addDays(d, 1)) {
         const e = addDays(d, 1);
