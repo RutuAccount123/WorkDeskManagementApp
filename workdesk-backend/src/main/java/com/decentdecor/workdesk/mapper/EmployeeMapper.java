@@ -17,7 +17,8 @@ public class EmployeeMapper {
     }
 
     public PersonResponse toPerson(Employee e) {
-        return new PersonResponse(e.getId(), e.getFullName(), e.getDepartment(), e.getDesignation(), e.getRole().name(), e.isActive());
+        return new PersonResponse(e.getId(), e.getFullName(), e.getDepartment(), e.getDesignation(), e.getRole().name(),
+                e.isActive(), e.isDepartmentAdmin());
     }
 
     /** Short reference, or null. */

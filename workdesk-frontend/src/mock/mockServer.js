@@ -740,12 +740,31 @@ function route(method, path, query, body, me) {
   }
 
   if (path === '/api/tasks/batch' && method === 'POST') {
-    needWrite();
     if (!Array.isArray(body.assigneeIds) || body.assigneeIds.length < 2 || body.assigneeIds.length > 50) {
       throw bad('Choose between 2 and 50 people for a multi-assignee task');
     }
     if (new Set(body.assigneeIds.map(Number)).size !== body.assigneeIds.length) {
       throw bad('Choose each employee only once');
+    }
+    if (!body.task || typeof body.task !== 'object') throw bad('Choose a task to assign');
+    if (isDepartmentAdmin) {
+      body.assigneeIds.forEach((assigneeId) => {
+        const assignee = activeAssignee(assigneeId);
+        if (!canViewDepartment(me, assignee.department)) {
+          throw forbidden('You can assign tasks only to people in departments you can access');
+        }
+        const reviewerId = body.task.noReview ? null
+          : pickReviewer(body.task.reviewerId, assignee.id, me.id);
+        if (reviewerId) {
+          const reviewer = empById(reviewerId);
+          if (!canViewDepartment(me, reviewer.department)) {
+            throw forbidden('Choose a reviewer in a department you can access');
+          }
+          if (reviewer.departmentAdmin) throw bad('Choose a reviewer who can review tasks');
+        }
+      });
+    } else {
+      needWrite();
     }
     return body.assigneeIds.map((assigneeId) =>
       route('POST', '/api/tasks', query, { ...body.task, assigneeId }, me));
@@ -813,7 +832,7 @@ function route(method, path, query, body, me) {
 
   // ----- tasks
   if (seg[0] === 'tasks') {
-    if (method !== 'GET') needWrite();
+    if (method !== 'GET' && !(isDepartmentAdmin && method === 'POST' && !id)) needWrite();
     if (seg[1] === 'batch' && seg[2] === 'approve' && method === 'POST') {
       if (!Array.isArray(body.taskIds) || body.taskIds.length < 1 || body.taskIds.length > 500) {
         throw bad('Choose between 1 and 500 tasks to approve');
@@ -854,6 +873,16 @@ function route(method, path, query, body, me) {
       const a = body.assigneeId ? activeAssignee(body.assigneeId) : me;
       const self = a.id === me.id;
       const reviewerId = body.noReview ? null : pickReviewer(body.reviewerId, a.id, self ? null : me.id);
+      if (isDepartmentAdmin && !canViewDepartment(me, a.department)) {
+        throw forbidden('You can assign tasks only to people in departments you can access');
+      }
+      if (isDepartmentAdmin && reviewerId) {
+        const reviewer = empById(reviewerId);
+        if (!canViewDepartment(me, reviewer.department)) {
+          throw forbidden('Choose a reviewer in a department you can access');
+        }
+        if (reviewer.departmentAdmin) throw bad('Choose a reviewer who can review tasks');
+      }
       const allowed = reviewerId ? ['TODO', 'IN_PROGRESS'] : ['TODO', 'IN_PROGRESS', 'COMPLETED'];
       const status = self && allowed.includes(body.status) ? body.status : 'TODO';
       const now = nowIso();

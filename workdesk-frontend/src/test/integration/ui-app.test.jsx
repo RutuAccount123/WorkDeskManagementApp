@@ -101,7 +101,7 @@ describe('admin dashboard stat cards', () => {
 });
 
 describe('permissions in the screens', () => {
-  it('department admins get scoped navigation and read-only employee/task screens', async () => {
+  it('department admins can assign tasks only within their accessible departments', async () => {
     tokenStore.set('mock-1');
     await employeeService.create({
       fullName: 'Accounts Department Admin', email: 'accounts.admin@company.com', password: 'Start@1234',
@@ -123,7 +123,12 @@ describe('permissions in the screens', () => {
     const sidebar = document.querySelector('.sidebar');
     expect(within(sidebar).getByRole('link', { name: 'Employees' })).toBeInTheDocument();
     expect(within(sidebar).queryByRole('link', { name: /Workflows|Repeating tasks/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Assign a task' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Assign a task' }));
+    const dashboardTaskDialog = await screen.findByRole('dialog', { name: 'Assign a task' });
+    const dashboardAssigneeGroup = within(dashboardTaskDialog).getByRole('group', { name: 'Assign to' });
+    expect(within(dashboardAssigneeGroup).getByRole('checkbox', { name: /Priya Sharma/ })).toBeInTheDocument();
+    expect(within(dashboardAssigneeGroup).queryByRole('checkbox', { name: /Rahul Patil/ })).not.toBeInTheDocument();
+    await user.click(within(dashboardTaskDialog).getByRole('button', { name: 'Cancel' }));
 
     await user.click(within(sidebar).getByRole('link', { name: 'Employees' }));
     await screen.findByRole('heading', { level: 1, name: 'Employees' });
@@ -134,7 +139,20 @@ describe('permissions in the screens', () => {
 
     await user.click(within(sidebar).getByRole('link', { name: 'Tasks' }));
     await screen.findByRole('heading', { level: 1, name: 'Tasks' });
-    expect(screen.queryByRole('button', { name: 'Assign a task' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Assign a task' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Assign a task' });
+    const accessiblePeople = await employeeService.directory();
+    const assignee = accessiblePeople.find((person) => person.role === 'EMPLOYEE');
+    expect(assignee).toBeDefined();
+    const assign = within(dialog).getByRole('group', { name: 'Assign to' });
+    expect(within(assign).getByRole('checkbox', { name: new RegExp(assignee.fullName) })).toBeInTheDocument();
+    expect(within(assign).queryByRole('checkbox', { name: /Rahul Patil/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Reviewed by')).toHaveValue('none');
+    expect(within(dialog).queryByLabelText('Repeat')).not.toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText('Title'), 'Scoped department task');
+    await user.click(within(assign).getByRole('checkbox', { name: new RegExp(assignee.fullName) }));
+    await user.click(within(dialog).getByRole('button', { name: 'Assign task' }));
+    expect(await screen.findByText('Scoped department task')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add my work' })).not.toBeInTheDocument();
   });
 

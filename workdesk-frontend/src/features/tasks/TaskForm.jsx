@@ -12,7 +12,7 @@ const NO_REVIEW = 'none';
  * Used by admins and employees alike.
  */
 export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) {
-  const { user } = useAuth();
+  const { user, isDepartmentAdmin } = useAuth();
   const [people, setPeople] = useState([]);
   const [workflows, setWorkflows] = useState([]);
   const [workflowError, setWorkflowError] = useState('');
@@ -27,7 +27,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
     description: task?.description || '',
     // default reviewer: the person assigning
     reviewerId: task ? String(task.reviewer?.id || NO_REVIEW)
-      : String(defaultAssigneeId || user.id) === String(user.id) ? NO_REVIEW : String(user.id),
+      : isDepartmentAdmin || String(defaultAssigneeId || user.id) === String(user.id) ? NO_REVIEW : String(user.id),
     priority: task?.priority || 'MEDIUM',
     dueAt: toLocalInput(task?.dueAt),
     estimatedHours: task?.estimatedHours == null ? '' : String(task.estimatedHours),
@@ -44,8 +44,8 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
 
   useEffect(() => { employeeService.directory().then(setPeople).catch(() => {}); }, []);
   useEffect(() => {
-    if (!task) workflowService.list().then(setWorkflows).catch((err) => setWorkflowError(err.message));
-  }, [task]);
+    if (!task && !isDepartmentAdmin) workflowService.list().then(setWorkflows).catch((err) => setWorkflowError(err.message));
+  }, [task, isDepartmentAdmin]);
 
   const set = (k) => (e) => {
     const value = e.target.value;
@@ -54,14 +54,16 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
 
   const updateAssignees = (next) => {
     setAssigneeIds(next);
-    const defaultReviewer = next.includes(String(user.id))
-      ? people.find((person) => !next.includes(String(person.id)))?.id
-      : user.id;
+    const defaultReviewer = isDepartmentAdmin
+      ? null
+      : next.includes(String(user.id))
+        ? people.find((person) => !next.includes(String(person.id)))?.id
+        : user.id;
     setForm((current) => ({
       ...current,
       reviewerId: next.length === 1 && next[0] === String(user.id)
         ? NO_REVIEW
-        : String(defaultReviewer ?? NO_REVIEW),
+        : isDepartmentAdmin ? NO_REVIEW : String(defaultReviewer ?? NO_REVIEW),
     }));
   };
 
@@ -82,8 +84,9 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
   };
 
   const forMe = assigneeIds.length === 1 && assigneeIds[0] === String(user.id);
-  const canRepeat = !task;
-  const reviewers = people.filter((p) => !assigneeIds.includes(String(p.id)));
+  const canRepeat = !task && !isDepartmentAdmin;
+  const reviewers = people.filter((p) => !assigneeIds.includes(String(p.id))
+    && (!isDepartmentAdmin || (String(p.id) !== String(user.id) && !p.departmentAdmin)));
   const assigneeName = people.find((p) => String(p.id) === assigneeIds[0])?.fullName;
 
   const submit = async (e) => {
@@ -160,7 +163,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
         {image && <img className="task-reference-image" src={`data:image/jpeg;base64,${image}`} alt="Task reference" />}
         <fieldset className="assignee-picker">
           <legend>Assign to</legend>
-          {!task && (
+          {!task && !isDepartmentAdmin && (
             <label className="assignee-option">
               <input type="checkbox" checked={allOtherAssigneesSelected}
                 onChange={toggleAllOtherAssignees} />

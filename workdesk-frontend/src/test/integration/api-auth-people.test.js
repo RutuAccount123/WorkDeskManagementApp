@@ -74,7 +74,21 @@ describe('people & employees', () => {
     await expect(employeeService.create({
       fullName: 'Blocked Person', email: 'blocked@company.com', password: 'Start@1234', role: 'EMPLOYEE',
     })).rejects.toThrow('permission');
-    await expect(taskService.create({ title: 'Blocked assignment', assigneeId: 2 })).rejects.toThrow('view-only');
+    const assignable = people.find((person) => person.role === 'EMPLOYEE');
+    const createdTask = await taskService.create({
+      title: 'Department-scoped assignment', assigneeId: assignable.id, noReview: true,
+    });
+    expect(['Accounts', 'Projects']).toContain(createdTask.assignee.department);
+    expect(createdTask.reviewer).toBeNull();
+    await expect(taskService.changeStatus(createdTask.id, 'IN_PROGRESS')).rejects.toThrow('view-only');
+    await expect(taskService.create({
+      title: 'Out-of-scope assignment', assigneeId: 3, noReview: true,
+    })).rejects.toThrow('departments you can access');
+    await expect(taskService.createForAssignees([assignable.id, 3], {
+      title: 'Partially out-of-scope batch', noReview: true,
+    })).rejects.toThrow('departments you can access');
+    expect((await taskService.list({ scope: 'created' }))
+      .some((task) => task.title === 'Partially out-of-scope batch')).toBe(false);
   });
   it('updating an existing admin to department admin restricts them to the selected department', async () => {
     await signIn(ADMIN);

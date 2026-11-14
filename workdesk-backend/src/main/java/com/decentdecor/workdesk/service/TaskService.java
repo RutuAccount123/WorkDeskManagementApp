@@ -156,7 +156,6 @@ public class TaskService {
     /** POST /api/tasks */
     @Transactional
     public TaskResponse create(CurrentUser user, TaskRequest req) {
-        people.requireNotDepartmentAdmin(user);
         return createOne(user, req, taskImages.normalize(req.image()));
     }
 
@@ -167,6 +166,7 @@ public class TaskService {
         // default reviewer: the person assigning (own work: no review)
         Employee reviewer = Boolean.TRUE.equals(req.noReview())
                 ? null : people.pickReviewer(req.reviewerId(), assignee, self ? null : me);
+        requireDepartmentTaskScope(me, assignee, reviewer);
 
         // own work can be added already started (or done, if nobody reviews it)
         TaskStatus status = TaskStatus.TODO;
@@ -214,7 +214,6 @@ public class TaskService {
     /** Creates independent copies in one transaction so the selection succeeds or fails together. */
     @Transactional
     public List<TaskResponse> createBatch(CurrentUser user, TaskBatchRequest request) {
-        people.requireNotDepartmentAdmin(user);
         List<Long> assigneeIds = request.assigneeIds();
         if (new HashSet<>(assigneeIds).size() != assigneeIds.size()) {
             throw new BadRequestException("Choose each employee only once");
@@ -226,6 +225,21 @@ public class TaskService {
                         task.title(), task.description(), assigneeId, task.reviewerId(), task.priority(),
                         task.dueAt(), task.status(), task.workflowId(), task.estimatedHours(), null, task.noReview()), imageData))
                 .toList();
+    }
+
+    private void requireDepartmentTaskScope(Employee actor, Employee assignee, Employee reviewer) {
+        if (!actor.isDepartmentAdmin()) return;
+        if (!people.canViewDepartment(actor, assignee.getDepartment())) {
+            throw new ForbiddenException("You can assign tasks only to people in departments you can access");
+        }
+        if (reviewer != null) {
+            if (!people.canViewDepartment(actor, reviewer.getDepartment())) {
+                throw new ForbiddenException("Choose a reviewer in a department you can access");
+            }
+            if (reviewer.isDepartmentAdmin()) {
+                throw new BadRequestException("Choose a reviewer who can review tasks");
+            }
+        }
     }
 
     /** Approves selected tasks atomically using the normal reviewer/admin status rules. */

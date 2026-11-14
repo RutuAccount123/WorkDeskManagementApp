@@ -26,7 +26,7 @@ function Stat({ value, label, tone, icon, to }) {
 
 /** Admin: company-wide picture. Employee: their own work. */
 export default function Overview() {
-  const { user, isAdmin, isDepartmentAdmin, isFullAdmin } = useAuth();
+  const { user, isAdmin, isDepartmentAdmin } = useAuth();
   const [stats, setStats] = useState(null);
   const [tasks, setTasks] = useState(null);
   const [people, setPeople] = useState([]);
@@ -71,7 +71,7 @@ export default function Overview() {
             ? 'Here is where your selected departments’ work stands.'
             : isAdmin ? 'Here is where everyone’s work stands.' : 'Here is what’s on your plate.'}</p>
         </div>
-        {isFullAdmin && <button className="btn primary" onClick={() => setEditing({})}>Assign a task</button>}
+        {isAdmin && <button className="btn primary" onClick={() => setEditing({})}>Assign a task</button>}
       </header>
 
       {error && <p className="error">{error}</p>}
@@ -132,7 +132,7 @@ export default function Overview() {
       )}
 
       <TaskPanel openId={openId} onClose={() => setOpenId(null)} />
-      {editing && isFullAdmin && (
+      {editing && isAdmin && (
         <TaskForm task={editing.id ? editing : null} employees={employees}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
       )}

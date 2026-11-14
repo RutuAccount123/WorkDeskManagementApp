@@ -102,7 +102,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    void departmentAdminIsReadOnlyAndScopedAcrossPeopleReportsAndTasks() throws Exception {
+    void departmentAdminCanAssignTasksOnlyWithinItsScopeAndRemainsOtherwiseReadOnly() throws Exception {
         String email = "accounts.admin." + UUID.randomUUID().toString().substring(0, 8) + "@company.com";
         JsonNode created = read(mvc.perform(as(admin, post("/api/employees"))
                         .content(json("fullName", "Accounts Department Admin", "email", email, "password", "Start@1234",
@@ -159,8 +159,29 @@ class ApiIntegrationTest {
         mvc.perform(as(departmentAdmin, get("/api/tasks/" + outsideTask.path("id").asText())))
                 .andExpect(status().isNotFound());
 
+        long allowedAssigneeId = -1;
+        for (JsonNode person : people) {
+            if ("EMPLOYEE".equals(person.path("role").asText())) {
+                allowedAssigneeId = person.path("id").asLong();
+                break;
+            }
+        }
+        assertThat(allowedAssigneeId).isPositive();
+        JsonNode assignedTask = read(mvc.perform(as(departmentAdmin, post("/api/tasks"))
+                        .content(json("title", "Department-scoped assignment", "assigneeId", allowedAssigneeId,
+                                "noReview", true)))
+                .andExpect(status().isCreated()).andReturn());
+        assertThat(assignedTask.get("reviewer") == null || assignedTask.get("reviewer").isNull()).isTrue();
+        mvc.perform(as(departmentAdmin, post("/api/tasks/" + assignedTask.path("id").asText() + "/status"))
+                        .content(json("status", "IN_PROGRESS")))
+                .andExpect(status().isForbidden());
         mvc.perform(as(departmentAdmin, post("/api/tasks"))
-                        .content(json("title", "View-only admin cannot assign", "assigneeId", 2)))
+                        .content(json("title", "Out-of-scope assignment",
+                                "assigneeId", outsideTask.path("assignee").path("id").asLong(), "noReview", true)))
+                .andExpect(status().isForbidden());
+        mvc.perform(as(departmentAdmin, post("/api/tasks"))
+                        .content(json("title", "Out-of-scope reviewer", "assigneeId", allowedAssigneeId,
+                                "reviewerId", outsideTask.path("assignee").path("id").asLong())))
                 .andExpect(status().isForbidden());
         mvc.perform(as(departmentAdmin, post("/api/employees"))
                         .content(json("fullName", "Should not be created", "email", "blocked@company.com",

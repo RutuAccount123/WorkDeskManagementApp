@@ -117,7 +117,7 @@ export default function Tasks() {
         </div>
         <div className="row">
           {!isAdmin && <button className="btn ghost" onClick={() => setEditing({ own: true })}>Add my work</button>}
-          {!isDepartmentAdmin && <button className="btn primary" onClick={() => setEditing({})}>Assign a task</button>}
+          <button className="btn primary" onClick={() => setEditing({})}>Assign a task</button>
         </div>
       </header>
 
@@ -179,9 +179,9 @@ export default function Tasks() {
       )}
 
       <TaskPanel openId={openId} onClose={() => { const next = new URLSearchParams(params); next.delete('open'); setParams(next, { replace: true }); }} />
-      {editing && !isDepartmentAdmin && (editing.own
+      {editing && (editing.own && !isDepartmentAdmin
         ? <AddWorkForm onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
-        : <TaskForm task={null} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />)}
+        : !editing.own && <TaskForm task={null} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />)}
     </div>
   );
 }
