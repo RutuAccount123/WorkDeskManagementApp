@@ -113,6 +113,11 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.department").value("Purchase"))
                 .andExpect(jsonPath("$.accessibleDepartments.length()").value(2))
                 .andReturn());
+        String allowedAssigneeEmail = "scoped.assignee." + UUID.randomUUID().toString().substring(0, 8) + "@company.com";
+        JsonNode allowedAssignee = read(mvc.perform(as(admin, post("/api/employees"))
+                        .content(json("fullName", "Scoped Department Assignee", "email", allowedAssigneeEmail,
+                                "password", "Start@1234", "role", "EMPLOYEE", "department", "Accounts")))
+                .andExpect(status().isCreated()).andReturn());
         String departmentAdmin = login(email, "Start@1234");
 
         JsonNode people = read(mvc.perform(as(departmentAdmin, get("/api/people")))
@@ -159,14 +164,7 @@ class ApiIntegrationTest {
         mvc.perform(as(departmentAdmin, get("/api/tasks/" + outsideTask.path("id").asText())))
                 .andExpect(status().isNotFound());
 
-        long allowedAssigneeId = -1;
-        for (JsonNode person : people) {
-            if ("EMPLOYEE".equals(person.path("role").asText())) {
-                allowedAssigneeId = person.path("id").asLong();
-                break;
-            }
-        }
-        assertThat(allowedAssigneeId).isPositive();
+        long allowedAssigneeId = allowedAssignee.path("id").asLong();
         JsonNode assignedTask = read(mvc.perform(as(departmentAdmin, post("/api/tasks"))
                         .content(json("title", "Department-scoped assignment", "assigneeId", allowedAssigneeId,
                                 "noReview", true)))
