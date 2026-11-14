@@ -5,6 +5,7 @@ export const ADMIN_NAV = [
     section: 'Overview',
     items: [
       { to: '/', label: 'Dashboard', short: 'Home', icon: 'dashboard' },
+      { to: '/my-dashboard', label: 'My Profile', short: 'Profile', icon: 'calendar' },
       { to: '/tasks', label: 'Tasks', icon: 'tasks' },
     ],
   },
@@ -44,6 +45,7 @@ export const DEPARTMENT_ADMIN_NAV = [
     section: 'Department overview',
     items: [
       { to: '/', label: 'Dashboard', short: 'Home', icon: 'dashboard' },
+      { to: '/my-dashboard', label: 'My Profile', short: 'Profile', icon: 'calendar' },
       { to: '/tasks', label: 'Tasks', icon: 'tasks' },
       { to: '/employees', label: 'Employees', short: 'People', icon: 'people' },
       { to: '/reports', label: 'Reports', icon: 'reports' },

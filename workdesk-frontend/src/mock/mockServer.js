@@ -86,7 +86,7 @@ const canViewDepartment = (admin, department) => !admin.departmentAdmin
  * Who reviews a task. The reviewer chosen when it was assigned; if none was chosen,
  * whoever assigned it (when that is someone else). null = no review needed (own work).
  */
-const reviewerOf = (t) => (t.workflowRunId ? null : t.reviewerId ?? (t.createdById !== t.assigneeId ? t.createdById : null));
+const reviewerOf = (t) => (t.workflowRunId || t.noReview ? null : t.reviewerId ?? (t.createdById !== t.assigneeId ? t.createdById : null));
 /** People involved in a task can open it: assignee, assigner, reviewer. Admins can open everything. */
 const involved = (t, me) => [t.assigneeId, t.createdById, reviewerOf(t)].includes(me.id);
 
@@ -126,7 +126,7 @@ function templateOut(t) {
     active: t.active, lastGeneratedOn: t.lastGeneratedOn, createdAt: t.createdAt,
     createdBy: empRef(t.createdById), selfOwned: t.createdById === t.assigneeId,
     workflowId: t.workflowId || null,
-    reviewer: empRef(t.reviewerId ?? (t.createdById !== t.assigneeId ? t.createdById : null)),
+    reviewer: empRef(t.noReview ? null : t.reviewerId ?? (t.createdById !== t.assigneeId ? t.createdById : null)),
     startDate: t.startDate || null, scheduledTime: t.scheduledTime || null, durationMinutes: t.durationMinutes || null,
     image: t.image || null,
   };
@@ -307,7 +307,8 @@ function createFromTemplate(tpl, day) {
     estimatedHours: tpl.estimatedHours ?? null,
     scheduledAt: tpl.scheduledTime ? new Date(`${day}T${tpl.scheduledTime}`).toISOString() : null,
     recurringTemplateId: tpl.id, dueSoonReminded: false, overdueReminded: false,
-    reviewerId: tpl.reviewerId ?? (tpl.createdById !== tpl.assigneeId ? tpl.createdById : null),
+    reviewerId: tpl.noReview ? null : tpl.reviewerId ?? (tpl.createdById !== tpl.assigneeId ? tpl.createdById : null),
+    noReview: !!tpl.noReview,
     image: tpl.image || null,
     workflowId: tpl.workflowId || null,
   };
@@ -852,7 +853,7 @@ function route(method, path, query, body, me) {
       // Anyone can assign work to anyone. Default reviewer: the person assigning (none for own work).
       const a = body.assigneeId ? activeAssignee(body.assigneeId) : me;
       const self = a.id === me.id;
-      const reviewerId = pickReviewer(body.reviewerId, a.id, self ? null : me.id);
+      const reviewerId = body.noReview ? null : pickReviewer(body.reviewerId, a.id, self ? null : me.id);
       const allowed = reviewerId ? ['TODO', 'IN_PROGRESS'] : ['TODO', 'IN_PROGRESS', 'COMPLETED'];
       const status = self && allowed.includes(body.status) ? body.status : 'TODO';
       const now = nowIso();
@@ -865,7 +866,7 @@ function route(method, path, query, body, me) {
           : localToIso(body.dueAt),
         estimatedHours, createdAt: now, updatedAt: now,
         startedAt: status === 'TODO' ? null : now, submittedAt: status === 'COMPLETED' ? now : null, completedAt: status === 'COMPLETED' ? now : null,
-        recurringTemplateId: null, dueSoonReminded: false, overdueReminded: false, reviewerId,
+        recurringTemplateId: null, dueSoonReminded: false, overdueReminded: false, reviewerId, noReview: !!body.noReview,
         image: body.image || null,
         workflowId: linkedWorkflowId(body.workflowId),
       };
@@ -983,9 +984,11 @@ function route(method, path, query, body, me) {
         notify(next.id, id, 'TASK_ASSIGNED', `New task: ${body.title.trim()}`);
       }
       if ('reviewerId' in body) {
-        const next = pickReviewer(body.reviewerId, t.assigneeId, t.createdById !== t.assigneeId ? t.createdById : null);
+        const next = body.noReview ? null
+          : pickReviewer(body.reviewerId, t.assigneeId, t.createdById !== t.assigneeId ? t.createdById : null);
         if (next !== reviewerOf(t)) {
           t.reviewerId = next;
+          t.noReview = !!body.noReview;
           const rv = next ? empById(next) : null;
           changes.push(rv ? `reviewer → ${rv.fullName}` : 'no review needed');
           if (rv && rv.id !== me.id) notify(rv.id, id, 'REVIEW_ASSIGNED', `${me.fullName} made you the reviewer for "${t.title}"`);
@@ -1027,7 +1030,7 @@ function route(method, path, query, body, me) {
       if (body.frequency === 'WEEKLY' && body.dayOfWeek === 'SUNDAY') throw bad('Sunday is the weekly off. Choose Monday to Saturday.');
       const estimatedHours = parseEstimatedHours(body.estimatedHours);
       const a = body.assigneeId ? activeAssignee(body.assigneeId) : me;
-      const reviewerId = pickReviewer(body.reviewerId, a.id, a.id === me.id ? null : me.id);
+      const reviewerId = body.noReview ? null : pickReviewer(body.reviewerId, a.id, a.id === me.id ? null : me.id);
       if (body.frequency === 'WEEKLY' && body.dayOfWeek === 'SUNDAY') throw bad('Sunday is the weekly off. Choose Monday to Saturday.');
       if (['MONTHLY', 'YEARLY'].includes(body.frequency) && !body.startDate) throw bad('Choose the date this task should repeat on');
       const scheduledTime = body.scheduledTime || null;
@@ -1040,7 +1043,7 @@ function route(method, path, query, body, me) {
         startDate: body.startDate || localDay(new Date()), scheduledTime, durationMinutes: body.durationMinutes || null,
         dueTime,
         estimatedHours,
-        reviewerId, image: body.image || tpl.image || null,
+        reviewerId, noReview: !!body.noReview, image: body.image || tpl.image || null,
         workflowId: body.workflowId === undefined ? (tpl.workflowId || null) : linkedWorkflowId(body.workflowId),
       });
       return tpl;

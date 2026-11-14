@@ -14,9 +14,9 @@ import { groupFmsTasks } from '@/features/tasks/taskGroups.js';
 import { Link } from 'react-router-dom';
 import EmployeeProfileCard from '@/features/dashboard/EmployeeProfileCard.jsx';
 
-/** Employee home: today's reminder, add own work, day/week/month/year views, monthly performance. */
-export default function MyWork() {
-  const { user } = useAuth();
+/** Personal home: today's reminder, day/week/month/year views, and monthly performance. */
+export default function MyWork({ personalDashboard = false }) {
+  const { user, isAdmin, isDepartmentAdmin } = useAuth();
   const [today, setToday] = useState(null);
   const [late, setLate] = useState(0);
   const [adding, setAdding] = useState(false);
@@ -29,9 +29,10 @@ export default function MyWork() {
 
   useEffect(() => {
     const d = isoDay(new Date());
+    const personalScope = personalDashboard ? { scope: 'assigned' } : {};
     Promise.all([
-      taskService.list({ workFrom: d, workTo: d }),
-      taskService.list({ overdue: 'true' }),
+      taskService.list({ ...personalScope, workFrom: d, workTo: d }),
+      taskService.list({ ...personalScope, overdue: 'true' }),
     ]).then(([list, overdue]) => {
       const mine = groupFmsTasks(list.filter((t) => t.status !== 'CANCELLED' && sameDay(workDate(t), new Date())));
       const c = { todo: 0, progress: 0, done: 0 };
@@ -40,7 +41,7 @@ export default function MyWork() {
       setLate(overdue.length);
     }).catch(() => {});
     taskService.list({ scope: 'review', status: ['SUBMITTED'] }).then(setToReview).catch(() => {});
-  }, [refresh]);
+  }, [refresh, personalDashboard]);
 
   const turnOnDesktop = async () => {
     const r = await enableDesktop();
@@ -59,8 +60,10 @@ export default function MyWork() {
           <p className="muted">Your work, day by day.</p>
         </div>
         <div className="row">
-          <button className="btn ghost" onClick={() => setAssigning(true)}>Assign a task</button>
-          <button className="btn primary" onClick={() => setAdding(true)}>Add my work</button>
+          {(!personalDashboard || !isDepartmentAdmin) && <>
+            <button className="btn ghost" onClick={() => setAssigning(true)}>Assign a task</button>
+            <button className="btn primary" onClick={() => setAdding(true)}>Add my work</button>
+          </>}
         </div>
       </header>
 
@@ -99,14 +102,16 @@ export default function MyWork() {
         </section>
       )}
 
-      <WorkCalendar onOpen={setOpenId} refreshKey={refresh} initialView="day" />
-      <RepeatingTaskList refreshKey={refresh} onChanged={bump} />
+      <WorkCalendar employeeId={personalDashboard ? user.id : undefined}
+        onOpen={setOpenId} refreshKey={refresh} initialView="day" />
+      {!isDepartmentAdmin && <RepeatingTaskList refreshKey={refresh} onChanged={bump}
+        employeeId={personalDashboard && isAdmin ? user.id : undefined} />}
 
       <TaskPanel openId={openId} onClose={() => setOpenId(null)} onChanged={bump} />
-      {assigning && (
+      {assigning && (!personalDashboard || !isDepartmentAdmin) && (
         <TaskForm onClose={() => setAssigning(false)} onSaved={() => { setAssigning(false); bump(); }} />
       )}
-      {adding && (
+      {adding && (!personalDashboard || !isDepartmentAdmin) && (
         <AddWorkForm onClose={() => setAdding(false)} onSaved={() => { setAdding(false); bump(); }} />
       )}
     </div>

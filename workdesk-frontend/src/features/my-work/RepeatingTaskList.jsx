@@ -13,11 +13,14 @@ function scheduleLabel(task) {
 }
 
 /** Employee: repeating tasks (their own, and the ones admin set up for them). */
-export default function RepeatingTaskList({ refreshKey, onChanged }) {
+export default function RepeatingTaskList({ refreshKey, onChanged, employeeId }) {
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
 
-  const load = () => recurringService.list().then(setList).catch((e) => setError(e.message));
+  const load = () => recurringService.list()
+    .then((tasks) => setList(employeeId == null ? tasks : tasks.filter((task) =>
+      task.assignee?.id === employeeId || task.createdBy?.id === employeeId)))
+    .catch((e) => setError(e.message));
   useEffect(() => { load(); }, [refreshKey]);
 
   const act = async (fn) => {

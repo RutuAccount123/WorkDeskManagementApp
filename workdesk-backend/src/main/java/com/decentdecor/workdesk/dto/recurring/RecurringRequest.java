@@ -20,5 +20,6 @@ public record RecurringRequest(
         String scheduledTime,
         Integer durationMinutes,
         Long reviewerId,
-        @Size(max = 7000000, message = "image: is too large") String image) {
+        @Size(max = 7000000, message = "image: is too large") String image,
+        Boolean noReview) {
 }

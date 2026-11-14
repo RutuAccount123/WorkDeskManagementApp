@@ -8,7 +8,7 @@ import Modal from '@/components/ui/Modal.jsx';
 const NO_REVIEW = 'none';
 
 /**
- * Assign a task to anyone (or edit one you assigned), and choose who reviews it.
+ * Assign a task to anyone (or edit one you assigned), and choose whether it needs review.
  * Used by admins and employees alike.
  */
 export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) {
@@ -99,6 +99,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
           dueAt: form.dueAt || null,
           estimatedHours: form.estimatedHours === '' ? null : Number(form.estimatedHours),
           reviewerId: form.reviewerId === NO_REVIEW ? null : Number(form.reviewerId),
+          noReview: form.reviewerId === NO_REVIEW,
           image: image || null,
         } : {
           frequency: form.repeat,
@@ -109,6 +110,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
           estimatedHours: null,
           workflowId: workflowId ? Number(workflowId) : null,
           reviewerId: form.reviewerId === NO_REVIEW ? null : Number(form.reviewerId),
+          noReview: form.reviewerId === NO_REVIEW,
           image: image || null,
         }),
       };
@@ -180,16 +182,17 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
         {assigneeIds.length > 1 && (
           <p className="hint">
             A separate task will be created for each selected person. Each person can track their own copy.
-            {assigneeIds.includes(String(user.id))
-              ? ' You’ll review the other people’s copies; your own copy won’t need review.'
-              : ' You’ll review their work.'}
+            {form.reviewerId === NO_REVIEW
+              ? ' No review will be required.'
+              : ` ${form.reviewerId === String(user.id) ? 'You' : people.find((person) => String(person.id) === form.reviewerId)?.fullName || 'The selected reviewer'} will review each copy.`}
           </p>
         )}
         <div className="grid-2">
           <label>Reviewed by
             <select value={form.reviewerId} onChange={set('reviewerId')} disabled={!assigneeIds.length}>
-              {!assigneeIds.length && <option value={NO_REVIEW}>Select assignee first</option>}
-              {forMe && assigneeIds.length === 1 && <option value={NO_REVIEW}>No review needed</option>}
+              <option value={NO_REVIEW}>
+                {assigneeIds.length ? 'No review needed' : 'Select assignee first'}
+              </option>
               {reviewers.map((p) => (
                 <option key={p.id} value={p.id}>{p.id === user.id ? `Me (${p.fullName})` : p.fullName}</option>
               ))}
@@ -257,7 +260,10 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
             </div>
             <p className="hint">
               This task will appear on each scheduled working day. The due time is {form.durationMinutes || 0} minutes after its start;
-              you’ll be reminded at the scheduled time and notified if it becomes overdue. The assigning admin reviews tasks assigned to others.
+              you’ll be reminded at the scheduled time and notified if it becomes overdue.
+              {form.reviewerId === NO_REVIEW
+                ? ' No review will be required.'
+                : ` ${form.reviewerId === String(user.id) ? 'You' : people.find((person) => String(person.id) === form.reviewerId)?.fullName || 'The selected reviewer'} will review each task.`}
               Sundays and office holidays are skipped; nonexistent monthly dates and February 29 in non-leap years are skipped.
             </p>
           </>

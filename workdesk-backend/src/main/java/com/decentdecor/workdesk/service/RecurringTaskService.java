@@ -92,7 +92,7 @@ public class RecurringTaskService {
             RecurringRequest perEmployee = new RecurringRequest(task.title(), task.description(), assigneeId,
                     task.priority(), task.frequency(), task.dayOfWeek(), task.dueTime(), task.workflowId(),
                     task.estimatedHours(), task.startDate(), task.scheduledTime(), task.durationMinutes(),
-                    task.reviewerId(), task.image());
+                    task.reviewerId(), task.image(), task.noReview());
             return create(user, perEmployee);
         }).toList();
     }
@@ -203,8 +203,8 @@ public class RecurringTaskService {
         tpl.setDescription(Texts.trimToEmpty(req.description()));
         Employee assignee = req.assigneeId() == null ? me : people.activeAssignee(req.assigneeId());
         tpl.setAssignee(assignee);
-        tpl.setReviewer(people.pickReviewer(req.reviewerId(), assignee,
-                assignee.getId().equals(me.getId()) ? null : me));
+        tpl.setReviewer(Boolean.TRUE.equals(req.noReview()) ? null
+                : people.pickReviewer(req.reviewerId(), assignee, assignee.getId().equals(me.getId()) ? null : me));
         if (req.image() != null) tpl.setImageData(taskImages.normalize(req.image()));
         tpl.setPriority(Enums.parse(Priority.class, req.priority(), Priority.MEDIUM, "Choose a valid priority"));
         tpl.setFrequency(frequency);

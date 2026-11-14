@@ -53,7 +53,11 @@ describe.each([
     for (const item of nav.flatMap((g) => g.items).filter((i) => i.to !== '/')) {
       await user.click(within(sidebar).getByRole('link', { name: item.label }));
       await waitFor(() => expect(window.location.pathname).toBe(item.to));
-      expect(await pageTitle()).toBe(item.label);
+      if (item.to === '/my-dashboard') {
+        expect(await pageTitle()).toMatch(/Good (morning|afternoon|evening), \w+/);
+      } else {
+        expect(await pageTitle()).toBe(item.label);
+      }
       expect(topTitle()).toBe(item.label);
       // every page: one heading row, and the main action (if any) sits in it
       expect(document.querySelectorAll('.page > .page-head')).toHaveLength(1);
@@ -75,6 +79,24 @@ describe('admin dashboard stat cards', () => {
     expect(screen.getByRole('link', { name: /Due today/ })).toHaveAttribute('href', '/tasks?dueToday=1');
     expect(screen.getByRole('link', { name: /Waiting for review/ })).toHaveAttribute('href', '/tasks?status=SUBMITTED');
     expect(screen.getByRole('link', { name: /Done this week/ })).toHaveAttribute('href', '/tasks?status=COMPLETED&completedThisWeek=1');
+  });
+
+  it('admins can open a separate personal dashboard without changing the company dashboard', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-1');
+    start('/my-dashboard');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: /Good (morning|afternoon|evening), \w+/,
+    })).toBeInTheDocument();
+    expect(screen.queryByText('Everyone’s work today')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Monthly performance' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Day' })).toBeInTheDocument();
+
+    await user.click(within(document.querySelector('.sidebar')).getByRole('link', { name: 'Dashboard' }));
+    expect(await screen.findByRole('heading', { level: 1, name: /Good morning|Good afternoon|Good evening/ })).toBeInTheDocument();
+    expect(await screen.findByText('Everyone’s work today')).toBeInTheDocument();
   });
 });
 
@@ -322,7 +344,26 @@ describe('assign a task form', () => {
     const taskItem = (await screen.findByText('Send cement rate list')).closest('li');
     expect(within(taskItem).getByText('Reviewed by: Rahul Patil')).toBeInTheDocument();
   });
+  it('lets the assigner choose no review for a task assigned to someone else', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');
+    start('/tasks?scope=created');
+    await user.click(await screen.findByRole('button', { name: 'Assign a task' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Assign a task' });
+    await user.type(within(dialog).getByLabelText('Title'), 'Prepare an unreviewed task');
+    const assign = within(dialog).getByRole('group', { name: 'Assign to' });
+    await user.click(await within(assign).findByRole('checkbox', { name: /Amit Deshmukh/ }));
 
+    const reviewer = within(dialog).getByLabelText('Reviewed by');
+    expect(within(reviewer).getByRole('option', { name: 'No review needed' })).toBeInTheDocument();
+    await user.selectOptions(reviewer, 'none');
+    await user.click(within(dialog).getByRole('button', { name: 'Assign task' }));
+
+    await waitFor(async () => {
+      const tasks = await taskService.list({ scope: 'created' });
+      expect(tasks.find((task) => task.title === 'Prepare an unreviewed task')?.reviewer).toBeNull();
+    });
+  });
   it('creates independent task copies for multiple selected people', async () => {
     const user = userEvent.setup();
     tokenStore.set('mock-3');
@@ -362,6 +403,28 @@ describe('assign a task form', () => {
     await waitFor(async () => {
       const templates = await recurringService.list();
       expect(templates.filter((template) => template.title === 'Weekly shared safety check')).toHaveLength(2);
+    });
+  });
+  it('creates repeating tasks without a reviewer when no review is selected', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');
+    start('/tasks?scope=created');
+    await user.click(await screen.findByRole('button', { name: 'Assign a task' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Assign a task' });
+    await user.type(within(dialog).getByLabelText('Title'), 'Weekly task without review');
+    const assign = within(dialog).getByRole('group', { name: 'Assign to' });
+    await user.click(await within(assign).findByRole('checkbox', { name: /Priya Sharma/ }));
+    await user.selectOptions(within(dialog).getByLabelText('Reviewed by'), 'none');
+    await user.selectOptions(within(dialog).getByLabelText('Repeat'), 'WEEKLY');
+    await user.click(within(dialog).getByRole('button', { name: 'Create repeating task' }));
+
+    await waitFor(async () => {
+      const templates = await recurringService.list();
+      expect(templates.find((template) => template.title === 'Weekly task without review')?.reviewer).toBeNull();
+      const copies = (await taskService.list({ scope: 'created' }))
+        .filter((task) => task.title === 'Weekly task without review');
+      expect(copies.length).toBeGreaterThan(0);
+      copies.forEach((task) => expect(task.reviewer).toBeNull());
     });
   });
 });

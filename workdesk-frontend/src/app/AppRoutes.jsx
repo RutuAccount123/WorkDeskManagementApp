@@ -27,6 +27,7 @@ export default function AppRoutes() {
       <Route element={<AppLayout />}>
         {/* shared */}
         <Route index element={isAdmin ? <AdminDashboardPage /> : <MyWorkPage />} />
+        {isAdmin && <Route path="my-dashboard" element={<MyWorkPage personalDashboard />} />}
         <Route path="tasks" element={<TasksPage />} />
         <Route path="tasks/:id" element={<TaskDetailPage />} />
         <Route path="reports" element={<ReportsPage />} />

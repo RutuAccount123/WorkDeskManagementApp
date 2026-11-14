@@ -165,7 +165,8 @@ public class TaskService {
         Employee assignee = req.assigneeId() == null ? me : people.activeAssignee(req.assigneeId());
         boolean self = assignee.getId().equals(me.getId());
         // default reviewer: the person assigning (own work: no review)
-        Employee reviewer = people.pickReviewer(req.reviewerId(), assignee, self ? null : me);
+        Employee reviewer = Boolean.TRUE.equals(req.noReview())
+                ? null : people.pickReviewer(req.reviewerId(), assignee, self ? null : me);
 
         // own work can be added already started (or done, if nobody reviews it)
         TaskStatus status = TaskStatus.TODO;
@@ -223,7 +224,7 @@ public class TaskService {
         return assigneeIds.stream()
                 .map(assigneeId -> createOne(user, new TaskRequest(
                         task.title(), task.description(), assigneeId, task.reviewerId(), task.priority(),
-                        task.dueAt(), task.status(), task.workflowId(), task.estimatedHours(), null), imageData))
+                        task.dueAt(), task.status(), task.workflowId(), task.estimatedHours(), null, task.noReview()), imageData))
                 .toList();
     }
 
@@ -275,9 +276,10 @@ public class TaskService {
             notifications.send(next, t, NotificationType.TASK_ASSIGNED, "New task: " + title);
         }
 
-        // reviewer: empty = whoever assigned it (or no review for own work)
+        // Keep the existing reviewer unless the request explicitly disables review.
         Employee fallback = t.isSelfAdded() ? null : t.getCreatedBy();
-        Employee reviewer = people.pickReviewer(req.reviewerId(), t.getAssignee(), fallback);
+        Employee reviewer = Boolean.TRUE.equals(req.noReview())
+                ? null : people.pickReviewer(req.reviewerId(), t.getAssignee(), fallback);
         Long oldReviewerId = t.effectiveReviewer() == null ? null : t.effectiveReviewer().getId();
         Long newReviewerId = reviewer == null ? null : reviewer.getId();
         if (!t.isWorkflowStep() && !Objects.equals(oldReviewerId, newReviewerId)) {

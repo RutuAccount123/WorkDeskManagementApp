@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 
 /**
  * Create (POST /api/tasks) or edit (PUT /api/tasks/{id}) a task.
- * assigneeId: empty = yourself. reviewerId: empty = the person assigning (or no review for your own work).
+ * assigneeId: empty = yourself. reviewerId: empty = the person assigning unless noReview is true.
  * dueAt: "2026-10-30T18:00" (office time) or empty. estimatedHours: optional; if set, dueAt is generated when work starts.
  * status: only for your own work (TODO, IN_PROGRESS, COMPLETED).
  * workflowId: link to an existing FMS (only when creating).
@@ -22,5 +22,6 @@ public record TaskRequest(
         String status,
         Long workflowId,
         BigDecimal estimatedHours,
-        @Size(max = 7000000, message = "image: is too large") String image) {
+        @Size(max = 7000000, message = "image: is too large") String image,
+        Boolean noReview) {
 }
