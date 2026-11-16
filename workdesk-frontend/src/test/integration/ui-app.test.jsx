@@ -283,6 +283,26 @@ describe('workflows (FMS) pages', () => {
     await user.click(await screen.findByRole('button', { name: 'New FMS' }));
     expect(await pageTitle()).toBe('New FMS');
     expect(topTitle()).toBe('New FMS');
+    const department = await screen.findByLabelText('Department (optional)');
+    await waitFor(() => expect(within(department).getByRole('option', { name: 'Accounts' })).toBeInTheDocument());
+    await user.selectOptions(department, 'Accounts');
+    expect(department).toHaveValue('Accounts');
+  });
+  it('lets the FMS creator save the setup without assigning any people', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-1');
+    start('/workflows/new');
+    await user.click(await screen.findByLabelText('Save FMS without assigning anyone'));
+    expect(screen.getByLabelText('Step 1: who')).toBeDisabled();
+    expect(screen.getByLabelText('Step 1: who')).toHaveValue('');
+    expect(screen.getByText('This saves the FMS setup only. Assign a person to every step before starting it.')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('FMS name'), 'Unassigned setup');
+    await user.type(screen.getByLabelText('Step 1: what'), 'Check request');
+    await user.type(screen.getByLabelText('Step 2: what'), 'Approve request');
+    await user.click(screen.getAllByRole('button', { name: 'Create FMS' }).at(-1));
+    expect(await screen.findByRole('heading', { name: 'Unassigned setup' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start new' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Assign a person to every step before starting this FMS/)).toBeInTheDocument();
   });
   it('the edit page is titled Edit FMS in the top bar', async () => {
     tokenStore.set('mock-1');
@@ -505,18 +525,39 @@ describe('FMS sheet: fill the form where you work', () => {
     tokenStore.set('mock-1');
     const wf = await workflowService.create({
       name: 'Gate pass', frequency: 'DAILY', startTime: '00:01', endTime: '23:59',
-      formFields: [{ label: 'Vehicle number', type: 'text', required: true }],
-      steps: [{ title: 'Write gate pass', assigneeId: 3, hours: 1 }, { title: 'Sign gate pass', assigneeId: 2, hours: 1 }],
+      formFields: [
+        { label: 'Vehicle number', type: 'text', required: true },
+        { label: 'Driver name', type: 'text', required: false },
+        { label: 'Site', type: 'text', required: false },
+        { label: 'Purpose', type: 'text', required: false },
+      ],
+      steps: [
+        { title: 'Write gate pass', assigneeId: 3, hours: 1, checklist: ['Verify vehicle registration against records', 'Confirm driver identity'] },
+        { title: 'Sign gate pass', assigneeId: 2, hours: 1 },
+      ],
     });
     const run = (await workflowService.runs()).find((r) => r.workflowId === wf.id);
     if (!run) return; // Sunday or office holiday: nothing scheduled today
     tokenStore.set('mock-3'); // Rahul, step 1
     start(`/workflows/${wf.id}`);
     const box = await screen.findByLabelText(/Vehicle number/);
+    const table = screen.getByRole('table');
+    expect(table.querySelector('thead tr.fms-sheet-header th.trigger').colSpan).toBe(6);
+    expect(table.querySelectorAll('colgroup col')).toHaveLength(15);
+    expect(within(table).getByText('Verify vehicle registration against records')).toBeInTheDocument();
+    expect(screen.getByText('0 date-wise entries in selected dates')).toBeInTheDocument();
+    expect(screen.getByText('No entries in these dates.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Start work' })).not.toBeInTheDocument();
     await user.type(box, 'MH12 AB 1234');
+    await user.type(screen.getByLabelText(/Driver name/), 'Amit');
+    await user.type(screen.getByLabelText(/^Site/), 'Pune');
+    await user.type(screen.getByLabelText(/Purpose/), 'Delivery');
     await user.click(screen.getByRole('button', { name: 'Submit form and start work' }));
     expect(await screen.findByRole('button', { name: /Mark done/ })).toBeInTheDocument();
-    expect((await workflowService.run(run.id)).formData).toEqual({ f1: 'MH12 AB 1234' });
+    expect(screen.getByText('1 date-wise entries in selected dates')).toBeInTheDocument();
+    expect(screen.getByText('MH12 AB 1234')).toBeInTheDocument();
+    expect((await workflowService.run(run.id)).formData).toEqual({
+      f1: 'MH12 AB 1234', f2: 'Amit', f3: 'Pune', f4: 'Delivery',
+    });
   });
 });

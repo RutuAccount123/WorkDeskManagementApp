@@ -434,6 +434,9 @@ function createStepTask(run, index, from) {
  * Manual runs ("Start new") come with the form already filled and can happen several times a day.
  */
 function startRun(wf, day, { formData = null, by = null, manual = false, sourceTaskId = null } = {}) {
+  if (wf.steps.some((step) => !step.assigneeId || !empById(step.assigneeId)?.active)) {
+    throw bad('Assign an active person to every FMS step before starting it');
+  }
   if (formData) validateForm(wf.formFields || [], formData); // check before creating anything
   const sameDay = db.workflowRuns.filter((r) => r.workflowId === wf.id && r.date === day).length;
   const run = {
@@ -580,7 +583,7 @@ const taskRef = (id) => { const t = db.tasks.find((x) => x.id === id); return t 
 function workflowOut(wf) {
   return {
     sourceTask: wf.sourceTaskId ? taskRef(wf.sourceTaskId) : null,
-    id: wf.id, name: wf.name, description: wf.description, frequency: wf.frequency, dayOfWeek: wf.dayOfWeek,
+    id: wf.id, name: wf.name, description: wf.description, department: wf.department || null, frequency: wf.frequency, dayOfWeek: wf.dayOfWeek,
     startTime: wf.startTime, endTime: wf.endTime, active: wf.active, lastRunOn: wf.lastRunOn, createdAt: wf.createdAt,
     createdBy: empRef(wf.createdById),
     formFields: wf.formFields || [],
@@ -1149,6 +1152,8 @@ function route(method, path, query, body, me) {
       if (body.frequency === 'WEEKLY' && !body.dayOfWeek) throw bad('Choose a day of the week for weekly workflows');
       const steps = (body.steps || []).filter((st) => st.title?.trim());
       if (steps.length < 2) throw bad('A workflow needs at least 2 steps');
+      const unassigned = steps.filter((step) => !step.assigneeId).length;
+      if (unassigned && unassigned !== steps.length) throw bad('Assign a person to every step, or leave every step unassigned');
       if (!/^\d{2}:\d{2}/.test(body.startTime || '') || !/^\d{2}:\d{2}/.test(body.endTime || '')) throw bad('Set a start time and an end time');
       if (body.endTime <= body.startTime) throw bad('End time must be after start time');
       const TYPES = ['text', 'textarea', 'number', 'date', 'select', 'checkbox'];
@@ -1171,8 +1176,10 @@ function route(method, path, query, body, me) {
         else if (wf.sourceTaskId === Number(body.sourceTaskId)) sourceTaskId = wf.sourceTaskId;
         else throw bad('Choose a task you can see');
       }
+      const department = String(body.department || '').trim();
+      if (department.length > 80) throw bad('Department must be 80 characters or fewer');
       Object.assign(wf, {
-        formFields, sourceTaskId,
+        formFields, sourceTaskId, department: department || null,
         name: body.name.trim(), description: body.description || '', frequency: body.frequency,
         dayOfWeek: body.frequency === 'WEEKLY' ? body.dayOfWeek : null,
         startTime: body.startTime.slice(0, 5), endTime: body.endTime.slice(0, 5),
@@ -1180,7 +1187,7 @@ function route(method, path, query, body, me) {
           const hours = Number(st.hours);
           if (!(hours > 0 && hours <= 24)) throw bad(`Step ${i + 1}: hours must be between 0.25 and 24`);
           const checklist = (st.checklist || []).map((c) => String(c).trim()).filter(Boolean);
-          return { title: st.title.trim(), assigneeId: activeAssignee(st.assigneeId).id, hours, priority: st.priority || 'MEDIUM', how: (st.how || '').trim(), checklist };
+          return { title: st.title.trim(), assigneeId: st.assigneeId ? activeAssignee(st.assigneeId).id : null, hours, priority: st.priority || 'MEDIUM', how: (st.how || '').trim(), checklist };
         }),
       });
       return wf;
@@ -1217,6 +1224,9 @@ function route(method, path, query, body, me) {
     if (seg[2] === 'active') { wf.active = query.get('value') === 'true'; if (wf.active) runWorkflows(); return workflowOut(wf); }
     if (seg[2] === 'start-now') {
       if (!wf.active) throw bad('This workflow is paused');
+      if (wf.steps.some((step) => !step.assigneeId || !empById(step.assigneeId)?.active)) {
+        throw bad('Assign an active person to every FMS step before starting it');
+      }
       const run = startRun(wf, localDay(new Date()), {
         formData: (wf.formFields || []).length ? body.formData || {} : null, by: me.id, manual: true,
         sourceTaskId: Number(body.sourceTaskId) || wf.sourceTaskId || null,

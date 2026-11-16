@@ -11,6 +11,7 @@ import java.util.List;
 public record WorkflowRequest(
         String name,
         String description,
+        String department,
         String frequency,
         String dayOfWeek,
         String startTime,

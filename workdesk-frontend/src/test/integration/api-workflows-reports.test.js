@@ -22,6 +22,34 @@ describe('FMS workflows', () => {
     await expect(workflowService.create(flow({ endTime: '09:00' }))).rejects.toThrow('End time must be after');
     await expect(workflowService.create(flow({ formFields: [{ label: 'Pick', type: 'select', options: 'One' }] }))).rejects.toThrow('at least 2 options');
     await expect(workflowService.create(flow({ steps: [{ ...flow().steps[0], hours: 30 }, flow().steps[1]] }))).rejects.toThrow('hours must be between');
+    await expect(workflowService.create(flow({ department: 'A'.repeat(81) }))).rejects.toThrow('80 characters or fewer');
+  });
+
+  it('saves the optional department label without changing FMS visibility', async () => {
+    await asUser(ADMIN);
+    const wf = await workflowService.create(flow({ department: ' Accounts ' }));
+    expect(wf.department).toBe('Accounts');
+    const updated = await workflowService.update(wf.id, flow({ department: 'Projects' }));
+    expect(updated.department).toBe('Projects');
+    await expect(workflowService.update(wf.id, flow({ department: '' }))).resolves.toMatchObject({ department: null });
+    await asUser(RAHUL);
+    expect((await workflowService.get(wf.id)).department).toBeNull();
+  });
+
+  it('creates an FMS with every step unassigned and prevents starting until people are assigned', async () => {
+    await asUser(ADMIN);
+    const unassigned = flow({
+      frequency: 'ON_DEMAND',
+      steps: flow().steps.map((step) => ({ ...step, assigneeId: null })),
+    });
+    const wf = await workflowService.create(unassigned);
+    expect(wf.steps.map((step) => step.assignee)).toEqual([null, null]);
+    await expect(workflowService.startNow(wf.id, { f1: 'Vendor', f2: 'PIL' }))
+      .rejects.toThrow('Assign an active person to every FMS step before starting it');
+
+    const assigned = await workflowService.update(wf.id, flow());
+    expect(assigned.steps.every((step) => step.assignee)).toBe(true);
+    expect((await workflowService.startNow(wf.id, { f1: 'Vendor', f2: 'PIL' })).steps[0].task.status).toBe('IN_PROGRESS');
   });
 
   it('start → checklist → done passes the work to the next person → finished', async () => {

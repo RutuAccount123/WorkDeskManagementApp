@@ -223,29 +223,44 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
   if (!workflow || !runs) return <section className="panel"><p className="muted">Loading FMS sheet…</p></section>;
 
   const fields = workflow.formFields || [];
+  const entries = runs.filter((entry) => (
+    !entry.needsForm && entry.steps[0]?.task?.status !== 'TODO'
+  ));
   return (
     <section className="panel fms-task-sheet">
       <div className="perf-head">
         <div>
           <h2 className="section-title">{heading || `${workflow.name} · FMS sheet`}</h2>
-          <p className="muted small">{runs.length} date-wise entries in selected dates</p>
+          <p className="muted small">{entries.length} date-wise entries in selected dates</p>
         </div>
         <div className="row">
           <div className="row tracker-range">
             <label>From<input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>
             <label>To<input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} /></label>
           </div>
-          <button className="btn ghost small" onClick={() => downloadTracker(workflow, runs, fields, from, to)} disabled={!runs.length}>
+          <button className="btn ghost small" onClick={() => downloadTracker(workflow, entries, fields, from, to)} disabled={!entries.length}>
             Export Excel
           </button>
         </div>
       </div>
       <div className="fms-scroll">
         <table className="fms-grid read tracker fms-combined">
+          <colgroup>
+            <col style={{ width: 84 }} />
+            <col style={{ width: 52 }} />
+            <col style={{ width: 160 }} />
+            {fields.map((field) => <col key={field.id} style={{ width: 160 }} />)}
+            {workflow.steps.flatMap((step) => [
+              <col key={`${step.step}-planned`} style={{ width: 140 }} />,
+              <col key={`${step.step}-actual`} style={{ width: 140 }} />,
+              <col key={`${step.step}-status`} style={{ width: 120 }} />,
+              <col key={`${step.step}-delay`} style={{ width: 110 }} />,
+            ])}
+          </colgroup>
           <thead>
             <tr className="fms-sheet-header">
               <th className="fms-rowhead" />
-              <th colSpan={1 + fields.length} className="fms-col trigger">Start entry</th>
+              <th colSpan={2 + fields.length} className="fms-col trigger">Start entry</th>
               {workflow.steps.map((step) => (
                 <th key={step.step} colSpan={4} className="fms-col tk-group">
                   <span className="fms-colnum">{step.step}</span> {step.title}
@@ -254,17 +269,17 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
             </tr>
             <tr className="fms-definition-row">
               <th className="fms-rowhead">What</th>
-              <td colSpan={1 + fields.length} className="trigger">{workflow.description || 'Work is started'}</td>
+              <td colSpan={2 + fields.length} className="trigger">{workflow.description || 'Work is started'}</td>
               {workflow.steps.map((step) => <td key={step.step} colSpan={4}><strong>{step.title}</strong></td>)}
             </tr>
             <tr className="fms-definition-row">
               <th className="fms-rowhead">Who</th>
-              <td colSpan={1 + fields.length} className="trigger">{workflow.steps[0]?.assignee?.fullName} fills the form</td>
+              <td colSpan={2 + fields.length} className="trigger">{workflow.steps[0]?.assignee?.fullName} fills the form</td>
               {workflow.steps.map((step) => <td key={step.step} colSpan={4}>{step.assignee?.fullName || '—'}</td>)}
             </tr>
             <tr className="fms-definition-row">
               <th className="fms-rowhead">How</th>
-              <td colSpan={1 + fields.length} className="trigger">
+              <td colSpan={2 + fields.length} className="trigger">
                 {fields.length ? <ol className="how-read">{fields.map((field) => <li key={field.id}>{field.label}{field.required && ' *'}</li>)}</ol> : 'No form'}
               </td>
               {workflow.steps.map((step) => (
@@ -277,7 +292,7 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
             </tr>
             <tr className="fms-definition-row">
               <th className="fms-rowhead">When</th>
-              <td colSpan={1 + fields.length} className="trigger">
+              <td colSpan={2 + fields.length} className="trigger">
                 {freqText(workflow)}, from {workflow.startTime}
               </td>
               {workflow.steps.map((step, index) => (
@@ -298,7 +313,7 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
             </tr>
           </thead>
           <tbody>
-            {runs.map((entry, index) => (
+            {entries.map((entry, index) => (
               <Fragment key={entry.id}>
               <tr className={entry.status === 'STOPPED' ? 'tk-cancelled' : ''}>
                 <td>
@@ -378,7 +393,7 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
               )}
               </Fragment>
             ))}
-            {runs.length === 0 && (
+            {entries.length === 0 && (
               <tr><td colSpan={3 + fields.length + workflow.steps.length * 4} className="empty">No entries in these dates.</td></tr>
             )}
           </tbody>

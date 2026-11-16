@@ -322,13 +322,43 @@ class BusinessRulesIntegrationTest {
         call(admin, post("/api/workflows"), bad).andExpect(jsonPath("$.message").value("End time must be after start time"));
         bad = flow("F", "WEEKLY", s.id(), s.id());
         call(admin, post("/api/workflows"), bad).andExpect(jsonPath("$.message").value("Choose a day of the week for weekly workflows"));
-        JsonNode w = ok(admin, post("/api/workflows"), flow("Bill approval", "ON_DEMAND", s.id(), s.id()));
+        bad = flow("F", "ON_DEMAND", s.id(), s.id());
+        bad.put("department", "A".repeat(81));
+        call(admin, post("/api/workflows"), bad).andExpect(jsonPath("$.message").value("Department must be 80 characters or fewer"));
+        Map<String, Object> request = flow("Bill approval", "ON_DEMAND", s.id(), s.id());
+        request.put("department", " Accounts ");
+        JsonNode w = ok(admin, post("/api/workflows"), request);
+        assertThat(w.get("department").asText()).isEqualTo("Accounts");
+        request.put("department", "Projects");
+        JsonNode updated = ok(admin, put("/api/workflows/" + w.get("id").asLong()), request);
+        assertThat(updated.get("department").asText()).isEqualTo("Projects");
         assertThat(w.get("steps").size()).isEqualTo(2);   // blank step skipped
         assertThat(w.at("/steps/0/checklist").size()).isEqualTo(2);   // blank how step skipped
         assertThat(w.at("/formFields/1/options").toString()).isEqualTo("[\"PIL\",\"AIGP\"]");
         assertThat(w.at("/formFields/0/id").asText()).isEqualTo("f1");
         assertThat(w.get("totalHours").asInt()).isEqualTo(3);
         assertThat(w.get("startTime").asText()).isEqualTo("00:01");
+    }
+
+    @Test
+    void workflowCanBeCreatedWithoutAssigningAnySteps() throws Exception {
+        Person s1 = person("Unassigned FMS One");
+        Map<String, Object> request = flow("Unassigned FMS " + UUID.randomUUID(), "ON_DEMAND", s1.id(), s1.id());
+        List<Map<String, Object>> steps = List.of(
+                map("title", "Check bill", "assigneeId", null, "hours", 1, "checklist", List.of("Match PO", "Match GRN")),
+                map("title", "Approve payment", "assigneeId", null, "hours", 2));
+        request.put("steps", steps);
+        JsonNode workflow = ok(admin, post("/api/workflows"), request);
+        assertThat(workflow.at("/steps/0/assignee").isNull()).isTrue();
+        assertThat(workflow.at("/steps/1/assignee").isNull()).isTrue();
+        call(admin, post("/api/workflows/" + workflow.get("id").asLong() + "/start-now"), map("formData", Map.of()))
+                .andExpect(jsonPath("$.message").value("Assign an active person to every FMS step before starting it"));
+
+        request.put("steps", List.of(
+                map("title", "Check bill", "assigneeId", s1.id(), "hours", 1, "checklist", List.of("Match PO", "Match GRN")),
+                map("title", "Approve payment", "assigneeId", s1.id(), "hours", 2)));
+        JsonNode assigned = ok(admin, put("/api/workflows/" + workflow.get("id").asLong()), request);
+        assertThat(assigned.at("/steps/0/assignee/id").asLong()).isEqualTo(s1.id());
     }
 
     @Test

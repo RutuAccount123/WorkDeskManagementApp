@@ -13,6 +13,7 @@ public record WorkflowResponse(
         Long id,
         String name,
         String description,
+        String department,
         String frequency,
         String dayOfWeek,
         String startTime,

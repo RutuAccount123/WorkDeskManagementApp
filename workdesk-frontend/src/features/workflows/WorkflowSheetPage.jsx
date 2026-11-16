@@ -12,6 +12,7 @@ export default function WorkflowSheetPage() {
   const [wf, setWf] = useState(null);
   const [starting, setStarting] = useState(false);
   const [version, setVersion] = useState(0); // reloads the sheet after "Start new"
+  const canStart = wf?.steps.every((step) => step.assignee);
 
   useEffect(() => { workflowService.get(id).then(setWf).catch(() => setWf(null)); }, [id]);
 
@@ -21,12 +22,18 @@ export default function WorkflowSheetPage() {
       <header className="page-head">
         <div>
           <h1>{wf?.name || 'FMS sheet'}</h1>
-          {wf && <p className="muted">{freqText(wf)} · {wf.steps.length} steps · {wf.totalHours} h total{!wf.active && ' · paused'}</p>}
+          {wf && <p className="muted">
+            {freqText(wf)} · {wf.steps.length} steps · {wf.totalHours} h total
+            {wf.department && ` · Department: ${wf.department}`}
+            {!canStart && ' · Unassigned'}
+            {!wf.active && ' · paused'}
+          </p>}
+          {wf && !canStart && <p className="muted small">Assign a person to every step before starting this FMS.</p>}
         </div>
         {wf && (
           <div className="row">
             <button className="btn ghost" onClick={() => navigate(`/workflows/${wf.id}/edit`)}>Edit</button>
-            {wf.active && <button className="btn primary" onClick={() => setStarting(true)}>Start new</button>}
+            {wf.active && canStart && <button className="btn primary" onClick={() => setStarting(true)}>Start new</button>}
           </div>
         )}
       </header>

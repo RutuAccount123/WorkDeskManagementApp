@@ -779,13 +779,14 @@ button.run-body:hover strong { color: var(--primary); }
 .fms-basics { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; align-items: end; }
 .fms-basics label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; }
 .fms-startnow { grid-column: 1 / -1; flex-direction: row !important; align-items: center; font-weight: 500 !important; }
+.fms-unassigned-note { grid-column: 1 / -1; margin: -8px 0 0; }
 .fms-scroll { overflow-x: auto; border: 1px solid var(--border-strong); border-radius: var(--r-md); }
-.fms-grid { border-collapse: collapse; min-width: 100%; font-size: var(--fs-sm); }
+.fms-grid { border-collapse: collapse; table-layout: fixed; width: max-content; min-width: 100%; font-size: var(--fs-sm); }
 .fms-grid th, .fms-grid td { border: 1px solid var(--border); padding: 10px; vertical-align: top; text-align: left; }
-.fms-grid thead th { background: var(--nav-solid); color: #fff; font-weight: 700; white-space: nowrap; }
+.fms-grid thead th { background: var(--nav-solid); color: #fff; font-weight: 700; white-space: normal; overflow-wrap: anywhere; }
 .fms-grid thead th.trigger { background: var(--primary); }
-.fms-grid .fms-col { min-width: 240px; }
-.fms-grid .fms-col.trigger { min-width: 260px; }
+.fms-grid .fms-col { min-width: 0; }
+.fms-grid td { overflow-wrap: anywhere; }
 .fms-grid td.trigger { background: var(--pastel-green); }
 .fms-rowhead { position: sticky; left: 0; z-index: 1; width: 84px; background: var(--primary-soft) !important; color: var(--primary-text) !important;
   font-size: var(--fs-base); font-weight: 800; text-transform: uppercase; letter-spacing: .04em; vertical-align: middle !important; }
@@ -795,11 +796,12 @@ button.run-body:hover strong { color: var(--primary); }
 .fms-colactions .icon-btn { color: #fff; background: transparent; border: 1px solid rgba(255,255,255,.35); width: 26px; height: 26px; border-radius: var(--r-sm); }
 .fms-colactions .icon-btn:disabled { opacity: .35; }
 .fms-add { background: var(--surface) !important; vertical-align: middle !important; }
-.fms-grid textarea, .fms-grid input, .fms-grid select { width: 100%; font-size: var(--fs-sm); }
+.fms-grid textarea, .fms-grid input, .fms-grid select { box-sizing: border-box; width: 100%; min-width: 0; font-size: var(--fs-sm); }
 .fms-grid tbody tr:nth-child(1) td:not(.trigger) { background: var(--pastel-sky); }
 .fms-cell-title { margin: 0 0 6px; font-weight: 700; }
 .fms-field { padding: 8px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
-.fms-field-row { display: flex; gap: 6px; align-items: center; }
+.fms-field-row { display: flex; min-width: 0; gap: 6px; align-items: center; }
+.fms-field-row > input, .fms-field-row > select { flex: 1; }
 .fms-field-row .check { white-space: nowrap; font-weight: 500; }
 .fms-times { display: flex; gap: 8px; margin-top: 8px; }
 .fms-times label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; flex: 1; }
@@ -844,7 +846,7 @@ a.wf-name:hover { text-decoration: underline; }
 .tracker-range label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); font-weight: 600; }
 .tracker { border-collapse: collapse; font-size: var(--fs-sm); min-width: 100%; }
 .tracker th, .tracker td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
-.tracker thead th { background: var(--nav-solid); color: #fff; white-space: nowrap; }
+.tracker thead th { background: var(--nav-solid); color: #fff; }
 .tracker thead th.tk-group { background: var(--primary); text-align: center; }
 .tracker thead th.tk-sub { background: var(--primary-soft); color: var(--primary-text); }
 .tracker .tk-first { border-left: 3px solid var(--primary); }

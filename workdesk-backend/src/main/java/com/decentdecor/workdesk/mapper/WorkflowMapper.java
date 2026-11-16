@@ -80,7 +80,7 @@ public class WorkflowMapper {
                     s.checklist() == null ? List.of() : s.checklist()));
             if (s.hours() != null) total = total.add(s.hours());
         }
-        return new WorkflowResponse(w.getId(), w.getName(), w.getDescription(), w.getFrequency().name(), Enums.name(w.getDayOfWeek()),
+        return new WorkflowResponse(w.getId(), w.getName(), w.getDescription(), w.getDepartment(), w.getFrequency().name(), Enums.name(w.getDayOfWeek()),
                 hhmm(w.getStartTime()), hhmm(w.getEndTime()), w.isActive(), w.getLastRunOn(), w.getCreatedAt(),
                 employees.toRef(w.getCreatedBy()), tasks.toRef(w.getSourceTask()), formFields(w.getFormFields()), steps, total);
     }

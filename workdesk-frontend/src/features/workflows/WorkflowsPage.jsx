@@ -27,6 +27,7 @@ export default function WorkflowsPage() {
   };
 
   const canChange = (wf) => isAdmin || wf.createdBy?.id === user.id;
+  const canStart = (wf) => wf.steps.every((step) => step.assignee);
   const sheetPath = (workflowId) => `/workflows/${workflowId}`;
 
   return (
@@ -74,6 +75,8 @@ export default function WorkflowsPage() {
                     </div>
                     <p className="muted small">
                       {`${wf.startTime} to ${wf.endTime}`}
+                      {wf.department && ` · Department: ${wf.department}`}
+                      {!canStart(wf) && ' · Unassigned'}
                       {wf.formFields.length > 0 && ` · Form: ${wf.formFields.map((f) => f.label).join(', ')}`}
                       {wf.sourceTask && <> · for task <Link to={`/tasks/${wf.sourceTask.id}`} onClick={(event) => event.stopPropagation()}>{wf.sourceTask.title}</Link></>}
                       {wf.createdBy && ` · set up by ${wf.createdBy.id === user.id ? 'you' : wf.createdBy.fullName}`}
@@ -82,7 +85,7 @@ export default function WorkflowsPage() {
                   </div>
                   <span className="row-actions">
                     <button className="btn ghost small" onClick={(event) => { event.stopPropagation(); navigate(sheetPath(wf.id)); }}>Open sheet</button>
-                    {wf.active && <button className="btn primary small" onClick={(event) => { event.stopPropagation(); setStarting(wf); }}>Start new</button>}
+                    {wf.active && canStart(wf) && <button className="btn primary small" onClick={(event) => { event.stopPropagation(); setStarting(wf); }}>Start new</button>}
                     <button className="link-btn" onClick={(event) => { event.stopPropagation(); navigate(`/workflows/${wf.id}/edit`); }}>Edit</button>
                     {canChange(wf) && (
                       <>
@@ -100,7 +103,7 @@ export default function WorkflowsPage() {
                   {wf.steps.map((s) => (
                     <li key={s.step}>
                       <span className="run-num">{s.step}</span>
-                      <span><strong>{s.title}</strong><small className="muted"> {s.assignee?.fullName}, {s.hours} h{s.checklist.length > 0 && `, ${s.checklist.length} checks`}</small></span>
+                      <span><strong>{s.title}</strong><small className="muted"> {s.assignee?.fullName || 'Unassigned'}, {s.hours} h{s.checklist.length > 0 && `, ${s.checklist.length} checks`}</small></span>
                     </li>
                   ))}
                 </ol>

@@ -109,6 +109,9 @@ public class WorkflowService {
         w.setActive(true);
         w.setCreatedAt(time.now());
         apply(w, req, me);
+        if (Boolean.TRUE.equals(req.startNow()) && !engine.allStepPeopleActive(w.getSteps())) {
+            throw new BadRequestException("Assign an active person to every FMS step before starting it");
+        }
         w = workflows.save(w);
         if (Boolean.TRUE.equals(req.startNow()) && w.getSourceTask() != null) {
             engine.startRun(w, time.today(), null, me, true, w.getSourceTask());
@@ -158,7 +161,9 @@ public class WorkflowService {
         Employee me = people.me(user);
         Workflow w = visible(id, me);
         if (!w.isActive()) throw new BadRequestException("This workflow is paused");
-        if (!engine.allStepPeopleActive(w.getSteps())) throw new BadRequestException("A step’s person is inactive. Edit the FMS first.");
+        if (!engine.allStepPeopleActive(w.getSteps())) {
+            throw new BadRequestException("Assign an active person to every FMS step before starting it");
+        }
         LocalDate today = time.today();
         Task source = w.getSourceTask();
         if (req != null && req.sourceTaskId() != null) {
@@ -257,7 +262,15 @@ public class WorkflowService {
 
         List<WorkflowStep> steps = steps(req.steps());
         if (steps.size() < 2) throw new BadRequestException("A workflow needs at least 2 steps");
+        long unassigned = steps.stream().filter(step -> step.assigneeId() == null).count();
+        if (unassigned > 0 && unassigned != steps.size()) {
+            throw new BadRequestException("Assign a person to every step, or leave every step unassigned");
+        }
         List<FormField> fields = formFields(req.formFields());
+        String department = Texts.trimToNull(req.department());
+        if (department != null && department.length() > 80) {
+            throw new BadRequestException("Department must be 80 characters or fewer");
+        }
 
         Task source = null;
         if (req.sourceTaskId() != null) {
@@ -270,6 +283,7 @@ public class WorkflowService {
         }
         w.setName(req.name().trim());
         w.setDescription(Texts.trimToEmpty(req.description()));
+        w.setDepartment(department);
         w.setFrequency(frequency);
         w.setDayOfWeek(day);
         w.setStartTime(start);
@@ -294,11 +308,11 @@ public class WorkflowService {
             if (hours == null || hours.signum() <= 0 || hours.compareTo(MAX_HOURS) > 0) {
                 throw new BadRequestException("Step " + n + ": hours must be between 0.25 and 24");
             }
-            Employee person = people.activeAssignee(s.assigneeId());
+            Employee person = s.assigneeId() == null ? null : people.activeAssignee(s.assigneeId());
             Priority priority = Enums.parse(Priority.class, s.priority(), Priority.MEDIUM, "Step " + n + ": choose a valid priority");
             List<String> checklist = s.checklist() == null ? List.of()
                     : s.checklist().stream().filter(c -> !Texts.isBlank(c)).map(String::trim).toList();
-            out.add(new WorkflowStep(s.title().trim(), person.getId(), hours, priority.name(), Texts.trimToEmpty(s.how()), checklist));
+            out.add(new WorkflowStep(s.title().trim(), person == null ? null : person.getId(), hours, priority.name(), Texts.trimToEmpty(s.how()), checklist));
         }
         return out;
     }

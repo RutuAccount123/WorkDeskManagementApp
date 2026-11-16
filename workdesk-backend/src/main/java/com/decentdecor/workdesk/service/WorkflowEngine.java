@@ -13,6 +13,7 @@ import com.decentdecor.workdesk.entity.enums.WorkflowFrequency;
 import com.decentdecor.workdesk.entity.json.ChecklistItem;
 import com.decentdecor.workdesk.entity.json.WorkflowStep;
 import com.decentdecor.workdesk.entity.json.WorkflowStepProgress;
+import com.decentdecor.workdesk.exception.BadRequestException;
 import com.decentdecor.workdesk.repository.EmployeeRepository;
 import com.decentdecor.workdesk.repository.TaskRepository;
 import com.decentdecor.workdesk.repository.WorkflowRepository;
@@ -95,6 +96,9 @@ public class WorkflowEngine {
      */
     @Transactional
     public WorkflowRun startRun(Workflow w, LocalDate day, Map<String, Object> formData, Employee by, boolean manual, Task sourceTask) {
+        if (!allStepPeopleActive(w.getSteps())) {
+            throw new BadRequestException("Assign an active person to every FMS step before starting it");
+        }
         if (formData != null) FormValidator.clean(w.getFormFields(), formData);   // check before creating anything
         WorkflowRun run = new WorkflowRun();
         run.setWorkflow(w);

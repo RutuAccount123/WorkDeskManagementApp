@@ -42,6 +42,9 @@ public class Workflow {
     @Column(name = "description", nullable = false)
     private String description = "";
 
+    @Column(name = "department", length = 80)
+    private String department;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "frequency", nullable = false, length = 10)
     private WorkflowFrequency frequency;
@@ -103,6 +106,14 @@ public class Workflow {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getDepartment() {
+        return department;
+    }
+
+    public void setDepartment(String department) {
+        this.department = department;
     }
 
     public WorkflowFrequency getFrequency() {

@@ -35,8 +35,9 @@ export default function WorkflowEditorPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
-    name: '', trigger: '', frequency: fromTask ? 'ON_DEMAND' : 'DAILY', dayOfWeek: 'MONDAY',
+    name: '', trigger: '', department: '', frequency: fromTask ? 'ON_DEMAND' : 'DAILY', dayOfWeek: 'MONDAY',
     startTime: '10:00', endTime: '18:00', sourceTaskId: fromTask ? String(fromTask) : '', startNow: !!fromTask,
+    unassigned: false,
     formFields: [{ label: '', type: 'text', required: true, options: '' }],
     steps: [blankStep(user.id), blankStep(user.id), blankStep(user.id)],
   });
@@ -47,11 +48,12 @@ export default function WorkflowEditorPage() {
     if (id) {
       workflowService.get(id).then((wf) => {
         setForm({
-          name: wf.name, trigger: wf.description || '', frequency: wf.frequency, dayOfWeek: wf.dayOfWeek || 'MONDAY',
+          name: wf.name, trigger: wf.description || '', department: wf.department || '', frequency: wf.frequency, dayOfWeek: wf.dayOfWeek || 'MONDAY',
           startTime: wf.startTime, endTime: wf.endTime, sourceTaskId: wf.sourceTask ? String(wf.sourceTask.id) : '', startNow: false,
+          unassigned: wf.steps.every((step) => !step.assignee),
           formFields: wf.formFields.map((f) => ({ ...f, options: (f.options || []).join(', ') })),
           steps: wf.steps.map((s) => ({
-            title: s.title, assigneeId: String(s.assignee.id), hours: s.hours, note: s.how || '',
+            title: s.title, assigneeId: s.assignee ? String(s.assignee.id) : '', hours: s.hours, note: s.how || '',
             howSteps: s.checklist.length ? [...s.checklist] : [''],
           })),
         });
@@ -68,6 +70,9 @@ export default function WorkflowEditorPage() {
   }, [tasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
+  const setUnassigned = (e) => setForm({
+    ...form, unassigned: e.target.checked, startNow: e.target.checked ? false : form.startNow,
+  });
   const setField = (i, k, v) => setForm({ ...form, formFields: form.formFields.map((f, j) => (j === i ? { ...f, [k]: v } : f)) });
   const setStep = (i, k, v) => setForm({ ...form, steps: form.steps.map((s, j) => (j === i ? { ...s, [k]: v } : s)) });
   const moveStep = (i, dir) => {
@@ -90,6 +95,8 @@ export default function WorkflowEditorPage() {
   const taskChoices = tasks.filter((t) => (!t.workflow && !['COMPLETED', 'CANCELLED'].includes(t.status))
     || t.id === fromTask || String(t.id) === form.sourceTaskId);
   const linkedTask = tasks.find((t) => String(t.id) === form.sourceTaskId);
+  const departmentOptions = [...new Set([...people.map((person) => person.department?.trim()), form.department?.trim()].filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
 
   const submit = async (e) => {
     e.preventDefault();
@@ -97,14 +104,14 @@ export default function WorkflowEditorPage() {
     setError('');
     try {
       const body = {
-        name: form.name, description: form.trigger, frequency: form.frequency,
+        name: form.name, description: form.trigger, department: form.department, frequency: form.frequency,
         dayOfWeek: form.frequency === 'WEEKLY' ? form.dayOfWeek : null,
         startTime: form.startTime, endTime: form.endTime,
         sourceTaskId: form.sourceTaskId ? Number(form.sourceTaskId) : null,
-        startNow: !!(form.startNow && form.sourceTaskId && !id),
+        startNow: !!(form.startNow && form.sourceTaskId && !id && !form.unassigned),
         formFields: form.formFields.map((f) => ({ ...f, options: f.type === 'select' ? f.options : '' })),
         steps: form.steps.map((s) => ({
-          title: s.title, assigneeId: Number(s.assigneeId), hours: Number(s.hours), how: s.note,
+          title: s.title, assigneeId: form.unassigned ? null : Number(s.assigneeId) || null, hours: Number(s.hours), how: s.note,
           checklist: s.howSteps.filter((x) => x.trim()),
         })),
       };
@@ -146,7 +153,18 @@ export default function WorkflowEditorPage() {
             ))}
           </select>
         </label>
-        {form.sourceTaskId && !id && (
+        <label>Department (optional)
+          <select value={form.department} onChange={set('department')}>
+            <option value="">Select department</option>
+            {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
+          </select>
+        </label>
+        <label className="check fms-startnow">
+          <input type="checkbox" checked={form.unassigned} onChange={setUnassigned} />
+          Save FMS without assigning anyone
+        </label>
+        {form.unassigned && <p className="muted small fms-unassigned-note">This saves the FMS setup only. Assign a person to every step before starting it.</p>}
+        {form.sourceTaskId && !id && !form.unassigned && (
           <label className="check fms-startnow">
             <input type="checkbox" checked={form.startNow} onChange={set('startNow')} />
             Start this FMS now for “{linkedTask?.title || 'the task'}”
@@ -162,6 +180,12 @@ export default function WorkflowEditorPage() {
         </div>
         <div className="fms-scroll">
           <table className="fms-grid">
+            <colgroup>
+              <col style={{ width: 84 }} />
+              <col style={{ width: 320 }} />
+              {form.steps.map((step, index) => <col key={index} style={{ width: 280 }} />)}
+              <col style={{ width: 120 }} />
+            </colgroup>
             <thead>
               <tr>
                 <th className="fms-rowhead" />
@@ -202,11 +226,13 @@ export default function WorkflowEditorPage() {
               {/* WHO */}
               <tr>
                 <th className="fms-rowhead">{ROWS[1]}</th>
-                <td className="trigger muted small">Whoever starts it, or step 1’s person for scheduled runs</td>
+                <td className="trigger muted small">
+                  {form.unassigned ? 'No one is assigned. Assign people before starting this FMS.' : 'Whoever starts it, or step 1’s person for scheduled runs'}
+                </td>
                 {form.steps.map((s, i) => (
                   <td key={i}>
-                    <select value={s.assigneeId} onChange={(e) => setStep(i, 'assigneeId', e.target.value)} required={!!s.title} aria-label={`Step ${i + 1}: who`}>
-                      <option value="">Choose a person</option>
+                    <select value={form.unassigned ? '' : s.assigneeId} onChange={(e) => setStep(i, 'assigneeId', e.target.value)} required={!form.unassigned && !!s.title} disabled={form.unassigned} aria-label={`Step ${i + 1}: who`}>
+                      <option value="">{form.unassigned ? 'Unassigned' : 'Choose a person'}</option>
                       {people.map((p) => <option key={p.id} value={p.id}>{p.fullName}</option>)}
                     </select>
                   </td>
