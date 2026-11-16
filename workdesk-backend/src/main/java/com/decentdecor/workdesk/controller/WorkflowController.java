@@ -80,6 +80,18 @@ public class WorkflowController {
         return ResponseEntity.ok(workflowService.setActive(me, id, value));
     }
 
+    /** Makes a new shareable form link (the old one stops working). */
+    @PostMapping("/{id}/form-link")
+    public ResponseEntity<WorkflowResponse> newFormLink(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id) {
+        return ResponseEntity.ok(workflowService.newFormLink(me, id));
+    }
+
+    /** Turns the shareable form link off. */
+    @DeleteMapping("/{id}/form-link")
+    public ResponseEntity<WorkflowResponse> turnOffFormLink(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id) {
+        return ResponseEntity.ok(workflowService.turnOffFormLink(me, id));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id) {
         workflowService.delete(me, id);

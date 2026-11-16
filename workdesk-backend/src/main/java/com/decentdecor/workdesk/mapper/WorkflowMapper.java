@@ -82,7 +82,8 @@ public class WorkflowMapper {
         }
         return new WorkflowResponse(w.getId(), w.getName(), w.getDescription(), w.getDepartment(), w.getFrequency().name(), Enums.name(w.getDayOfWeek()),
                 hhmm(w.getStartTime()), hhmm(w.getEndTime()), w.isActive(), w.getLastRunOn(), w.getCreatedAt(),
-                employees.toRef(w.getCreatedBy()), tasks.toRef(w.getSourceTask()), formFields(w.getFormFields()), steps, total);
+                employees.toRef(w.getCreatedBy()), tasks.toRef(w.getSourceTask()), formFields(w.getFormFields()), steps, total,
+                w.getPublicFormToken());
     }
 
     // ------------------------------------------------------------ runs (tracker rows)
@@ -134,7 +135,8 @@ public class WorkflowMapper {
         return new RunResponse(r.getId(), r.getWorkflow() == null ? null : r.getWorkflow().getId(), r.getName(), r.getRunDate(),
                 r.getStatus().name(), r.getNumber(), label(r), formFields(r.getFormFields()), r.getFormData(), r.needsForm(),
                 employees.toRef(r.getFormFilledBy()), r.getFormFilledAt(), hhmm(r.getStartTime()), hhmm(r.getEndTime()),
-                r.getStartedAt(), r.getFinishedAt(), r.getCurrentStep(), r.totalSteps(), tasks.toRef(r.getSourceTask()), steps);
+                r.getStartedAt(), r.getFinishedAt(), r.getCurrentStep(), r.totalSteps(), tasks.toRef(r.getSourceTask()), steps,
+                r.getFormFilledByName());
     }
 
     /** The first filled answer that isn't a tick box, e.g. the site name. Shown next to the run. */

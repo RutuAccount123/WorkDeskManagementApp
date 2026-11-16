@@ -2,6 +2,7 @@ package com.decentdecor.workdesk.repository;
 
 import com.decentdecor.workdesk.entity.Workflow;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -12,4 +13,6 @@ public interface WorkflowRepository extends JpaRepository<Workflow, Long> {
     List<Workflow> findAllByOrderByNameAsc();
 
     List<Workflow> findByActiveTrue();
+
+    Optional<Workflow> findByPublicFormToken(String publicFormToken);
 }

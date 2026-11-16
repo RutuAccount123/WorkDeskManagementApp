@@ -9,6 +9,9 @@ export const workflowService = {
   update: (id, data) => http(`/api/workflows/${id}`, { method: 'PUT', body: data }),
   setActive: (id, active) => http(`/api/workflows/${id}/active?value=${active}`, { method: 'PATCH' }),
   remove: (id) => http(`/api/workflows/${id}`, { method: 'DELETE' }),
+  /** Shareable form link: make a new one (the old link stops working) or turn it off. */
+  newFormLink: (id) => http(`/api/workflows/${id}/form-link`, { method: 'POST' }),
+  turnOffFormLink: (id) => http(`/api/workflows/${id}/form-link`, { method: 'DELETE' }),
   /** Starts a new run now with the form filled in. Can be done several times a day. */
   startNow: (id, formData, sourceTaskId) => http(`/api/workflows/${id}/start-now`, { method: 'POST', body: { formData, sourceTaskId } }),
   /** Fills the form of a scheduled run; this starts step 1. */

@@ -32,5 +32,7 @@ public record RunResponse(
         int currentStep,
         int totalSteps,
         TaskRef sourceTask,
-        List<RunStepResponse> steps) {
+        List<RunStepResponse> steps,
+        /** Name typed on the form link by someone outside Work Desk (formFilledBy is then null). */
+        String formFilledByName) {
 }

@@ -25,5 +25,7 @@ public record WorkflowResponse(
         TaskRef sourceTask,
         List<FormField> formFields,
         List<WorkflowStepResponse> steps,
-        BigDecimal totalHours) {
+        BigDecimal totalHours,
+        /** Secret token of the shareable form link (/f/{token}); null when the link is off. */
+        String publicFormToken) {
 }

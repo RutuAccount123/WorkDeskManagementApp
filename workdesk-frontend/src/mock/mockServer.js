@@ -545,7 +545,7 @@ function runOut(run) {
     id: run.id, workflowId: run.workflowId, name: run.name, date: run.date, status: run.status,
     number: run.number || 1, label: first ? String(run.formData[first.id]) : null,
     formFields: fields, formData: run.formData, needsForm: needsForm(run),
-    formFilledBy: empRef(run.formFilledBy), formFilledAt: run.formFilledAt,
+    formFilledBy: empRef(run.formFilledBy), formFilledByName: run.formFilledByName || null, formFilledAt: run.formFilledAt,
     startTime: run.startTime, endTime: run.endTime, startedAt: run.startedAt, finishedAt: run.finishedAt,
     currentStep: run.currentStep, totalSteps: run.steps.length,
     sourceTask: run.sourceTaskId ? taskRef(run.sourceTaskId) : null,
@@ -592,7 +592,16 @@ function workflowOut(wf) {
       how: st.how || '', checklist: st.checklist || [],
     })),
     totalHours: wf.steps.reduce((sum, st) => sum + Number(st.hours), 0),
+    publicFormToken: wf.publicFormToken || null,
   };
+}
+
+/** A short, hard-to-guess code for a shareable form link: 10 letters/digits (same as the backend). */
+function newFormToken() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = new Uint8Array(10);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => chars[b % chars.length]).join('');
 }
 
 // Demo only: past runs of "Daily purchase cycle" so the FMS tracker has rows (some on time, some late).
@@ -689,6 +698,44 @@ function route(method, path, query, body, me) {
     if (!e || !e.active || e.password !== body.password) throw new HttpError(401, 'Invalid email or password');
     return { token: `mock-${e.id}`, expiresInSeconds: 43200, user: empOut(e) };
   }
+
+  // ----- shareable FMS form links: no sign-in, the token is the permission
+  if (seg[0] === 'public' && seg[1] === 'forms' && seg[2] && !seg[3]) {
+    const linkPart = decodeURIComponent(seg[2]); // "site-enquiry-k3X9pQ2mZa": only the code after the last "-" counts
+    const code = linkPart.slice(linkPart.lastIndexOf('-') + 1);
+    const wf = (db.workflows || []).find((w) => w.publicFormToken && w.publicFormToken === code);
+    if (!wf) throw notFound('Form');
+    if (!wf.active) throw bad('This form is closed right now');
+    if (method === 'GET') return { name: wf.name, description: wf.description, formFields: wf.formFields || [], signedInAs: me?.fullName || null };
+    if (method === 'POST') {
+      if (wf.steps.some((step) => !step.assigneeId || !empById(step.assigneeId)?.active)) {
+        throw bad('This form is not accepting entries right now. Please contact the sender.');
+      }
+      // "Filled by" is always the name typed on the form, signed in or not
+      const name = String(body.filledByName ?? '').trim() || null;
+      if (!name) throw bad('Please enter your name');
+      if (name.length > 120) throw bad('Name must be 120 characters or fewer');
+      const run = startRun(wf, localDay(new Date()), {
+        formData: (wf.formFields || []).length ? body.formData || {} : null, by: me ? me.id : wf.createdById, manual: true,
+      });
+      run.formFilledBy = me ? me.id : null;
+      run.formFilledByName = name;
+      run.formFilledAt ||= nowIso();
+      // the member's part is done: close their open "Fill the form" tasks that carry this link
+      if (me && !me.departmentAdmin) {
+        const carries = new RegExp(`/f/(?:[A-Za-z0-9-]*-)?${wf.publicFormToken}(?![A-Za-z0-9])`);
+        db.tasks.filter((t) => t.assigneeId === me.id && !t.workflowRunId && ['TODO', 'IN_PROGRESS', 'REOPENED'].includes(t.status)
+          && reviewerOf(t) == null && (t.checklist || []).every((c) => c.done) && carries.test(t.description || ''))
+          .forEach((t) => {
+            const from = t.status;
+            Object.assign(t, { status: 'COMPLETED', completedAt: nowIso(), submittedAt: t.submittedAt || nowIso(), updatedAt: nowIso() });
+            log(t.id, me.id, 'STATUS_CHANGED', from, 'COMPLETED', 'Filled the form');
+          });
+      }
+      return { runDate: run.date, number: run.number };
+    }
+  }
+
   if (!me) throw new HttpError(401, 'Not signed in');
   if (path === '/api/auth/me') return empOut(me);
   if (path === '/api/auth/change-password') {
@@ -1200,7 +1247,9 @@ function route(method, path, query, body, me) {
         .sort((a, b) => a.name.localeCompare(b.name)).map(workflowOut);
     }
     if (!id && method === 'POST') {
-      const wf = apply({ id: nextId(db.workflows), createdById: me.id, active: true, lastRunOn: null, createdAt: nowIso() });
+      const wf = apply({
+        id: nextId(db.workflows), createdById: me.id, active: true, lastRunOn: null, createdAt: nowIso(), publicFormToken: newFormToken(),
+      });
       db.workflows.push(wf);
       if (body.startNow && wf.sourceTaskId) {
         startRun(wf, localDay(new Date()), { by: me.id, manual: true, sourceTaskId: wf.sourceTaskId });
@@ -1222,6 +1271,12 @@ function route(method, path, query, body, me) {
         .sort((a, b) => b.startedAt.localeCompare(a.startedAt)).map(runOut);
     }
     if (seg[2] === 'active') { wf.active = query.get('value') === 'true'; if (wf.active) runWorkflows(); return workflowOut(wf); }
+    // Shareable form link: POST makes a new one (the old link stops working), DELETE turns it off
+    if (seg[2] === 'form-link') {
+      if (!canChange(wf)) throw forbidden('Only the person who set up this workflow (or an admin) can change it');
+      if (method === 'POST') { wf.publicFormToken = newFormToken(); return workflowOut(wf); }
+      if (method === 'DELETE') { wf.publicFormToken = null; return workflowOut(wf); }
+    }
     if (seg[2] === 'start-now') {
       if (!wf.active) throw bad('This workflow is paused');
       if (wf.steps.some((step) => !step.assigneeId || !empById(step.assigneeId)?.active)) {
@@ -1474,6 +1529,11 @@ export function setMockDelay(ms) { delayMs = ms; }
 export async function mockFetch(method, fullPath, body, token) {
   if (delayMs) await new Promise((r) => setTimeout(r, delayMs)); // feel like a network call
   db.workflows ||= []; db.workflowRuns ||= [];
+  // FMS saved before form links existed get one (null = the owner turned it off, so leave those)
+  // and long codes from before short links are made short
+  db.workflows.forEach((wf) => {
+    if (wf.publicFormToken === undefined || wf.publicFormToken?.length > 10) wf.publicFormToken = newFormToken();
+  });
   runRecurring();
   runWorkflows();
   demoProgress();

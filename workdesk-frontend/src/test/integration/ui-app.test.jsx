@@ -542,8 +542,9 @@ describe('FMS sheet: fill the form where you work', () => {
     start(`/workflows/${wf.id}`);
     const box = await screen.findByLabelText(/Vehicle number/);
     const table = screen.getByRole('table');
-    expect(table.querySelector('thead tr.fms-sheet-header th.trigger').colSpan).toBe(6);
-    expect(table.querySelectorAll('colgroup col')).toHaveLength(15);
+    // #, Timestamp, Filled by + 4 form fields
+    expect(table.querySelector('thead tr.fms-sheet-header th.trigger').colSpan).toBe(7);
+    expect(table.querySelectorAll('colgroup col')).toHaveLength(16);
     expect(within(table).getByText('Verify vehicle registration against records')).toBeInTheDocument();
     expect(screen.getByText('0 date-wise entries in selected dates')).toBeInTheDocument();
     expect(screen.getByText('No entries in these dates.')).toBeInTheDocument();

@@ -12,6 +12,7 @@ import { freqText } from '@/features/workflows/workflowFormat.js';
 import FmsTaskSheet from '@/features/workflows/FmsTaskSheet.jsx';
 import AddWorkForm from '@/features/my-work/AddWorkForm.jsx';
 import Modal from '@/components/ui/Modal.jsx';
+import LinkedText from '@/components/ui/LinkedText.jsx';
 import TaskForm from './TaskForm.jsx';
 import { ACTION_TEXT, actionsFor, yourTurn } from './taskActions.js';
 
@@ -159,7 +160,7 @@ export default function TaskDetailPage() {
                   </ol>
                 </>
               )}
-              {task.description && <p className="how-note-box"><strong>Note:</strong> {task.description}</p>}
+              {task.description && <p className="how-note-box"><strong>Note:</strong> <LinkedText text={task.description} /></p>}
               {formGate && (
                 <div className="workflow-form-inline">
                   <h3 className="section-title">Fill the form to start</h3>
@@ -179,7 +180,7 @@ export default function TaskDetailPage() {
           {!isFlow && (task.description || task.image) && checks.length === 0 && (
             <section className="panel">
               <h2 className="section-title">Task instructions</h2>
-              {task.description && <p className="description">{task.description}</p>}
+              {task.description && <p className="description"><LinkedText text={task.description} /></p>}
               {task.image && (
                 <>
                   <img className="task-reference-image" src={`data:image/jpeg;base64,${task.image}`} alt="Task reference" />

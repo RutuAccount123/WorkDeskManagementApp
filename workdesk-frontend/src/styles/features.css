@@ -888,3 +888,88 @@ a.wf-name:hover { text-decoration: underline; }
   .fms-basics { grid-template-columns: 1fr; }
   .linked-fms li { flex-direction: column; align-items: flex-start; }
 }
+
+/* ---------- shareable FMS form link (/f/:token), laid out like a Google Form */
+.gform { min-height: 100vh; background: var(--primary-soft); color: var(--text); }
+.gform-wrap { width: min(770px, 100%); margin: 0 auto; padding: 12px 16px 32px; }
+.gform-wrap form { display: block; }
+.gform-card {
+  display: block;
+  width: 100%;
+  margin: 12px 0 0;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  min-width: 0;
+}
+.gform-head { position: relative; padding-top: 30px; overflow: hidden; }
+.gform-head::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 10px; background: var(--primary); }
+.gform-head h1 { margin: 0; font-size: clamp(1.6rem, 4vw, 2rem); font-weight: 500; line-height: 1.25; letter-spacing: 0; overflow-wrap: anywhere; }
+.gform-desc { margin: 12px 0 0; color: var(--text-2); white-space: pre-line; overflow-wrap: anywhere; }
+.gform-req-note { margin: 16px -24px 0; padding: 12px 24px 0; border-top: 1px solid var(--border); color: var(--overdue, #D93025); font-size: var(--fs-sm); }
+.gform-req { color: var(--overdue, #D93025); }
+
+.gform-q { transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+.gform-q:focus-within { border-left: 6px solid var(--primary); padding-left: 19px; box-shadow: var(--shadow-sm); }
+fieldset.gform-q { border: 1px solid var(--border); }
+.gform-q-title { display: block; float: none; width: 100%; margin: 0 0 16px; padding: 0; font-size: var(--fs-base); font-weight: 500; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+
+.gform-input {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 8px 0 6px;
+  border: 0;
+  border-bottom: 1px solid var(--border-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+  box-shadow: none;
+}
+input.gform-input:not(.gform-date) { width: min(100%, 360px); }
+textarea.gform-input { resize: vertical; min-height: 36px; }
+.gform-input:focus { border-bottom: 2px solid var(--primary); padding-bottom: 5px; box-shadow: none; }
+.gform-input::placeholder { color: var(--muted); }
+.gform-date { width: auto; min-width: 180px; }
+
+.gform-options { display: grid; gap: 4px; }
+.gform-option { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 4px 0; cursor: pointer; font-weight: 400; color: var(--text); }
+.gform-option input { width: 20px; height: 20px; margin: 0; padding: 0; box-shadow: none; flex: none; accent-color: var(--primary); cursor: pointer; }
+
+.gform-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.gform-submit { min-width: 96px; }
+.gform-link { padding: 8px; border: 0; background: none; color: var(--primary-text); font: inherit; font-weight: 600; cursor: pointer; }
+.gform-link:hover:not(:disabled) { text-decoration: underline; }
+.gform-head .gform-link { margin: 16px 0 0 -8px; }
+.gform-clear-choice { display: block; margin: 8px 0 0 auto; }
+.gform-error { margin: 12px 0 0; padding: 12px 16px; border-radius: 8px; background: var(--overdue-bg, #FDECEA); color: var(--overdue, #B42318); }
+.gform-footer { margin: 24px 0 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
+
+@media (max-width: 560px) {
+  .gform-card { padding: 20px 16px; }
+  .gform-q:focus-within { padding-left: 11px; }
+  .gform-req-note { margin: 16px -16px 0; padding: 12px 16px 0; }
+}
+.form-link-row { gap: 8px; flex-wrap: nowrap; }
+.form-link-row input { flex: 1; min-width: 0; }
+.form-link-share { gap: 8px; flex-wrap: wrap; }
+.whatsapp-btn { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: #128C4A; border-color: #9FDDB8; }
+.whatsapp-btn:hover:not(:disabled) { background: #EAF8EF; text-decoration: none; }
+.form-link-assign { padding-top: 16px; border-top: 1px solid var(--border); }
+.form-link-assign .section-title { margin: 0; }
+.success { margin: 0; padding: 10px 12px; border-radius: var(--r-sm); background: var(--primary-soft); color: var(--primary-text); font-size: var(--fs-sm); }
+.linked-text { white-space: pre-line; overflow-wrap: anywhere; }
+.tk-filled-by small { display: block; color: var(--muted); font-size: var(--fs-xs); }
+/* "Start new" dialog: the same Google Form style cards, on a light panel inside the modal */
+.gform-modal { display: flex; flex-direction: column; margin: -6px -6px 0; padding: 0 12px 12px; border-radius: var(--r-sm); background: var(--primary-soft); }
+.gform-modal .gform-card { margin-top: 12px; padding: 20px; }
+.gform-modal .gform-head { padding-top: 26px; }
+.gform-modal .gform-head h2 { margin: 0; font-size: var(--fs-lg); font-weight: 500; overflow-wrap: anywhere; }
+.gform-modal .gform-q:focus-within { padding-left: 15px; }
+.gform-modal .gform-req-note { margin: 14px -20px 0; padding: 10px 20px 0; }
+.gform-modal .gform-filled-by { margin: 10px 0 0; color: var(--text-2); font-size: var(--fs-sm); }
+.gform-modal-hint { margin: 12px 0 0; }
+.gform-modal .form-actions { margin-top: 12px; }

@@ -8,12 +8,27 @@ import DynamicForm from '@/components/form/DynamicForm.jsx';
 import { useAuth } from '@/features/auth/AuthContext.jsx';
 import { actionsFor } from '@/features/tasks/taskActions.js';
 
+/**
+ * Who filled an entry's form: the name typed on the shareable form link,
+ * or (for entries started inside Work Desk) the member who filled it.
+ */
+export function filledByText(run) {
+  return run.formFilledByName || run.formFilledBy?.fullName || '';
+}
+
+/** "Who" for the start entry: step 1's person, plus anyone with the form link when it is on. */
+const whoFillsText = (workflow) => {
+  const first = workflow.steps[0]?.assignee?.fullName;
+  const link = workflow.publicFormToken ? 'anyone with the form link' : '';
+  return `${[first, link].filter(Boolean).join(' or ') || 'Someone'} fills the form`;
+};
+
 function downloadTracker(workflow, runs, fields, from, to) {
   const frequency = freqText(workflow);
   const sheetRows = [
     ['FMS sheet', workflow.name],
     ['What', workflow.description || 'Work is started', ...workflow.steps.map((step) => step.title)],
-    ['Who', `${workflow.steps[0]?.assignee?.fullName || ''} fills the form`, ...workflow.steps.map((step) => step.assignee?.fullName || '')],
+    ['Who', whoFillsText(workflow), ...workflow.steps.map((step) => step.assignee?.fullName || '')],
     [
       'How',
       fields.map((field) => `${field.label}${field.required ? ' *' : ''}`).join('; ') || 'No form',
@@ -27,7 +42,7 @@ function downloadTracker(workflow, runs, fields, from, to) {
     [],
   ];
   const headers = [
-    'Run number', 'Date', 'Started at', 'Run status',
+    'Run number', 'Date', 'Started at', 'Run status', 'Filled by',
     ...fields.map((field) => field.label),
     ...workflow.steps.flatMap((step) => [
       `Step ${step.step}: ${step.title} - Planned`,
@@ -37,7 +52,7 @@ function downloadTracker(workflow, runs, fields, from, to) {
     ]),
   ];
   const rows = runs.map((run) => [
-    run.number, run.date, fmtDateTime(run.startedAt), RUN_STATUS_LABEL[run.status] || run.status,
+    run.number, run.date, fmtDateTime(run.startedAt), RUN_STATUS_LABEL[run.status] || run.status, filledByText(run),
     ...fields.map((field) => answerText(field, run.formData?.[field.id])),
     ...run.steps.flatMap((step) => {
       const status = !step.task ? 'Waiting' : step.actual ? 'Done' : STATUS_LABEL[step.task.status] || step.task.status;
@@ -249,6 +264,7 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
             <col style={{ width: 84 }} />
             <col style={{ width: 52 }} />
             <col style={{ width: 160 }} />
+            <col style={{ width: 150 }} />
             {fields.map((field) => <col key={field.id} style={{ width: 160 }} />)}
             {workflow.steps.flatMap((step) => [
               <col key={`${step.step}-planned`} style={{ width: 140 }} />,
@@ -260,7 +276,7 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
           <thead>
             <tr className="fms-sheet-header">
               <th className="fms-rowhead" />
-              <th colSpan={2 + fields.length} className="fms-col trigger">Start entry</th>
+              <th colSpan={3 + fields.length} className="fms-col trigger">Start entry</th>
               {workflow.steps.map((step) => (
                 <th key={step.step} colSpan={4} className="fms-col tk-group">
                   <span className="fms-colnum">{step.step}</span> {step.title}
@@ -269,17 +285,17 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
             </tr>
             <tr className="fms-definition-row">
               <th className="fms-rowhead">What</th>
-              <td colSpan={2 + fields.length} className="trigger">{workflow.description || 'Work is started'}</td>
+              <td colSpan={3 + fields.length} className="trigger">{workflow.description || 'Work is started'}</td>
               {workflow.steps.map((step) => <td key={step.step} colSpan={4}><strong>{step.title}</strong></td>)}
             </tr>
             <tr className="fms-definition-row">
               <th className="fms-rowhead">Who</th>
-              <td colSpan={2 + fields.length} className="trigger">{workflow.steps[0]?.assignee?.fullName} fills the form</td>
+              <td colSpan={3 + fields.length} className="trigger">{whoFillsText(workflow)}</td>
               {workflow.steps.map((step) => <td key={step.step} colSpan={4}>{step.assignee?.fullName || '—'}</td>)}
             </tr>
             <tr className="fms-definition-row">
               <th className="fms-rowhead">How</th>
-              <td colSpan={2 + fields.length} className="trigger">
+              <td colSpan={3 + fields.length} className="trigger">
                 {fields.length ? <ol className="how-read">{fields.map((field) => <li key={field.id}>{field.label}{field.required && ' *'}</li>)}</ol> : 'No form'}
               </td>
               {workflow.steps.map((step) => (
@@ -292,7 +308,7 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
             </tr>
             <tr className="fms-definition-row">
               <th className="fms-rowhead">When</th>
-              <td colSpan={2 + fields.length} className="trigger">
+              <td colSpan={3 + fields.length} className="trigger">
                 {freqText(workflow)}, from {workflow.startTime}
               </td>
               {workflow.steps.map((step, index) => (
@@ -303,6 +319,7 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
               <th rowSpan={2}>Step details</th>
               <th rowSpan={2} className="tk-sticky">#</th>
               <th rowSpan={2}>Timestamp</th>
+              <th rowSpan={2}>Filled by</th>
               {fields.map((field) => <th key={field.id} rowSpan={2}>{field.label}</th>)}
               {workflow.steps.map((step) => <th key={step.step} colSpan={4} className="tk-group">Step {step.step}: {step.title}</th>)}
             </tr>
@@ -324,6 +341,7 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
                 </td>
                 <td className="tk-sticky">{runs.length - index}</td>
                 <td className="nowrap">{entry.startedAt ? fmtDateTime(entry.startedAt) : entry.date}</td>
+                <td className="tk-filled-by">{filledByText(entry) || (entry.needsForm ? <small>Waiting for the form</small> : '')}</td>
                 {fields.map((field) => <td key={field.id}>{answerText(field, entry.formData?.[field.id])}</td>)}
                 {entry.steps.map((step) => {
                   const status = !step.task ? 'Waiting' : step.actual ? 'Done' : STATUS_LABEL[step.task.status] || step.task.status;
@@ -342,7 +360,7 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
               </tr>
               {expandedRunId === entry.id && (
                 <tr className="fms-run-details-row">
-                  <td colSpan={3 + fields.length + workflow.steps.length * 4}>
+                  <td colSpan={4 + fields.length + workflow.steps.length * 4}>
                     {loadingRunId === entry.id ? <p className="muted">Loading step details…</p> : (
                       <div className="fms-run-details">
                         {entry.steps.map((step) => {
@@ -394,7 +412,7 @@ export default function FmsTaskSheet({ run, workflowId, showCurrentTask = true, 
               </Fragment>
             ))}
             {entries.length === 0 && (
-              <tr><td colSpan={3 + fields.length + workflow.steps.length * 4} className="empty">No entries in these dates.</td></tr>
+              <tr><td colSpan={4 + fields.length + workflow.steps.length * 4} className="empty">No entries in these dates.</td></tr>
             )}
           </tbody>
         </table>

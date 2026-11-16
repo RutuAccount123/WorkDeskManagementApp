@@ -83,6 +83,18 @@ public class WorkflowRun {
     @Column(name = "form_filled_at")
     private Instant formFilledAt;
 
+    /** Name typed on the shareable form link by someone who is not signed in to Work Desk. */
+    @Column(name = "form_filled_by_name", length = 120)
+    private String formFilledByName;
+
+    public String getFormFilledByName() {
+        return formFilledByName;
+    }
+
+    public void setFormFilledByName(String formFilledByName) {
+        this.formFilledByName = formFilledByName;
+    }
+
     /** 1, 2, 3… for runs of the same FMS on the same day. */
     @Column(name = "number", nullable = false)
     private int number = 1;

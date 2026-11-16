@@ -86,7 +86,19 @@ public class Workflow {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** Secret part of the shareable form link (/f/{token}). Null = link turned off. */
+    @Column(name = "public_form_token", length = 64, unique = true)
+    private String publicFormToken;
+
     // ------------------------------------------------------------ getters and setters
+
+    public String getPublicFormToken() {
+        return publicFormToken;
+    }
+
+    public void setPublicFormToken(String publicFormToken) {
+        this.publicFormToken = publicFormToken;
+    }
 
     public Long getId() {
         return id;

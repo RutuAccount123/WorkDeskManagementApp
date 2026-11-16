@@ -108,6 +108,7 @@ public class WorkflowService {
         w.setCreatedBy(me);
         w.setActive(true);
         w.setCreatedAt(time.now());
+        w.setPublicFormToken(PublicFormService.newToken());
         apply(w, req, me);
         if (Boolean.TRUE.equals(req.startNow()) && !engine.allStepPeopleActive(w.getSteps())) {
             throw new BadRequestException("Assign an active person to every FMS step before starting it");
@@ -139,6 +140,31 @@ public class WorkflowService {
         access.requireOwner(w, me);
         w.setActive(active);
         if (active) engine.startScheduledRunsForToday();
+        return mapper.toResponse(w);
+    }
+
+    /**
+     * Shareable form link: makes a new link for this FMS (the old link, if any, stops working).
+     * Only the owner or an admin can do this.
+     */
+    @Transactional
+    public WorkflowResponse newFormLink(CurrentUser user, Long id) {
+        people.requireNotDepartmentAdmin(user);
+        Employee me = people.me(user);
+        Workflow w = visible(id, me);
+        access.requireOwner(w, me);
+        w.setPublicFormToken(PublicFormService.newToken());
+        return mapper.toResponse(w);
+    }
+
+    /** Turns the shareable form link off: the link stops accepting entries. */
+    @Transactional
+    public WorkflowResponse turnOffFormLink(CurrentUser user, Long id) {
+        people.requireNotDepartmentAdmin(user);
+        Employee me = people.me(user);
+        Workflow w = visible(id, me);
+        access.requireOwner(w, me);
+        w.setPublicFormToken(null);
         return mapper.toResponse(w);
     }
 

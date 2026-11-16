@@ -45,6 +45,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/api/**").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                // shareable FMS form links: the secret token in the URL is the permission
+                .requestMatchers(HttpMethod.GET, "/api/public/forms/*").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/public/forms/*").permitAll()
                 // admin only
                 .requestMatchers("/api/employees", "/api/employees/**").hasRole("ADMIN")
                 .requestMatchers("/api/reports/team", "/api/reports/employees", "/api/reports/employees.csv").hasRole("ADMIN")
