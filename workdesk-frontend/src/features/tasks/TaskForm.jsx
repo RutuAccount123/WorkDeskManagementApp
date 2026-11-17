@@ -29,8 +29,8 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
     reviewerId: task ? String(task.reviewer?.id || NO_REVIEW)
       : isDepartmentAdmin || String(defaultAssigneeId || user.id) === String(user.id) ? NO_REVIEW : String(user.id),
     priority: task?.priority || 'MEDIUM',
-    dueAt: toLocalInput(task?.dueAt),
-    estimatedHours: task?.estimatedHours == null ? '' : String(task.estimatedHours),
+    dueDate: toLocalInput(task?.dueAt).slice(0, 10),
+    dueTime: toLocalInput(task?.dueAt).slice(11, 16) || '18:00',
     repeat: 'ONCE',
     dayOfWeek: new Date().toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() === 'SUNDAY'
       ? 'MONDAY'
@@ -99,8 +99,8 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
       const body = {
         title: form.title, description: form.description, priority: form.priority,
         ...(form.repeat === 'ONCE' || task ? {
-          dueAt: form.dueAt || null,
-          estimatedHours: form.estimatedHours === '' ? null : Number(form.estimatedHours),
+          dueAt: form.dueDate ? `${form.dueDate}T${form.dueTime || '18:00'}` : null,
+          estimatedHours: null,
           reviewerId: form.reviewerId === NO_REVIEW ? null : Number(form.reviewerId),
           noReview: form.reviewerId === NO_REVIEW,
           image: image || null,
@@ -223,18 +223,14 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
         {(task || form.repeat === 'ONCE') ? (
           <>
             <div className="grid-2">
-              <label>{form.estimatedHours ? 'Manual due (unused with an estimate)' : 'Due'}
-                <input type="datetime-local" value={form.dueAt} onChange={set('dueAt')} disabled={form.estimatedHours !== ''} />
+              <label>Due date
+                <input type="date" value={form.dueDate} onChange={set('dueDate')} />
               </label>
-              <label>Estimated effort (hours)
-                <input type="number" min="0.25" max="24" step="0.25" value={form.estimatedHours}
-                  onChange={set('estimatedHours')} placeholder="Optional" />
+              <label>Due time
+                <input type="time" value={form.dueTime} onChange={set('dueTime')} disabled={!form.dueDate} />
               </label>
             </div>
-            <p className="hint">
-              When an estimate is set, the due time is calculated from when work starts using 10:00–18:00 working hours.
-              Remaining effort continues on the next working day; Sundays and office holidays are skipped. Without an estimate, the Due field is used.
-            </p>
+            <p className="hint">Leave the due date empty if the task has no deadline.</p>
           </>
         ) : (
           <>

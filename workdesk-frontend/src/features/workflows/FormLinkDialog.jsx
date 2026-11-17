@@ -21,7 +21,8 @@ export default function FormLinkDialog({ workflow, canManage, onClose, onChanged
   const [copied, setCopied] = useState(false);
   const [people, setPeople] = useState([]);
   const [chosen, setChosen] = useState([]);
-  const [dueAt, setDueAt] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('18:00');
   const [assigned, setAssigned] = useState('');
   const token = workflow.publicFormToken;
   const url = token ? formLinkUrl(token, workflow.name) : '';
@@ -66,7 +67,7 @@ export default function FormLinkDialog({ workflow, canManage, onClose, onChanged
         title: `Fill the form: ${workflow.name}`.slice(0, 200),
         description: `${shareMessage(workflow.name, url)}\n\nOpen the link, fill the form and press Submit. Then mark this task as done.`,
         priority: 'MEDIUM',
-        dueAt: dueAt || null,
+        dueAt: dueDate ? `${dueDate}T${dueTime || '18:00'}` : null,
         noReview: true,
       };
       if (chosen.length === 1) await taskService.create({ ...task, assigneeId: chosen[0] });
@@ -126,9 +127,14 @@ export default function FormLinkDialog({ workflow, canManage, onClose, onChanged
                 ))}
               </div>
             </fieldset>
-            <label>Due (optional)
-              <input type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} disabled={busy} />
-            </label>
+            <div className="grid-2">
+              <label>Due date (optional)
+                <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} disabled={busy} />
+              </label>
+              <label>Due time
+                <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} disabled={busy || !dueDate} />
+              </label>
+            </div>
             <div className="form-actions">
               <button className="btn primary" disabled={busy || !chosen.length}>
                 {chosen.length > 1 ? `Assign to ${chosen.length} people` : 'Assign task'}

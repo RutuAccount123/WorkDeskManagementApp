@@ -279,7 +279,6 @@ export default function TaskDetailPage() {
               {task.scheduledAt && <div><dt>Scheduled start</dt><dd>{fmtDateTime(task.scheduledAt)}</dd></div>}
               <div><dt>Due</dt><dd className={task.overdue ? 'text-overdue' : ''}>
                 {fmtDateTime(task.dueAt)}{task.dueAt && open && ` (${relativeDue(task.dueAt)})`}</dd></div>
-              {task.estimatedHours != null && <div><dt>Estimated effort</dt><dd>{task.estimatedHours} hours</dd></div>}
               <div><dt>{task.selfAdded ? 'Added by' : 'Assigned by'}</dt><dd>{task.createdBy.id === user.id ? 'You' : task.createdBy.fullName}</dd></div>
               <div><dt>Reviewed by</dt><dd>{task.reviewer ? (task.reviewer.id === user.id ? 'You' : task.reviewer.fullName) : 'No review needed'}</dd></div>
               <div><dt>Created</dt><dd>{fmtDateTime(task.createdAt)}</dd></div>

@@ -47,7 +47,6 @@ export default function RepeatingTaskList({ refreshKey, onChanged, employeeId })
                 <strong>{t.title}</strong>
                 <small className="muted">
                   {scheduleLabel(t)}, by {t.dueTime.slice(0, 5)}
-                  {t.estimatedHours != null && ` · ${t.estimatedHours} estimated hours`}
                   {' · '}{t.selfOwned ? 'set by you' : `set by ${t.createdBy?.fullName || 'admin'}`}
                   {!t.active && ' · paused'}
                   {t.lastGeneratedOn && t.active && ` · next copies up to ${fmtDate(t.lastGeneratedOn)}`}

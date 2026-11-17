@@ -7,7 +7,7 @@ import Modal from '@/components/ui/Modal.jsx';
 
 const EMPTY = {
   title: '', description: '', assigneeId: '', priority: 'MEDIUM', frequency: 'DAILY', dayOfWeek: 'MONDAY',
-  dueTime: '18:00', startDate: isoDay(), scheduleEnabled: true, scheduledTime: '09:30', durationMinutes: '20', estimatedHours: '',
+  dueTime: '18:00', startDate: isoDay(), scheduleEnabled: true, scheduledTime: '09:30', durationMinutes: '20',
 };
 
 function TemplateForm({ template, employees, onClose, onSaved }) {
@@ -21,7 +21,7 @@ function TemplateForm({ template, employees, onClose, onSaved }) {
       startDate: template.startDate || isoDay(), scheduleEnabled: Boolean(template.scheduledTime),
       scheduledTime: template.scheduledTime ? template.scheduledTime.slice(0, 5) : '',
       durationMinutes: template.durationMinutes == null ? '20' : String(template.durationMinutes),
-      dueTime: template.dueTime.slice(0, 5), estimatedHours: template.estimatedHours == null ? '' : String(template.estimatedHours),
+      dueTime: template.dueTime.slice(0, 5),
     }
     : { ...EMPTY, reviewerId: String(user.id) });
   const [error, setError] = useState('');
@@ -40,7 +40,7 @@ function TemplateForm({ template, employees, onClose, onSaved }) {
       dueTime: form.dueTime,
       scheduledTime: form.scheduleEnabled ? form.scheduledTime : null,
       durationMinutes: form.scheduleEnabled ? Number(form.durationMinutes) : null,
-      estimatedHours: form.scheduleEnabled || form.estimatedHours === '' ? null : Number(form.estimatedHours),
+      estimatedHours: null,
       reviewerId: form.reviewerId === 'none' ? null : Number(form.reviewerId),
       image: image || null,
     };
@@ -137,20 +137,10 @@ function TemplateForm({ template, employees, onClose, onSaved }) {
             Set a scheduled start time and duration
           </label>
         )}
-        <label>Estimated effort (hours)
-          <input type="number" min="0.25" max="24" step="0.25" value={form.estimatedHours}
-            onChange={set('estimatedHours')} placeholder="Optional" />
-        </label>
         {form.scheduleEnabled ? (
           <p className="hint">Each task starts at the scheduled time and is due after the selected duration. You’ll be reminded at its start time; unfinished tasks become overdue after the deadline.</p>
         ) : (
-          <>
-            <p className="hint">With an estimate, each copy’s due time is calculated when work starts within 10:00–18:00 working hours. Without one, the Due by time applies.</p>
-            <label>Estimated effort (hours)
-              <input type="number" min="0.25" max="24" step="0.25" value={form.estimatedHours}
-                onChange={set('estimatedHours')} placeholder="Optional" />
-            </label>
-          </>
+          <p className="hint">Each task is due at the Due by time on its day.</p>
         )}
         <p className="hint">Tasks are created for the next 7 days. Monthly dates that do not exist in a month, and February 29 in non-leap years, are skipped. Sundays and office holidays are skipped.</p>
         {error && <p className="error" role="alert">{error}</p>}
@@ -201,8 +191,7 @@ export default function Recurring() {
                   <td><strong>{t.title}</strong><small className="block muted">{PRIORITY_LABEL[t.priority]} priority</small></td>
                   <td>{t.assignee.fullName}{t.selfOwned && <small className="block muted">set up by employee</small>}</td>
                   <td>{t.frequency === 'DAILY' ? 'Every day' : t.frequency === 'WEEKLY' ? `Every ${dayLabel(t.dayOfWeek)}` : t.frequency === 'MONTHLY' ? `Monthly on day ${Number(t.startDate?.slice(-2))}` : `Yearly on ${t.startDate}`},
-                    {t.scheduledTime ? ` starts ${t.scheduledTime.slice(0, 5)} for ${t.durationMinutes} min (due ${t.dueTime.slice(0, 5)})` : ` due ${t.dueTime.slice(0, 5)}`}
-                    {t.estimatedHours != null && <small className="block muted">{t.estimatedHours} estimated hours</small>}</td>
+                    {t.scheduledTime ? ` starts ${t.scheduledTime.slice(0, 5)} for ${t.durationMinutes} min (due ${t.dueTime.slice(0, 5)})` : ` due ${t.dueTime.slice(0, 5)}`}</td>
                   <td>{t.lastGeneratedOn ? fmtDate(t.lastGeneratedOn) : 'Not yet'}</td>
                   <td>{t.active ? 'Running' : 'Paused'}</td>
                   <td className="row-actions">
