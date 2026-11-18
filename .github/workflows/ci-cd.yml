@@ -1,7 +1,7 @@
 # Push to main: first the tests run. Only when ALL of them pass does the code go to production.
-#  - Vercel (frontend): deployed by the last job below, through the Deploy Hook.
-#  - Render (backend): Render waits for these checks itself (Auto-Deploy = "After CI Checks Pass").
-# GitHub secret needed: VERCEL_DEPLOY_HOOK (Vercel → project → Settings → Git → Deploy Hooks).
+#  - Vercel (frontend): deployed through the Deploy Hook.
+#  - Hostinger VPS (backend): deployed over SSH (runs /opt/ewms/deploy.sh on the VPS).
+# GitHub secrets needed: VERCEL_DEPLOY_HOOK, VPS_HOST, VPS_USER, VPS_SSH_KEY
 name: CI-CD
 
 on:
@@ -63,3 +63,18 @@ jobs:
             exit 1
           fi
           curl -fsS -X POST "$HOOK"
+
+  deploy-backend:
+    name: Deploy backend (Hostinger VPS)
+    needs: [frontend, backend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy on VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 15m
+          script: bash /opt/ewms/deploy.sh
