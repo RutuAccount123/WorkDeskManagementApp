@@ -8,6 +8,7 @@ import { groupFmsTasks } from '@/features/tasks/taskGroups.js';
 import TaskForm from '@/features/tasks/TaskForm.jsx';
 import TaskPanel from '@/features/tasks/TaskPanel.jsx';
 import WorkCalendar from '@/features/calendar/WorkCalendar.jsx';
+import EmployeeLeavePanel from '@/features/leave/EmployeeLeavePanel.jsx';
 import { useAuth } from '@/features/auth/AuthContext.jsx';
 
 /** Admin: everything about one employee — profile, performance, and their work by day/week/month/year. */
@@ -75,6 +76,7 @@ export default function EmployeeDetail() {
       <EmployeeProfileCard user={emp} employeeId={empId} today={today} todayError={todayError} refreshKey={refresh} />
       <PerformanceCard employeeId={empId} refreshKey={refresh} />
       <WorkCalendar employeeId={empId} employeeName={emp.fullName} onOpen={setOpenId} refreshKey={refresh} initialView="day" />
+      <EmployeeLeavePanel employeeId={empId} employeeName={emp.fullName} onChanged={() => setRefresh((n) => n + 1)} />
 
       <TaskPanel openId={openId} onClose={() => setOpenId(null)} onChanged={bump} />
       {assigning && isFullAdmin && (

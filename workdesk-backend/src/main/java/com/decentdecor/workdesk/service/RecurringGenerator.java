@@ -6,6 +6,7 @@ import com.decentdecor.workdesk.entity.enums.ActivityAction;
 import com.decentdecor.workdesk.entity.enums.NotificationType;
 import com.decentdecor.workdesk.entity.enums.RepeatFrequency;
 import com.decentdecor.workdesk.entity.enums.TaskStatus;
+import com.decentdecor.workdesk.repository.EmployeeLeaveRepository;
 import com.decentdecor.workdesk.repository.RecurringTemplateRepository;
 import com.decentdecor.workdesk.repository.TaskRepository;
 import com.decentdecor.workdesk.service.support.ActivityLogger;
@@ -21,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Makes the copies of recurring tasks.
  * Every active repeating task gets its matching normal Task in the next 7 days
- * (so they show in the Week / Month views). Never on Sundays or office holidays, never twice.
+ * (so they show in the Week / Month views). Never on Sundays, office holidays or the person's leave days, never twice.
  */
 @Service
 public class RecurringGenerator {
@@ -34,15 +35,18 @@ public class RecurringGenerator {
     private final ActivityLogger activity;
     private final NotificationService notifications;
     private final OfficeTime time;
+    private final EmployeeLeaveRepository leaves;
 
     public RecurringGenerator(RecurringTemplateRepository templates, TaskRepository tasks, WorkingDays workingDays,
-                              ActivityLogger activity, NotificationService notifications, OfficeTime time) {
+                              ActivityLogger activity, NotificationService notifications, OfficeTime time,
+                              EmployeeLeaveRepository leaves) {
         this.templates = templates;
         this.tasks = tasks;
         this.workingDays = workingDays;
         this.activity = activity;
         this.notifications = notifications;
         this.time = time;
+        this.leaves = leaves;
     }
 
     /** Scheduler: fill in every active repeating task. Returns how many copies were made. */
@@ -61,7 +65,7 @@ public class RecurringGenerator {
         LocalDate today = time.today();
         for (int i = 0; i < DAYS_AHEAD; i++) {
             LocalDate day = today.plusDays(i);
-            if (runsOn(tpl, day) && !hasCopyOn(tpl, day)) {
+            if (runsOn(tpl, day) && !hasCopyOn(tpl, day) && !leaves.onLeave(tpl.getAssignee().getId(), day)) {
                 makeCopy(tpl, day);
                 made++;
             }
@@ -71,6 +75,10 @@ public class RecurringGenerator {
 
     public boolean runsOn(RecurringTemplate tpl, LocalDate day) {
         return workingDays.runsOn(tpl.getFrequency(), tpl.getDayOfWeek(), tpl.getStartDate(), day);
+    }
+
+    public boolean onLeave(RecurringTemplate tpl, LocalDate day) {
+        return leaves.onLeave(tpl.getAssignee().getId(), day);
     }
 
     public boolean hasCopyOn(RecurringTemplate tpl, LocalDate day) {

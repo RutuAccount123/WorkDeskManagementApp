@@ -45,9 +45,11 @@ export function toLocalInput(iso) {
   return z.toISOString().slice(0, 16);
 }
 
-/** Sorts tasks into deadline lanes. */
+/** Sorts tasks into deadline lanes. Open work with an open ticket goes to Pending, whatever its due date. */
 export function laneOf(task) {
   if (task.status === 'COMPLETED' || task.status === 'CANCELLED') return 'closed';
+  if (task.pending) return 'pending';
+  if (task.onLeave) return 'leave';
   if (!task.dueAt) return 'nodate';
   if (task.overdue) return 'overdue';
   const due = new Date(task.dueAt);
@@ -60,6 +62,8 @@ export function laneOf(task) {
 }
 
 export const LANES = [
+  { key: 'pending', title: 'Pending (ticket raised)' },
+  { key: 'leave', title: 'Due on leave days' },
   { key: 'overdue', title: 'Overdue' },
   { key: 'today', title: 'Due today' },
   { key: 'week', title: 'Next 7 days' },
@@ -88,7 +92,7 @@ export const fmtDayLong = (d) => dayFmt.format(d);
 export const fmtTime = (iso) => (iso ? timeFmt.format(new Date(iso)) : '');
 
 /** The day a piece of work belongs to: its due date, or the day it was added. */
-export const workDate = (t) => new Date(t.dueAt || t.createdAt);
+export const workDate = (t) => new Date(t.status === 'COMPLETED' && t.completedAt ? t.completedAt : t.dueAt || t.createdAt);
 
 /** Groups used on the Day view and in counts. */
 export function statusGroup(t) {

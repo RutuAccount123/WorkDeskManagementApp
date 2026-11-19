@@ -8,7 +8,9 @@ import java.util.List;
 
 /**
  * One task, as the screens show it.
- * overdue: open and past its due time. repeat: recurrence frequency for copies of a repeating task.
+ * overdue: open and past its due time (never while pending). pending: has an open ticket.
+ * onLeave: open and due on one of the assignee's leave days (not overdue; they choose: do it later or skip).
+ * recurringTemplateId: the daily / weekly schedule this task is a copy of (null if not repeating). repeat: recurrence frequency for copies of a repeating task.
  * reviewer: null = no review needed. workflow: set for an FMS run task.
  */
 public record TaskResponse(
@@ -23,8 +25,11 @@ public record TaskResponse(
         Instant scheduledAt,
         BigDecimal estimatedHours,
         boolean overdue,
+        boolean pending,
+        boolean onLeave,
         boolean recurring,
         String repeat,
+        Long recurringTemplateId,
         Long linkedWorkflowId,
         boolean selfAdded,
         PersonRef reviewer,

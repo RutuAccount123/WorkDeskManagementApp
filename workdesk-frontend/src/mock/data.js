@@ -247,7 +247,7 @@ export function buildSeed() {
   }));
 
   return {
-    employees, tasks, activity, recurring, notifications, holidays, digests: {},
+    employees, tasks, activity, recurring, notifications, holidays, digests: {}, tickets: [], leaves: [],
     workflows, workflowRuns: [], demoWorkflowProgress: true, demoWorkflowHistory: true,
     // answers used for today's sample run of "Daily purchase cycle"
     demoFormData: { f1: 'Coca-Cola Pirangut', f2: '18 mm BWP plywood', f3: 120, f4: '', f5: true },

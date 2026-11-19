@@ -3,6 +3,7 @@ package com.decentdecor.workdesk.controller;
 import com.decentdecor.workdesk.dto.task.ActivityResponse;
 import com.decentdecor.workdesk.dto.task.ChecklistTickRequest;
 import com.decentdecor.workdesk.dto.task.CommentRequest;
+import com.decentdecor.workdesk.dto.task.LeaveDecisionRequest;
 import com.decentdecor.workdesk.dto.task.StatusRequest;
 import com.decentdecor.workdesk.dto.task.TaskBatchApprovalRequest;
 import com.decentdecor.workdesk.dto.task.TaskBatchRequest;
@@ -102,6 +103,13 @@ public class TaskController {
     @GetMapping("/{id}/activity")
     public ResponseEntity<List<ActivityResponse>> activity(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id) {
         return ResponseEntity.ok(taskService.activity(me, id));
+    }
+
+    /** A task due on the person's leave day: ALLOW (do it later, with a new due date) or DENY (skip it). */
+    @PostMapping("/{id}/leave-decision")
+    public ResponseEntity<TaskResponse> leaveDecision(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id,
+                                                      @Valid @RequestBody LeaveDecisionRequest request) {
+        return ResponseEntity.ok(taskService.leaveDecision(me, id, request));
     }
 
     @PostMapping("/{id}/checklist")

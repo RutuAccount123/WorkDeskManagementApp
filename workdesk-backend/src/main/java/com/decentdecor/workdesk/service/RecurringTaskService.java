@@ -144,6 +144,7 @@ public class RecurringTaskService {
         Employee me = people.me(user);
         RecurringTemplate tpl = find(id, me, true);
         if (generator.hasCopyOn(tpl, time.today())) throw new BadRequestException("Today’s task for this template has already been created");
+        if (generator.onLeave(tpl, time.today())) throw new BadRequestException(tpl.getAssignee().getFullName() + " is on leave today");
         if (!generator.runsOn(tpl, time.today())) {
             throw new BadRequestException("Today is not a scheduled working day for this task");
         }
@@ -152,13 +153,12 @@ public class RecurringTaskService {
 
     // ------------------------------------------------------------ inside
 
-    /** Admins: any. Employees: only their own (and change only what they set up). */
+    /** Admins: any. Employees: see the ones they do or set up, but only admins change, stop or delete them. */
     private RecurringTemplate find(Long id, Employee me, boolean forChange) {
         RecurringTemplate tpl = templates.findById(id).orElseThrow(() -> NotFoundException.of("Repeating task"));
         if (!me.isAdmin() && !tpl.getAssignee().getId().equals(me.getId())
                 && !tpl.getCreatedBy().getId().equals(me.getId())) throw NotFoundException.of("Repeating task");
-        if (forChange && !me.isAdmin() && !tpl.getCreatedBy().getId().equals(me.getId()))
-            throw new ForbiddenException("Only the person who assigned this repeating task can change it");
+        if (forChange && !me.isAdmin()) throw new ForbiddenException("Only an admin can change a repeating task");
         return tpl;
     }
 

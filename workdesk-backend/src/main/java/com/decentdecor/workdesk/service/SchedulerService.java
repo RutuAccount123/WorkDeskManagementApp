@@ -52,6 +52,8 @@ public class SchedulerService {
         Instant soon = now.plus(Duration.ofHours(24));
         int sent = 0;
         for (Task t : tasks.findNeedingReminder(TaskStatus.OPEN, now, soon)) {
+            if (t.isPending()) continue;   // waiting on a ticket: remind again after it is resolved
+            if (t.isOnLeave()) continue;   // due on a leave day: the person decides when back
             if (t.getDueAt().isBefore(now)) {
                 notifications.send(t.getAssignee(), t, NotificationType.OVERDUE,
                         "Overdue: \"" + t.getTitle() + "\" was due " + time.friendly(t.getDueAt()));

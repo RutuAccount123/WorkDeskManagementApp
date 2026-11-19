@@ -11,7 +11,9 @@ import { groupFmsTasks } from './taskGroups.js';
 
 const STATUS_VIEWS = [
   { key: 'open', label: 'Open', statuses: ['TODO', 'IN_PROGRESS', 'SUBMITTED', 'REOPENED'] },
-  { key: 'SUBMITTED', label: 'Needs review', statuses: ['SUBMITTED'] },
+  // pending = open work with an open ticket; it shows only here and in the Pending lane
+  { key: 'pending', label: 'Pending', statuses: ['TODO', 'IN_PROGRESS', 'SUBMITTED', 'REOPENED'], pending: true },
+  { key: 'SUBMITTED', label: 'Needs review', statuses: ['SUBMITTED'], pending: false },
   { key: 'COMPLETED', label: 'Done', statuses: ['COMPLETED'] },
   { key: 'all', label: 'All', statuses: [] },
 ];
@@ -52,7 +54,8 @@ export default function Tasks() {
 
   const load = useCallback(async () => {
     try {
-      const statuses = (STATUS_VIEWS.find((v) => v.key === view) || STATUS_VIEWS[0]).statuses;
+      const statusView = STATUS_VIEWS.find((v) => v.key === view) || STATUS_VIEWS[0];
+      const { statuses } = statusView;
       const results = await taskService.list({
         scope, status: statuses, assigneeId: scope === 'all' ? assigneeId : '', priority, overdue: overdue || '', q,
       });
@@ -63,6 +66,8 @@ export default function Tasks() {
       const weekStart = new Date(todayStart);
       weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
       setTasks(results.filter((task) => {
+        if (statusView.pending !== undefined && !!task.pending !== statusView.pending) return false;
+        if (dueToday && task.pending) return false;
         if (dueToday && (!task.dueAt || new Date(task.dueAt) < todayStart || new Date(task.dueAt) >= tomorrowStart)) return false;
         if (completedThisWeek && (!task.completedAt || new Date(task.completedAt) < weekStart || new Date(task.completedAt) >= tomorrowStart)) return false;
         return true;
@@ -75,6 +80,10 @@ export default function Tasks() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setSelectedTaskIds([]); }, [scope, view, assigneeId, priority, overdue, dueToday, completedThisWeek, q]);
   useEffect(() => { if (isAdmin) employeeService.list().then(setEmployees).catch(() => {}); }, [isAdmin]);
+
+  // One group picked (Pending, Overdue, Due today, Needs review, Done…, e.g. from a dashboard card): show it as rows.
+  // Looking at everything (Open / All): show the lanes side by side as columns.
+  const singleGroup = overdue || dueToday || completedThisWeek || !['open', 'all'].includes(view);
 
   const reviewableTasks = tasks
     ? groupFmsTasks(tasks).filter((task) => task.status === 'SUBMITTED'
@@ -171,7 +180,8 @@ export default function Tasks() {
         </div>
       )}
       {tasks === null ? <p className="muted">Loading…</p> : (
-        <TaskBoard tasks={tasks} onOpen={(id) => setParam('open', String(id))} showAssignee={scope !== 'assigned'} cardLayout
+        <TaskBoard tasks={tasks} onOpen={(id) => setParam('open', String(id))} showAssignee={scope !== 'assigned'}
+          cardLayout columns={!singleGroup}
           selectableTaskIds={isDepartmentAdmin ? [] : reviewableIds} selectedTaskIds={selectedTaskIds} onToggleTask={toggleTaskSelection}
           emptyText={scope === 'review' ? 'Nothing waiting for your review.'
             : scope === 'created' ? 'You haven’t assigned any matching tasks to others.'

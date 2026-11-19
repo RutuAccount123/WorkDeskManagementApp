@@ -7,6 +7,7 @@ export const ADMIN_NAV = [
       { to: '/', label: 'Dashboard', short: 'Home', icon: 'dashboard' },
       { to: '/my-dashboard', label: 'My Profile', short: 'Profile', icon: 'calendar' },
       { to: '/tasks', label: 'Tasks', icon: 'tasks' },
+      { to: '/tickets', label: 'Tickets', icon: 'ticket' },
     ],
   },
   {
@@ -30,6 +31,8 @@ export const EMPLOYEE_NAV = [
     items: [
       { to: '/', label: 'My work', short: 'Work', icon: 'calendar' },
       { to: '/tasks', label: 'My tasks', short: 'Tasks', icon: 'tasks' },
+      { to: '/tickets', label: 'Tickets', icon: 'ticket' },
+      { to: '/recurring', label: 'Repeating tasks', short: 'Repeat', icon: 'repeat' },
       { to: '/workflows', label: 'Workflows (FMS)', short: 'FMS', icon: 'flow' },
       { to: '/reports', label: 'My summary', short: 'Summary', icon: 'reports' },
     ],
@@ -47,6 +50,7 @@ export const DEPARTMENT_ADMIN_NAV = [
       { to: '/', label: 'Dashboard', short: 'Home', icon: 'dashboard' },
       { to: '/my-dashboard', label: 'My Profile', short: 'Profile', icon: 'calendar' },
       { to: '/tasks', label: 'Tasks', icon: 'tasks' },
+      { to: '/tickets', label: 'Tickets', icon: 'ticket' },
       { to: '/employees', label: 'Employees', short: 'People', icon: 'people' },
       { to: '/reports', label: 'Reports', icon: 'reports' },
     ],

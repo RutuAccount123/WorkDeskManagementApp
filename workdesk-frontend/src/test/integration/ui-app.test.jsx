@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import App from '@/app/App.jsx';
 import { ADMIN_NAV, EMPLOYEE_NAV } from '@/config/navigation.js';
 import { tokenStore } from '@/services/http.js';
-import { authService, employeeService, recurringService, taskService } from '@/services/index.js';
+import { authService, employeeService, leaveService, recurringService, taskService } from '@/services/index.js';
 
 const idOf = async (title) => (await taskService.list({ q: title, scope: 'all' })).find((t) => t.title === title).id;
 
@@ -66,6 +66,105 @@ describe.each([
     await user.click(within(sidebar).getByRole('link', { name: /Rahul|System Admin/ }));
     expect(await pageTitle()).toBe('My account');
     expect(topTitle()).toBe('My account');
+  });
+});
+
+describe('today view carries over unfinished work', () => {
+  it('shows earlier unfinished tasks today: not started in To do, started in In progress', async () => {
+    tokenStore.set('mock-3');   // Rahul
+    const dueDaysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); d.setHours(10, 0, 0, 0); return d.toISOString().slice(0, 16); };
+    const notStarted = await taskService.create({ title: 'Carry over not started', dueAt: dueDaysAgo(1) });
+    const started = await taskService.create({ title: 'Carry over started', dueAt: dueDaysAgo(2), status: 'IN_PROGRESS' });
+    await taskService.create({ title: 'Old work already done', dueAt: dueDaysAgo(1), status: 'COMPLETED' }); // finished now
+    expect(notStarted.status).toBe('TODO');
+    expect(started.status).toBe('IN_PROGRESS');
+
+    start('/');
+    const todo = (await screen.findByRole('heading', { level: 4, name: /^To do/ })).closest('section');
+    const progress = screen.getByRole('heading', { level: 4, name: /^In progress/ }).closest('section');
+    expect(await within(todo).findByText('Carry over not started')).toBeInTheDocument();
+    expect(within(progress).getByText('Carry over started')).toBeInTheDocument();
+    // it was due yesterday but finished today, so it belongs to today's Done
+    const doneCol = screen.getByRole('heading', { level: 4, name: /^Done/ }).closest('section');
+    expect(within(doneCol).getByText('Old work already done')).toBeInTheDocument();
+  });
+
+  it('week view: tasks show only on their due date, in To do / In progress groups (no carry over)', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');   // Rahul
+    const local = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const later = new Date(); later.setHours(23, 30, 0, 0);
+    const old = new Date(); old.setDate(old.getDate() - 9); old.setHours(10, 0, 0, 0);   // an earlier week
+    await taskService.create({ title: 'Week due today to do', dueAt: local(later) });
+    await taskService.create({ title: 'Week due today started', dueAt: local(later), status: 'IN_PROGRESS' });
+    await taskService.create({ title: 'Week old unfinished', dueAt: local(old) });
+
+    start('/');
+    await user.click(await screen.findByRole('tab', { name: 'Week' }));
+    const today = await waitFor(() => {
+      const col = document.querySelector('.week-day.is-today');
+      expect(col).not.toBeNull();
+      return col;
+    });
+    const todoGroup = await waitFor(() => {
+      const g = today.querySelector('.wg-todo');
+      expect(g).not.toBeNull();
+      return g;
+    });
+    expect(within(todoGroup).getByText('Week due today to do')).toBeInTheDocument();
+    expect(within(today.querySelector('.wg-progress')).getByText('Week due today started')).toBeInTheDocument();
+    expect(within(today).queryByText('Week old unfinished')).toBeNull();
+  });
+
+  it('overdue work finished today shows today under Done, with the time it was done', async () => {
+    tokenStore.set('mock-3');   // Rahul
+    const d = new Date(); d.setDate(d.getDate() - 2); d.setHours(10, 0, 0, 0);
+    const late = await taskService.create({ title: 'Late work finished today', dueAt: d.toISOString().slice(0, 16), status: 'IN_PROGRESS' });
+    const done = await taskService.changeStatus(late.id, 'COMPLETED');
+    expect(done.status).toBe('COMPLETED');
+
+    start('/');
+    const doneCol = (await screen.findByRole('heading', { level: 4, name: /^Done/ })).closest('section');
+    const card = (await within(doneCol).findByText('Late work finished today')).closest('button');
+    expect(within(card).getByText(/^Done /)).toBeInTheDocument();
+    expect(within(card).getByText(/^was due /)).toBeInTheDocument();
+  });
+});
+
+describe('leave on My work', () => {
+  it('shows the leave and lets the employee move a task that fell on it', async () => {
+    const user = userEvent.setup();
+    const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+    tokenStore.set('mock-1');   // admin
+    await leaveService.create({ employeeId: 3, startDate: day(-2), endDate: day(-1), reason: 'Fever' });
+    tokenStore.set('mock-3');   // Rahul
+    await taskService.create({ title: 'Fell on my leave', dueAt: `${day(-1)}T11:00` });
+
+    start('/');
+    const panel = (await screen.findByRole('heading', { name: 'My leave' })).closest('section');
+    const item = (await within(panel).findByText('Fell on my leave')).closest('li');
+    await user.click(within(item).getByRole('button', { name: 'Allow' }));
+    // nothing left to decide, so the list of leave-day work goes away
+    await waitFor(() => expect(screen.queryByRole('heading', { name: /Work from your leave days/ })).toBeNull());
+    const moved = (await taskService.list({ q: 'Fell on my leave' }))[0];
+    expect(moved.onLeave).toBe(false);
+    expect(new Date(moved.dueAt) >= new Date(new Date().setHours(0, 0, 0, 0))).toBe(true);
+  });
+});
+
+describe('tasks page layout', () => {
+  it('everything shows as columns; one group picked (e.g. Overdue from the dashboard) shows as rows', async () => {
+    tokenStore.set('mock-1');
+    const first = start('/tasks');
+    await waitFor(() => expect(document.querySelector('.lanes')).not.toBeNull());
+    expect(document.querySelector('.lanes.lanes-columns')).not.toBeNull();
+    first.unmount();
+
+    tokenStore.set('mock-1');
+    start('/tasks?overdue=1');
+    await waitFor(() => expect(document.querySelector('.lanes, .empty')).not.toBeNull());
+    expect(document.querySelector('.lanes-columns')).toBeNull();
+    expect(document.querySelector('.task-list-cards')).not.toBeNull();
   });
 });
 

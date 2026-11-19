@@ -193,11 +193,13 @@ export default function Recurring() {
                   <td>{t.frequency === 'DAILY' ? 'Every day' : t.frequency === 'WEEKLY' ? `Every ${dayLabel(t.dayOfWeek)}` : t.frequency === 'MONTHLY' ? `Monthly on day ${Number(t.startDate?.slice(-2))}` : `Yearly on ${t.startDate}`},
                     {t.scheduledTime ? ` starts ${t.scheduledTime.slice(0, 5)} for ${t.durationMinutes} min (due ${t.dueTime.slice(0, 5)})` : ` due ${t.dueTime.slice(0, 5)}`}</td>
                   <td>{t.lastGeneratedOn ? fmtDate(t.lastGeneratedOn) : 'Not yet'}</td>
-                  <td>{t.active ? 'Running' : 'Paused'}</td>
+                  <td>{t.active ? 'Running' : 'Stopped'}</td>
                   <td className="row-actions">
                     <button className="link-btn" onClick={() => setEditing(t)}>Edit</button>
                     <button className="link-btn" onClick={() => act(() => recurringService.generateNow(t.id), `Created today's "${t.title}" task.`)}>Create today’s task</button>
-                    <button className="link-btn" onClick={() => act(() => recurringService.setActive(t.id, !t.active))}>{t.active ? 'Pause' : 'Resume'}</button>
+                    <button className="link-btn" onClick={() => (t.active
+                      ? window.confirm(`Stop repeating "${t.title}"? Upcoming copies nobody has started are removed. You can start it again later.`)
+                      : true) && act(() => recurringService.setActive(t.id, !t.active))}>{t.active ? 'Stop repeating' : 'Start again'}</button>
                     <button className="link-btn danger" onClick={() => window.confirm(`Delete the "${t.title}" schedule? Tasks already created stay.`) &&
                       act(() => recurringService.remove(t.id))}>Delete</button>
                   </td>

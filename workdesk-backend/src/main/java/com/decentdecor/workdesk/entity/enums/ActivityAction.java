@@ -7,5 +7,7 @@ public enum ActivityAction {
     REASSIGNED,
     STATUS_CHANGED,
     COMMENTED,
-    AUTO_GENERATED
+    AUTO_GENERATED,
+    TICKET_RAISED,
+    TICKET_RESOLVED
 }

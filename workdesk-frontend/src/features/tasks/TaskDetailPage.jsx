@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { taskService, workflowService } from '@/services/index.js';
+import { recurringService, taskService, workflowService } from '@/services/index.js';
 import { useAuth } from '@/features/auth/AuthContext.jsx';
 import { PRIORITY_LABEL, STATUS_LABEL, fmtDateTime, relativeDue } from '@/utils/format.js';
 import StatusSteps from '@/components/ui/StatusSteps.jsx';
@@ -14,6 +14,7 @@ import AddWorkForm from '@/features/my-work/AddWorkForm.jsx';
 import Modal from '@/components/ui/Modal.jsx';
 import LinkedText from '@/components/ui/LinkedText.jsx';
 import TaskForm from './TaskForm.jsx';
+import TaskTickets from '@/features/tickets/TaskTickets.jsx';
 import { ACTION_TEXT, actionsFor, yourTurn } from './taskActions.js';
 
 /**
@@ -37,12 +38,16 @@ export default function TaskDetailPage() {
   const [linkedRuns, setLinkedRuns] = useState([]);
   const [starting, setStarting] = useState(null);
   const [showAttachment, setShowAttachment] = useState(false);
+  const [schedule, setSchedule] = useState(null);   // the daily / weekly schedule this task is a copy of
 
   const load = useCallback(async () => {
     try {
       const [t, h] = await Promise.all([taskService.get(taskId), taskService.activity(taskId)]);
       setTask(t);
       setHistory(h);
+      setSchedule(t.recurringTemplateId && !isDepartmentAdmin
+        ? (await recurringService.list().catch(() => [])).find((r) => r.id === t.recurringTemplateId) || null
+        : null);
       setRun(t.workflow && !isDepartmentAdmin ? await workflowService.run(t.workflow.runId) : null);
       if (!t.workflow && !isDepartmentAdmin) {
         const [wfs, rs] = await Promise.all([workflowService.list(taskId), workflowService.runsForTask(taskId)]);
@@ -76,6 +81,22 @@ export default function TaskDetailPage() {
   };
   const tick = (index, done) => guard(() => taskService.tick(taskId, index, done));
   const submitForm = (e) => { e.preventDefault(); guard(() => workflowService.fillForm(run.id, answers)); };
+  const canStopRepeat = schedule && isFullAdmin;   // employees only see the schedule; admins stop / start it
+  const toggleRepeat = async () => {
+    if (schedule.active && !window.confirm(`Stop repeating “${schedule.title}”? No new copies are made and upcoming copies nobody has started are removed. This task stays. You can start it again later.`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      await recurringService.setActive(schedule.id, !schedule.active);
+      // stopping removes upcoming copies nobody has started; if this was one of them, it is gone now
+      try { await taskService.get(taskId); } catch { navigate('/tasks'); return; }
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const remove = async () => {
     if (!window.confirm('Delete this task and its history permanently?')) return;
     try { await taskService.remove(taskId); navigate(-1); } catch (e) { setError(e.message); }
@@ -91,7 +112,8 @@ export default function TaskDetailPage() {
   }
 
   const mine = task.assignee.id === user.id;
-  const canEdit = isFullAdmin || (!isAdmin && task.createdBy?.id === user.id);
+  // only admins and department admins edit or delete; a ticket gives an employee "resolve" or "mark done" instead
+  const canEdit = isAdmin;
   const turn = yourTurn(task, user, run);
   const actions = isDepartmentAdmin ? [] : actionsFor(task, user, isAdmin);
   const isFlow = !!task.workflow;
@@ -114,20 +136,30 @@ export default function TaskDetailPage() {
           </p>
           <h1>{task.title}</h1>
           <div className="row task-chips">
-            <StatusChip status={task.status} overdue={task.overdue} />
+            <StatusChip status={task.status} overdue={task.overdue} pending={task.pending} onLeave={task.onLeave} />
             <span className={`prio-chip prio-chip-${task.priority.toLowerCase()}`}>{PRIORITY_LABEL[task.priority]} priority</span>
             {isFlow && <span className="repeat-badge rb-flow">FMS {task.workflow.date} · run #{task.workflow.number} · step {task.workflow.step}/{task.workflow.total}</span>}
-            {task.repeat && <span className={`repeat-badge ${task.repeat === 'DAILY' ? 'rb-daily' : 'rb-weekly'}`}>{task.repeat === 'DAILY' ? 'Daily' : 'Weekly'}</span>}
+            {task.repeat && <span className={`repeat-badge ${task.repeat === 'DAILY' ? 'rb-daily' : 'rb-weekly'}`}>
+              {{ DAILY: 'Daily', WEEKLY: 'Weekly', MONTHLY: 'Monthly', YEARLY: 'Yearly' }[task.repeat] || 'Repeats'}{schedule && !schedule.active && ' · stopped'}
+            </span>}
           </div>
         </div>
-        {!isDepartmentAdmin && !isFlow && (
+        {!isFlow && (
           <div className="row">
             {canEdit && <button className="btn ghost small" onClick={() => setEditing(true)}>Edit</button>}
+            {canStopRepeat && (
+              <button className="btn ghost small" disabled={busy} onClick={toggleRepeat}>
+                {schedule.active ? 'Stop repeating' : 'Start repeating again'}
+              </button>
+            )}
             {canEdit && <button className="btn danger-ghost small" onClick={remove}>Delete</button>}
           </div>
         )}
       </header>
 
+      {task.pending && open && (
+        <p className="hint big-hint pending-hint">Pending: a ticket on this task is waiting for an answer. It is not counted as overdue until every ticket is resolved.</p>
+      )}
       {!isDepartmentAdmin && turn && <p className="hint big-hint">{turn}</p>}
       {error && <p className="error" role="alert">{error}</p>}
 
@@ -251,6 +283,8 @@ export default function TaskDetailPage() {
             </form>}
           </section>
 
+          <TaskTickets task={task} canRaise={!isDepartmentAdmin && open} onChanged={load} />
+
           {!isFlow && <section className="panel">
             <h2 className="section-title">History</h2>
             <ol className="timeline">
@@ -306,7 +340,7 @@ export default function TaskDetailPage() {
           <img className="task-attachment-preview" src={`data:image/jpeg;base64,${task.image}`} alt="Task attachment" />
         </Modal>
       )}
-      {editing && !isDepartmentAdmin && (task.selfAdded && !task.recurring
+      {editing && canEdit && (task.selfAdded && !task.recurring
         ? <AddWorkForm task={task} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />
         : <TaskForm task={task} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />)}
     </div>

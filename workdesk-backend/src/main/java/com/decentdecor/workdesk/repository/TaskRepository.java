@@ -64,11 +64,15 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
             """)
     boolean existsCopyBetween(@Param("templateId") Long templateId, @Param("from") Instant from, @Param("to") Instant to);
 
-    /** Future copies nobody has started (removed when the repeating task is paused, changed or deleted). */
+    /**
+     * Future copies nobody has started (removed when the repeating task is paused, changed or deleted).
+     * Copies with a ticket on them stay, so the ticket and its answer do not disappear.
+     */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             delete from Task t
             where t.recurringTemplate.id = :templateId and t.status = :status and t.dueAt >= :from
+              and not exists (select 1 from TaskTicket k where k.task = t)
             """)
     int deleteCopiesFrom(@Param("templateId") Long templateId, @Param("status") TaskStatus status, @Param("from") Instant from);
 
@@ -77,8 +81,20 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
     @Query("""
             delete from Task t
             where t.recurringTemplate is not null and t.status = :status and t.dueAt >= :from and t.dueAt < :to
+              and not exists (select 1 from TaskTicket k where k.task = t)
             """)
     int deleteCopiesBetween(@Param("status") TaskStatus status, @Param("from") Instant from, @Param("to") Instant to);
+
+    /** Untouched repeating copies of one person due in [from, to) (removed when they go on leave). Copies with a ticket stay. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            delete from Task t
+            where t.recurringTemplate is not null and t.assignee.id = :assigneeId and t.status = :status
+              and t.dueAt >= :from and t.dueAt < :to
+              and not exists (select 1 from TaskTicket k where k.task = t)
+            """)
+    int deleteCopiesForAssigneeBetween(@Param("assigneeId") Long assigneeId, @Param("status") TaskStatus status,
+                                       @Param("from") Instant from, @Param("to") Instant to);
 
     // ------------------------------------------------------------ reminders
 

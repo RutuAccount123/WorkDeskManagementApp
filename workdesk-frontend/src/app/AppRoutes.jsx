@@ -15,6 +15,8 @@ import WorkflowEditorPage from '@/features/workflows/WorkflowEditorPage.jsx';
 import WorkflowSheetPage from '@/features/workflows/WorkflowSheetPage.jsx';
 import ReportsPage from '@/features/reports/ReportsPage.jsx';
 import AccountPage from '@/features/account/AccountPage.jsx';
+import TicketsPage from '@/features/tickets/TicketsPage.jsx';
+import MyRepeatingPage from '@/features/recurring/MyRepeatingPage.jsx';
 
 /** Every screen in the app, and who can open it. */
 export default function AppRoutes() {
@@ -30,6 +32,7 @@ export default function AppRoutes() {
         {isAdmin && <Route path="my-dashboard" element={<MyWorkPage personalDashboard />} />}
         <Route path="tasks" element={<TasksPage />} />
         <Route path="tasks/:id" element={<TaskDetailPage />} />
+        <Route path="tickets" element={<TicketsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="holidays" element={<HolidaysPage />} />
         {!isDepartmentAdmin && <Route path="workflows" element={<WorkflowsPage />} />}
@@ -43,6 +46,8 @@ export default function AppRoutes() {
         {isAdmin && <Route path="employees" element={<EmployeesPage />} />}
         {isAdmin && <Route path="employees/:id" element={<EmployeeDetailPage />} />}
         {isAdmin && !isDepartmentAdmin && <Route path="recurring" element={<RecurringPage />} />}
+        {/* employees: see their repeating tasks; stopping one is asked for with a ticket */}
+        {!isAdmin && <Route path="recurring" element={<MyRepeatingPage />} />}
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

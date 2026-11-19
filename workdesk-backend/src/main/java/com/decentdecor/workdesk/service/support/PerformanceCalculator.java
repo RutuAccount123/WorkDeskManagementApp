@@ -26,7 +26,7 @@ public final class PerformanceCalculator {
         List<Task> list = tasks.stream()
                 .filter(t -> t.getStatus() != TaskStatus.CANCELLED)
                 .filter(t -> {
-                    Instant w = t.workAt();
+                    Instant w = t.plannedAt();
                     boolean dueSoFar = !w.isBefore(from) && w.isBefore(cutoff);
                     boolean finishedInPeriod = t.getStatus() == TaskStatus.COMPLETED && !w.isBefore(from) && w.isBefore(to);
                     return dueSoFar || finishedInPeriod;

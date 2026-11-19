@@ -10,3 +10,5 @@ export { reportService } from './reportService.js';
 export { workflowService } from './workflowService.js';
 export { profilePhotoService } from './profilePhotoService.js';
 export { publicFormService, formLinkUrl } from './publicFormService.js';
+export { ticketService } from './ticketService.js';
+export { leaveService } from './leaveService.js';

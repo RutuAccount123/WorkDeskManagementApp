@@ -3,10 +3,13 @@ import { LANES, PRIORITY_LABEL, fmtDateTime, laneOf, relativeDue } from '@/utils
 import StatusChip from '@/components/ui/StatusChip.jsx';
 import { groupFmsTasks } from './taskGroups.js';
 
-/** Tasks grouped into deadline lanes: Overdue, Due today, Next 7 days, Later, No date, Done. */
+/**
+ * Tasks grouped into deadline lanes: Pending, Overdue, Due today, Next 7 days, Later, No date, Done.
+ * columns: show the lanes side by side as board columns (scrolls sideways when they don't fit).
+ */
 export default function TaskBoard({
   tasks, onOpen, showAssignee, hideClosed = false, emptyText, lanes: onlyLanes,
-  maxPerLane, moreLink, cardLayout = false, selectableTaskIds = [], selectedTaskIds = [], onToggleTask,
+  maxPerLane, moreLink, cardLayout = false, columns = false, selectableTaskIds = [], selectedTaskIds = [], onToggleTask,
 }) {
   const groups = {};
   const groupedTasks = groupFmsTasks(tasks);
@@ -18,7 +21,7 @@ export default function TaskBoard({
   if (!lanes.length) return <p className="empty">{emptyText || 'No tasks match.'}</p>;
 
   return (
-    <div className="lanes">
+    <div className={`lanes ${columns ? 'lanes-columns' : ''}`}>
       {lanes.map((lane) => (
         <section key={lane.key} className={`lane lane-${lane.key}`}>
           <h3 className="lane-title">
@@ -57,7 +60,7 @@ export default function TaskBoard({
                     </span>
                   </span>
                   <span className="task-status">
-                    <StatusChip status={t.status} overdue={t.overdue} />
+                    <StatusChip status={t.status} overdue={t.overdue} pending={t.pending} onLeave={t.onLeave} />
                   </span>
                 </button>
               </li>

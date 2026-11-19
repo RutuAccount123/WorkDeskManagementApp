@@ -95,14 +95,16 @@ describe('own work', () => {
 });
 
 describe('who can see and change a task', () => {
-  it('outsiders get "not found"; assigner can edit and delete', async () => {
+  it('outsiders get "not found"; only an admin can edit and delete', async () => {
     await asUser(RAHUL);
     const t = await taskService.create({ title: 'Private', assigneeId: 2 });
+    await expect(taskService.update(t.id, { title: 'By assigner', priority: 'LOW', assigneeId: 2 })).rejects.toThrow('Only an admin');
+    await expect(taskService.remove(t.id)).rejects.toThrow('Only an admin');
     await asUser(AMIT);
     await expect(taskService.get(t.id)).rejects.toThrow('Task not found');
     await asUser(PRIYA);
-    await expect(taskService.update(t.id, { title: 'Hack', priority: 'LOW' })).rejects.toThrow('Only the person who assigned');
-    await asUser(RAHUL);
+    await expect(taskService.update(t.id, { title: 'Hack', priority: 'LOW' })).rejects.toThrow('Only an admin');
+    await asUser(ADMIN);
     const upd = await taskService.update(t.id, { title: 'Private v2', priority: 'URGENT', assigneeId: 2, dueAt: localDue(2) });
     expect(upd.title).toBe('Private v2');
     expect((await taskService.activity(t.id)).at(-1).comment).toMatch(/priority MEDIUM → URGENT/);
@@ -164,6 +166,7 @@ describe('editing keeps data clean', () => {
   it('a task cannot be saved with a blank title', async () => {
     await asUser(RAHUL);
     const t = await taskService.create({ title: 'Plywood rate', assigneeId: 2 });
+    await asUser(ADMIN);
     await expect(taskService.update(t.id, { title: ' ', priority: 'LOW' })).rejects.toThrow('title: must not be blank');
   });
 });

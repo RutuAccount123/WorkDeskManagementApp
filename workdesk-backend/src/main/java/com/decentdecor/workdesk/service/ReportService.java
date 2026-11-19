@@ -85,19 +85,21 @@ public class ReportService {
         Instant monday = time.startOf(time.mondayOf(today));
 
         List<Task> open = visible.stream().filter(t -> t.getStatus().isOpen()).toList();
+        List<Task> working = open.stream().filter(t -> !t.isPending()).toList();
         List<Task> done = visible.stream().filter(t -> t.getStatus() == TaskStatus.COMPLETED).toList();
         Map<String, Long> byPriority = new LinkedHashMap<>();
         for (Priority p : Priority.values()) byPriority.put(p.name(), open.stream().filter(t -> t.getPriority() == p).count());
 
         return new DashboardResponse(
                 open.size(),
-                count(open, t -> t.getStatus() == TaskStatus.TODO || t.getStatus() == TaskStatus.REOPENED),
-                count(open, t -> t.getStatus() == TaskStatus.IN_PROGRESS),
-                count(open, t -> t.getStatus() == TaskStatus.SUBMITTED),
-                count(open, t -> t.isOverdue(now)),
-                count(open, t -> between(t.getDueAt(), dayStart, dayEnd)),
+                count(working, t -> t.getStatus() == TaskStatus.TODO || t.getStatus() == TaskStatus.REOPENED),
+                count(working, t -> t.getStatus() == TaskStatus.IN_PROGRESS),
+                count(working, t -> t.getStatus() == TaskStatus.SUBMITTED),
+                count(working, t -> t.isOverdue(now)),
+                count(working, t -> between(t.getDueAt(), dayStart, dayEnd)),
                 count(done, t -> between(t.getCompletedAt(), dayStart, dayEnd)),
                 count(done, t -> between(t.getCompletedAt(), monday, dayEnd)),
+                open.size() - working.size(),
                 byPriority);
     }
 

@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { taskService } from '@/services/index.js';
 import { useAuth } from '@/features/auth/AuthContext.jsx';
 import { isoDay, statusGroup, workDate, sameDay } from '@/utils/format.js';
-import { desktopEnabled, desktopSupported, enableDesktop } from '@/features/notifications/desktopNotify.js';
+import { desktopEnabled, desktopSupported, disableDesktop, enableDesktop } from '@/features/notifications/desktopNotify.js';
 import AddWorkForm from '@/features/my-work/AddWorkForm.jsx';
 import PerformanceCard from '@/features/performance/PerformanceCard.jsx';
 import TaskPanel from '@/features/tasks/TaskPanel.jsx';
 import WorkCalendar from '@/features/calendar/WorkCalendar.jsx';
+import LeaveTasksPanel from '@/features/leave/LeaveTasksPanel.jsx';
 import RepeatingTaskList from '@/features/my-work/RepeatingTaskList.jsx';
 import TaskForm from '@/features/tasks/TaskForm.jsx';
 import TaskBoard from '@/features/tasks/TaskBoard.jsx';
@@ -30,11 +31,16 @@ export default function MyWork({ personalDashboard = false }) {
   useEffect(() => {
     const d = isoDay(new Date());
     const personalScope = personalDashboard ? { scope: 'assigned' } : {};
+    const yesterday = isoDay(new Date(Date.now() - 86400000));
     Promise.all([
       taskService.list({ ...personalScope, workFrom: d, workTo: d }),
       taskService.list({ ...personalScope, overdue: 'true' }),
-    ]).then(([list, overdue]) => {
-      const mine = groupFmsTasks(list.filter((t) => t.status !== 'CANCELLED' && sameDay(workDate(t), new Date())));
+      // unfinished work from earlier days carries over to today
+      taskService.list({ ...personalScope, status: ['TODO', 'IN_PROGRESS', 'SUBMITTED', 'REOPENED'], workTo: yesterday }),
+    ]).then(([list, overdue, earlier]) => {
+      const todays = list.filter((t) => t.status !== 'CANCELLED' && sameDay(workDate(t), new Date()));
+      const ids = new Set(todays.map((t) => t.id));
+      const mine = groupFmsTasks([...earlier.filter((t) => !ids.has(t.id)), ...todays]);
       const c = { todo: 0, progress: 0, done: 0 };
       mine.forEach((t) => { c[statusGroup(t)] += 1; });
       setToday({ total: mine.length, ...c, next: mine.find((t) => statusGroup(t) !== 'done') });
@@ -47,6 +53,10 @@ export default function MyWork({ personalDashboard = false }) {
     const r = await enableDesktop();
     setDesktop(r === 'granted');
     if (r === 'denied') window.alert('Notifications are blocked for this site. Allow them from the lock icon next to the address bar.');
+  };
+  const turnOffDesktop = () => {
+    disableDesktop();
+    setDesktop(false);
   };
 
   const hour = new Date().getHours();
@@ -88,7 +98,12 @@ export default function MyWork({ personalDashboard = false }) {
           {desktopSupported() && !desktop && (
             <button className="btn ghost small" onClick={turnOnDesktop}>Turn on desktop reminders</button>
           )}
-          {desktop && <span className="muted small">Desktop reminders on</span>}
+          {desktop && (
+            <span className="row desktop-toggle">
+              <span className="muted small">Desktop reminders on</span>
+              <button className="btn ghost small" onClick={turnOffDesktop}>Stop desktop reminders</button>
+            </span>
+          )}
         </section>
       )}
 
@@ -102,6 +117,7 @@ export default function MyWork({ personalDashboard = false }) {
         </section>
       )}
 
+      {!isDepartmentAdmin && <LeaveTasksPanel refreshKey={refresh} onChanged={bump} />}
       <WorkCalendar employeeId={personalDashboard ? user.id : undefined}
         onOpen={setOpenId} refreshKey={refresh} initialView="day" />
       {!isDepartmentAdmin && <RepeatingTaskList refreshKey={refresh} onChanged={bump}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { holidayService, recurringService, taskService } from '@/services/index.js';
+import { holidayService, notificationService, recurringService, taskService, ticketService } from '@/services/index.js';
 import { tokenStore } from '@/services/http.js';
-import { ADMIN, PRIYA, signIn } from '../helpers.js';
+import { ADMIN, PRIYA, RAHUL, signIn } from '../helpers.js';
 import { isoDay, addDays } from '@/utils/format.js';
 
 const copiesOf = async (title) => (await taskService.list({ q: title })).filter((t) => t.title === title);
@@ -34,9 +34,71 @@ describe('repeating tasks', () => {
     const list = await recurringService.list();
     expect(list.every((r) => r.assignee.id === 2)).toBe(true);
     const adminMade = list.find((r) => !r.selfOwned);
-    if (adminMade) await expect(recurringService.setActive(adminMade.id, false)).rejects.toThrow('Only your admin');
+    if (adminMade) await expect(recurringService.setActive(adminMade.id, false)).rejects.toThrow('Only an admin');
     const assigned = await recurringService.create({ title: 'My daily plan', frequency: 'DAILY', assigneeId: 5 });
     expect(assigned.assignee.id).toBe(5);
+  });
+});
+
+describe('stopping a repeating task', () => {
+  const assignedCopies = async (title) => (await taskService.list({ scope: 'created', q: title })).filter((t) => t.title === title);
+  it('employees see it but cannot stop it, not even one they set up; an admin stops and starts it', async () => {
+    tokenStore.clear();
+    await signIn(RAHUL);
+    const tpl = await recurringService.create({ title: 'Daily rate check', assigneeId: 2, frequency: 'DAILY', dueTime: '18:00' });
+    const [copy] = await assignedCopies('Daily rate check');
+    expect(copy.recurringTemplateId).toBe(tpl.id);
+
+    tokenStore.clear();
+    await signIn(PRIYA);
+    expect((await recurringService.list()).map((r) => r.id)).toContain(tpl.id);
+    await expect(recurringService.setActive(tpl.id, false)).rejects.toThrow('Only an admin');
+
+    tokenStore.clear();
+    await signIn(RAHUL);
+    await expect(recurringService.setActive(tpl.id, false)).rejects.toThrow('Only an admin');
+    await expect(recurringService.remove(tpl.id)).rejects.toThrow('Only an admin');
+
+    tokenStore.clear();
+    await signIn(ADMIN);
+    const stopped = await recurringService.setActive(tpl.id, false);
+    expect(stopped.active).toBe(false);
+    const left = await copiesOf('Daily rate check');
+    expect(left.length).toBeLessThanOrEqual(1); // only today's copy (if any) stays; upcoming ones are removed
+    expect((await recurringService.setActive(tpl.id, true)).active).toBe(true);
+    expect((await copiesOf('Daily rate check')).length).toBeGreaterThan(left.length);
+  });
+});
+
+describe('asking an admin to stop a repeating task', () => {
+  it('the employee raises a ticket to an admin; stopping keeps the copy that has the ticket', async () => {
+    tokenStore.clear();
+    await signIn(ADMIN);
+    const tpl = await recurringService.create({ title: 'Daily stock count', assigneeId: 2, frequency: 'DAILY', dueTime: '18:00' });
+
+    tokenStore.clear();
+    await signIn(PRIYA);
+    const tomorrow = addDays(new Date(new Date().setHours(0, 0, 0, 0)), 1);
+    const copies = (await taskService.list({ q: 'Daily stock count' })).filter((t) => t.recurringTemplateId === tpl.id);
+    const future = copies.find((t) => new Date(t.dueAt) >= tomorrow);
+    expect(future).toBeTruthy();
+    const k = await ticketService.raise(future.id, 1, 'Please stop the repeating task "Daily stock count"');
+
+    tokenStore.clear();
+    await signIn(ADMIN);
+    expect((await ticketService.list()).map((x) => x.id)).toContain(k.id);
+    await recurringService.setActive(tpl.id, false);
+    // upcoming untouched copies are removed, but the one with the ticket stays
+    const left = (await taskService.list({ q: 'Daily stock count' })).filter((t) => t.recurringTemplateId === tpl.id);
+    expect(left.map((t) => t.id)).toContain(future.id);
+    expect(left.filter((t) => new Date(t.dueAt) >= tomorrow)).toHaveLength(1);
+    await ticketService.resolve(k.id, 'Stopped it');
+
+    tokenStore.clear();
+    await signIn(PRIYA);
+    const note = (await notificationService.list()).find((n) => n.type !== 'DAILY_DIGEST');
+    expect(note.type).toBe('TICKET_RESOLVED');
+    expect((await recurringService.list()).find((r) => r.id === tpl.id).active).toBe(false);
   });
 });
 

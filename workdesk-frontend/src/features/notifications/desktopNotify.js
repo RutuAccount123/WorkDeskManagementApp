@@ -1,17 +1,40 @@
 // Desktop (Windows / Chrome) pop-up notifications for reminders.
-// The person has to allow them once; after that, new reminders also pop up outside the browser tab.
+// The person has to allow them once in the browser; after that they can turn them off and on again here.
+// (A website cannot take back the browser permission, so "off" is remembered in this browser.)
+
+const OFF_KEY = 'ewms_desktop_off';
+const SINCE_KEY = 'ewms_desktop_since';
+
+const read = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+const write = (key, value) => {
+  try { if (value == null) localStorage.removeItem(key); else localStorage.setItem(key, value); } catch { /* ignore */ }
+};
 
 export const desktopSupported = () => typeof window !== 'undefined' && 'Notification' in window;
-export const desktopEnabled = () => desktopSupported() && Notification.permission === 'granted';
+/** Allowed by the browser and not turned off here. */
+export const desktopEnabled = () => desktopSupported() && Notification.permission === 'granted' && read(OFF_KEY) !== '1';
 
+/** Turn on (asks the browser the first time). Only reminders from now on pop up, not ones that came while off. */
 export async function enableDesktop() {
   if (!desktopSupported()) return 'unsupported';
-  return Notification.requestPermission(); // 'granted' | 'denied' | 'default'
+  const result = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+  if (result === 'granted') {
+    write(OFF_KEY, null);
+    write(SINCE_KEY, new Date().toISOString());
+  }
+  return result; // 'granted' | 'denied' | 'default'
 }
 
-/** Shows each notification once (remembered by id). */
+/** Stop desktop pop-ups (the bell in the app still shows everything). */
+export function disableDesktop() {
+  write(OFF_KEY, '1');
+}
+
+/** Shows each notification once (remembered by id), and only ones that arrived after reminders were turned on. */
 export function showDesktop(notification) {
   if (!desktopEnabled()) return;
+  const since = read(SINCE_KEY);
+  if (since && notification.createdAt && new Date(notification.createdAt) < new Date(since)) return;
   const key = 'ewms_desktop_shown';
   let shown = [];
   try { shown = JSON.parse(localStorage.getItem(key) || '[]'); } catch { /* ignore */ }

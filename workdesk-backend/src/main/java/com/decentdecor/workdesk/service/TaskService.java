@@ -2,6 +2,7 @@ package com.decentdecor.workdesk.service;
 
 import com.decentdecor.workdesk.dto.task.ActivityResponse;
 import com.decentdecor.workdesk.dto.task.ChecklistTickRequest;
+import com.decentdecor.workdesk.dto.task.LeaveDecisionRequest;
 import com.decentdecor.workdesk.dto.task.TaskBatchApprovalRequest;
 import com.decentdecor.workdesk.dto.task.TaskBatchRequest;
 import com.decentdecor.workdesk.dto.task.TaskFilter;
@@ -22,10 +23,12 @@ import com.decentdecor.workdesk.exception.BadRequestException;
 import com.decentdecor.workdesk.exception.ForbiddenException;
 import com.decentdecor.workdesk.exception.NotFoundException;
 import com.decentdecor.workdesk.mapper.TaskMapper;
+import com.decentdecor.workdesk.repository.EmployeeLeaveRepository;
 import com.decentdecor.workdesk.repository.EmployeeRepository;
 import com.decentdecor.workdesk.repository.TaskActivityRepository;
 import com.decentdecor.workdesk.repository.TaskRepository;
 import com.decentdecor.workdesk.repository.TaskSpecifications;
+import com.decentdecor.workdesk.repository.TaskTicketRepository;
 import com.decentdecor.workdesk.repository.WorkflowRepository;
 import com.decentdecor.workdesk.security.CurrentUser;
 import com.decentdecor.workdesk.service.support.ActivityLogger;
@@ -56,8 +59,10 @@ import org.springframework.transaction.annotation.Transactional;
  *  - anyone can assign work to anyone and choose who reviews it (not the person doing it)
  *  - the assignee starts and submits; the reviewer approves or sends back (with a note)
  *  - own work with no reviewer can be closed by the person themselves
- *  - whoever assigned it (or an admin) can edit, cancel or delete it
- *  - only people involved in a task (or admins) can open it; others get "Task not found"
+ *  - only admins (department admins: tasks in their departments) can edit or delete it;
+ *    whoever assigned it can still cancel it
+ *  - only people involved in a task (or admins) can open it; others get "Task not found".
+ *    Someone a ticket was raised to on the task counts as involved.
  */
 @Service
 public class TaskService {
@@ -76,11 +81,14 @@ public class TaskService {
     private final OfficeTime time;
     private final WorkSchedule workSchedule;
     private final TaskImageProcessor taskImages;
+    private final TaskTicketRepository tickets;
+    private final EmployeeLeaveRepository leaves;
 
     public TaskService(TaskRepository tasks, TaskActivityRepository activities, WorkflowRepository workflows,
                        EmployeeRepository employees, People people, ActivityLogger activity,
                        NotificationService notifications, WorkflowEngine engine, WorkflowAccess workflowAccess,
-                       TaskMapper mapper, OfficeTime time, WorkSchedule workSchedule, TaskImageProcessor taskImages) {
+                       TaskMapper mapper, OfficeTime time, WorkSchedule workSchedule, TaskImageProcessor taskImages,
+                       TaskTicketRepository tickets, EmployeeLeaveRepository leaves) {
         this.tasks = tasks;
         this.activities = activities;
         this.workflows = workflows;
@@ -94,6 +102,8 @@ public class TaskService {
         this.time = time;
         this.workSchedule = workSchedule;
         this.taskImages = taskImages;
+        this.tickets = tickets;
+        this.leaves = leaves;
     }
 
     // ================================================================ list & read
@@ -135,6 +145,7 @@ public class TaskService {
         if (departmentAdmin) spec = spec.and(TaskSpecifications.assignedToDepartments(me.getAccessibleDepartments()));
 
         List<Task> found = new ArrayList<>(tasks.findAll(spec));
+        if (Boolean.TRUE.equals(f.overdue())) found.removeIf(t -> !t.isOverdue(now));   // not while due on a leave day
         found.sort(Comparator.comparing(Task::getDueAt, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(Task::getId));
         return mapper.toResponses(found, now);
@@ -257,13 +268,12 @@ public class TaskService {
 
     // ================================================================ edit & delete
 
-    /** PUT /api/tasks/{id} — admin, or whoever assigned / added it. */
+    /** PUT /api/tasks/{id} — admins and department admins only. */
     @Transactional
     public TaskResponse update(CurrentUser user, Long id, TaskRequest req) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Task t = visibleTask(id, me, true);
-        if (!TaskRules.canEdit(t, me)) throw new ForbiddenException("Only the person who assigned this task can change it");
+        requireCanEdit(t, me);
 
         String title = req.title().trim();
         Priority priority = Enums.parse(Priority.class, req.priority(), t.getPriority(), "Choose a valid priority");
@@ -284,6 +294,7 @@ public class TaskService {
         if (req.assigneeId() != null && !req.assigneeId().equals(t.getAssignee().getId())) {
             Employee previous = t.getAssignee();
             Employee next = people.activeAssignee(req.assigneeId());
+            requireDepartmentTaskScope(me, next, null);
             if (t.getReviewer() != null && t.getReviewer().getId().equals(next.getId())) t.setReviewer(null);
             t.setAssignee(next);
             activity.note(t, me, ActivityAction.REASSIGNED, "Reassigned from " + previous.getFullName() + " to " + next.getFullName());
@@ -297,6 +308,7 @@ public class TaskService {
         Long oldReviewerId = t.effectiveReviewer() == null ? null : t.effectiveReviewer().getId();
         Long newReviewerId = reviewer == null ? null : reviewer.getId();
         if (!t.isWorkflowStep() && !Objects.equals(oldReviewerId, newReviewerId)) {
+            requireDepartmentTaskScope(me, t.getAssignee(), reviewer);
             t.setReviewer(reviewer);
             changes.add(reviewer == null ? "no review needed" : "reviewer → " + reviewer.getFullName());
             if (reviewer != null && !reviewer.getId().equals(me.getId())) {
@@ -316,14 +328,17 @@ public class TaskService {
         return mapper.toResponse(t, time.now());
     }
 
-    /** DELETE /api/tasks/{id}. Its history and notifications go with it. */
+    /** DELETE /api/tasks/{id}. Its history, notifications and tickets go with it. Same people as editing. */
     @Transactional
     public void delete(CurrentUser user, Long id) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Task t = visibleTask(id, me, true);
-        if (!TaskRules.canEdit(t, me)) throw new ForbiddenException();
+        requireCanEdit(t, me);
         tasks.delete(t);
+    }
+
+    private void requireCanEdit(Task t, Employee me) {
+        if (!TaskRules.canEdit(t, me)) throw new ForbiddenException("Only an admin can change or delete this task");
     }
 
     // ================================================================ status flow
@@ -420,14 +435,74 @@ public class TaskService {
         return mapper.toResponse(t, time.now());
     }
 
+    // ================================================================ leave
+
+    /**
+     * POST /api/tasks/{id}/leave-decision — the person a task is assigned to (or an admin) decides about
+     * a task that fell on their leave day: ALLOW = do it later (new due date, today or later, not on leave),
+     * DENY = skip it (cancelled; whoever assigned it is told). FMS steps can only be allowed.
+     */
+    @Transactional
+    public TaskResponse leaveDecision(CurrentUser user, Long id, LeaveDecisionRequest req) {
+        people.requireNotDepartmentAdmin(user);
+        Employee me = people.me(user);
+        Task t = visibleTask(id, me, true);
+        if (!t.getAssignee().getId().equals(me.getId()) && !me.isAdmin()) {
+            throw new ForbiddenException("Only the person doing this task can decide about it");
+        }
+        if (!t.isOnLeave()) throw new BadRequestException("This task is not due on a leave day");
+        String decision = Texts.isBlank(req.decision()) ? "" : req.decision().trim().toUpperCase(java.util.Locale.ROOT);
+        String note = Texts.trimToNull(req.note());
+        Instant now = time.now();
+        Employee creator = t.getCreatedBy();
+        boolean tellCreator = !creator.getId().equals(me.getId());
+
+        switch (decision) {
+            case "ALLOW" -> {
+                Instant due = time.parseDateTime(req.dueAt());
+                if (due == null) throw new BadRequestException("Choose the new due date");
+                if (time.dayOf(due).isBefore(time.today())) throw new BadRequestException("Choose today or a later day");
+                if (leaves.onLeave(t.getAssignee().getId(), time.dayOf(due))) {
+                    throw new BadRequestException("That day is also a leave day. Choose a working day");
+                }
+                Instant old = t.getDueAt();
+                t.setDueAt(due);
+                t.markNotDueOnLeave();
+                t.setDueSoonReminded(false);
+                t.setOverdueReminded(false);
+                t.setUpdatedAt(now);
+                activity.note(t, me, ActivityAction.UPDATED, "Was due on a leave day (" + time.friendly(old) + "), moved to "
+                        + time.friendly(due) + (note == null ? "" : ": " + note));
+                if (tellCreator) {
+                    notifications.send(creator, t, NotificationType.TASK_ASSIGNED, me.getFullName() + " was on leave and moved \""
+                            + t.getTitle() + "\" to " + time.friendly(due) + (note == null ? "" : ": " + note));
+                }
+            }
+            case "DENY" -> {
+                if (t.isWorkflowStep()) throw new BadRequestException("This is an FMS step: choose a new date instead");
+                TaskStatus from = t.getStatus();
+                t.setStatus(TaskStatus.CANCELLED);
+                t.setUpdatedAt(now);
+                activity.log(t, me, ActivityAction.STATUS_CHANGED, from, TaskStatus.CANCELLED,
+                        "Skipped: it was due on a leave day" + (note == null ? "" : ". " + note));
+                if (tellCreator) {
+                    notifications.send(creator, t, NotificationType.TASK_REOPENED, me.getFullName() + " was on leave and skipped \""
+                            + t.getTitle() + "\"" + (note == null ? "" : ": " + note));
+                }
+            }
+            default -> throw new BadRequestException("Choose ALLOW or DENY");
+        }
+        return mapper.toResponse(t, now);
+    }
+
     // ================================================================ inside
 
     /** A task the person may open (admins: any). lock = lock the row for changing. Otherwise "Task not found". */
-    private Task visibleTask(Long id, Employee me, boolean lock) {
+    Task visibleTask(Long id, Employee me, boolean lock) {
         Task t = (lock ? tasks.findByIdForUpdate(id) : tasks.findById(id)).orElseThrow(() -> NotFoundException.of("Task"));
         if (me.isDepartmentAdmin()) {
             if (!people.canViewDepartment(me, t.getAssignee().getDepartment())) throw NotFoundException.of("Task");
-        } else if (!TaskRules.canSee(t, me)) {
+        } else if (!TaskRules.canSee(t, me) && !tickets.involves(t.getId(), me.getId())) {
             throw NotFoundException.of("Task");
         }
         return t;

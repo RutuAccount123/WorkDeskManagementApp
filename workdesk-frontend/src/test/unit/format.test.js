@@ -78,7 +78,11 @@ describe('laneOf and statusGroup', () => {
     expect(laneOf({ status: 'TODO', dueAt: at(-1), overdue: true })).toBe('overdue');
     expect(laneOf({ status: 'TODO', dueAt: at(24 * 3) })).toBe('week');
     expect(laneOf({ status: 'TODO', dueAt: at(24 * 30) })).toBe('later');
-    expect(LANES.map((l) => l.key)).toEqual(['overdue', 'today', 'week', 'later', 'nodate', 'closed']);
+    expect(laneOf({ status: 'IN_PROGRESS', dueAt: at(-1), pending: true })).toBe('pending');
+    expect(laneOf({ status: 'TODO', dueAt: null, pending: true })).toBe('pending');
+    expect(laneOf({ status: 'COMPLETED', dueAt: at(-1), pending: true })).toBe('closed');
+    expect(laneOf({ status: 'TODO', dueAt: at(-30), onLeave: true })).toBe('leave');
+    expect(LANES.map((l) => l.key)).toEqual(['pending', 'leave', 'overdue', 'today', 'week', 'later', 'nodate', 'closed']);
   });
   it('groups statuses for counts', () => {
     expect(statusGroup({ status: 'COMPLETED' })).toBe('done');

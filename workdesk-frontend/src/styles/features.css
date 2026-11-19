@@ -3,6 +3,7 @@
 /* ================= task lists grouped by deadline ================= */
 .lanes { display: flex; flex-direction: column; gap: 22px; }
 .lane { --lane: var(--muted); }
+.lane-pending { --lane: #6941C6; }
 .lane-overdue { --lane: var(--overdue); }
 .lane-today { --lane: var(--todo); }
 .lane-week { --lane: var(--progress); }
@@ -11,7 +12,7 @@
 .lane-title::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--lane); }
 .count { padding: 0 8px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; }
 .task-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; background: var(--surface); }
-.task-list-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 12px; border: 0; border-radius: 0; overflow: visible; background: transparent; }
+.task-list-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 12px; border: 0; border-radius: 0; overflow: visible; background: transparent; }
 .task-list-cards > li { min-width: 0; }
 .task-list-selectable:not(.task-list-cards) > .task-list-item-selectable { display: flex; align-items: center; }
 .task-list-selectable.task-list-cards > .task-list-item-selectable {
@@ -23,7 +24,9 @@
 .task-list-cards .task-row { height: 100%; min-height: 100px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-sm); }
 .task-list-cards .task-row:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
 .task-list-cards .task-title { white-space: normal; }
-.task-list-cards .task-status { justify-content: flex-end; }
+.task-list-cards .task-row { grid-template-columns: 4px minmax(0, 1fr); align-content: start; gap: 10px; min-height: 130px; }
+.task-list-cards .task-row .prio { grid-row: 1 / span 2; align-self: stretch; }
+.task-list-cards .task-status { grid-column: 2; justify-content: flex-start; }
 .task-row {
   width: 100%; display: grid; grid-template-columns: 4px 1fr auto; gap: 14px; align-items: center;
   padding: 13px 16px; border: 0; border-bottom: 1px solid var(--border); background: none; text-align: left; cursor: pointer;
@@ -34,6 +37,24 @@
 .task-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: var(--fs-sm); color: var(--muted); }
 .task-status { display: flex; align-items: center; }
+
+/* Board columns (Tasks page): one column per lane, side by side; the board scrolls sideways, not the page */
+.lanes-columns { flex-direction: row; align-items: flex-start; gap: 14px; overflow-x: auto; padding-bottom: 10px; scroll-snap-type: x proximity; }
+.lanes-columns > .lane {
+  flex: 1 0 280px; min-width: 260px; max-width: 380px; display: flex; flex-direction: column;
+  padding: 12px; border: 1px solid var(--border); border-top: 3px solid var(--lane); border-radius: var(--r-lg);
+  background: var(--surface-2); scroll-snap-align: start;
+}
+.lanes-columns .lane-title { justify-content: space-between; margin-bottom: 10px; }
+.lanes-columns .lane-title::before { display: none; }
+.lanes-columns .lane-title .count { background: var(--surface); }
+.lanes-columns .task-list-cards { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.lanes-columns .task-row { grid-template-columns: 4px minmax(0, 1fr); gap: 10px; min-height: 0; padding: 12px; }
+.lanes-columns .task-status { grid-column: 2; justify-content: flex-start; }
+.lanes-columns .more-link { margin-top: 8px; }
+@media (max-width: 640px) {
+  .lanes-columns > .lane { flex-basis: 82vw; min-width: 82vw; }
+}
 
 /* ================= admin dashboard: team overview ================= */
 .perf-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -973,3 +994,44 @@ textarea.gform-input { resize: vertical; min-height: 36px; }
 .gform-modal .gform-filled-by { margin: 10px 0 0; color: var(--text-2); font-size: var(--fs-sm); }
 .gform-modal-hint { margin: 12px 0 0; }
 .gform-modal .form-actions { margin-top: 12px; }
+/* Tickets raised on a task (task page panel and the Tickets page) */
+.ticket-list { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
+.ticket { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); }
+.ticket-open { border-left: 3px solid var(--todo); }
+.ticket-resolved { border-left: 3px solid var(--done); }
+.ticket-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.ticket-who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ticket-task, .ticket-note { margin: 0; overflow-wrap: anywhere; }
+.ticket-note { white-space: pre-line; }
+.ticket-reply { padding: 8px 12px; border-radius: var(--r-sm); background: var(--surface-2); }
+.ticket-reply p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+.ticket-reply p + p { margin-top: 4px; }
+.ticket-resolve { display: flex; flex-direction: column; gap: 8px; }
+.ticket-resolve textarea { width: 100%; }
+.ticket .btn.small { align-self: flex-start; }
+/* Week view: each day's items in To do / In progress / Done groups */
+.week-group { display: flex; flex-direction: column; gap: 4px; }
+.week-group + .week-group { margin-top: 6px; }
+.week-group-title { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.02em; }
+.wg-todo .week-group-title { color: var(--todo); }
+.wg-progress .week-group-title { color: var(--progress); }
+.wg-done .week-group-title { color: var(--done); }
+/* Personal leave */
+.leave-list { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 0; padding: 0; list-style: none; }
+.leave-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); }
+.leave-list li.past { opacity: 0.65; }
+.leave-panel { border-left: 3px solid #0E9384; }
+.leave-sub { margin-top: 14px; }
+.leave-tasks { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 0; padding: 0; list-style: none; }
+.leave-task { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); }
+.leave-task p { margin: 2px 0 0; }
+.leave-task-actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; }
+.leave-task-actions label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); }
+.leave-task-actions .leave-note { flex: 1 1 200px; }
+.chip-leave { background: #E6F7F5; color: #0E7A6F; border-color: #A6E3DB; }
+.lane-leave { --lane: #0E9384; }
+.holiday-banner.leave { background: #E6F7F5; color: #0E7A6F; }
+.leave-tag { font-size: var(--fs-xs); color: #0E7A6F; font-weight: 600; }
+.leave-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1; }
+.leave-edit input { min-width: 0; }
+.leave-form { margin-bottom: 8px; }

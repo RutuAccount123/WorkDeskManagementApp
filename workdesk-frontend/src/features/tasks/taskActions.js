@@ -8,6 +8,8 @@ export const ACTION_TEXT = {
   COMMENTED: 'commented',
   REMINDER_SENT: 'sent a reminder',
   AUTO_GENERATED: 'created this automatically',
+  TICKET_RAISED: 'raised a ticket',
+  TICKET_RESOLVED: 'resolved a ticket',
 };
 
 /**

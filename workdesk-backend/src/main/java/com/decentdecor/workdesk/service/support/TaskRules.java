@@ -74,9 +74,13 @@ public final class TaskRules {
         return rules.getOrDefault(from, Set.of()).contains(to);
     }
 
-    /** Admin, or whoever assigned / added the task, can edit or delete it. */
+    /**
+     * Who can edit or delete a task: admins only (department admins only for tasks in their departments,
+     * which the caller checks when it loads the task). The person who created it, the person doing it,
+     * and an employee a ticket was raised to cannot; that employee resolves the ticket or marks the task done instead.
+     */
     public static boolean canEdit(Task t, Employee me) {
-        return me.isAdmin() || t.getCreatedBy().getId().equals(me.getId());
+        return me.isAdmin();
     }
 
     /** Admins see everything; others only tasks they are part of. */

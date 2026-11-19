@@ -90,8 +90,12 @@ const reviewerOf = (t) => (t.workflowRunId || t.noReview ? null : t.reviewerId ?
 /** People involved in a task can open it: assignee, assigner, reviewer. Admins can open everything. */
 const involved = (t, me) => [t.assigneeId, t.createdById, reviewerOf(t)].includes(me.id);
 
+/** Open work with an unresolved ticket: waiting on another person. Never overdue while pending. */
+function isPending(t) {
+  return OPEN.includes(t.status) && (db.tickets || []).some((k) => k.taskId === t.id && k.status === 'OPEN');
+}
 function isOverdue(t) {
-  return OPEN.includes(t.status) && t.dueAt && new Date(t.dueAt) < new Date()
+  return OPEN.includes(t.status) && !isPending(t) && !isOnLeave(t) && t.dueAt && new Date(t.dueAt) < new Date()
     && (t.estimatedHours == null || t.startedAt != null);
 }
 function taskOut(t, includeImage = false) {
@@ -99,9 +103,10 @@ function taskOut(t, includeImage = false) {
     id: t.id, title: t.title, description: t.description,
     assignee: empRef(t.assigneeId), createdBy: empRef(t.createdById),
     priority: t.priority, status: t.status, dueAt: t.dueAt, scheduledAt: t.scheduledAt || null,
-    estimatedHours: t.estimatedHours ?? null, overdue: !!isOverdue(t),
+    estimatedHours: t.estimatedHours ?? null, overdue: !!isOverdue(t), pending: isPending(t), onLeave: isOnLeave(t),
     recurring: t.recurringTemplateId != null,
     repeat: t.recurringTemplateId != null ? (db.recurring.find((r) => r.id === t.recurringTemplateId)?.frequency || null) : null,
+    recurringTemplateId: t.recurringTemplateId ?? null,
     linkedWorkflowId: t.workflowId || null,
     selfAdded: t.createdById === t.assigneeId,
     reviewer: empRef(reviewerOf(t)),
@@ -144,10 +149,24 @@ function notify(recipientId, taskId, type, message) {
   if (!r || !r.active) return;
   db.notifications.push({ id: nextId(db.notifications), recipientId, taskId, type, message, read: false, createdAt: nowIso() });
 }
+const hasTicket = (t) => (db.tickets || []).some((k) => k.taskId === t.id);
+/** Someone a ticket on the task was raised to (or who raised it) may open the task. */
+const inTicket = (t, me) => (db.tickets || []).some((k) => k.taskId === t.id && (k.assignedToId === me.id || k.raisedById === me.id));
+function ticketOut(k) {
+  const t = db.tasks.find((x) => x.id === k.taskId);
+  return {
+    id: k.id, task: t ? { id: t.id, title: t.title } : null, taskStatus: t?.status || null,
+    subject: k.subject || '', leaveId: k.leaveId && (db.leaves || []).some((l) => l.id === k.leaveId) ? k.leaveId : null,
+    raisedBy: empRef(k.raisedById), assignedTo: empRef(k.assignedToId), note: k.note, status: k.status,
+    reply: k.reply || null, resolvedBy: empRef(k.resolvedById), createdAt: k.createdAt, resolvedAt: k.resolvedAt || null,
+    taskDone: !!k.taskDone,
+  };
+}
+const newestFirst = (a, b) => new Date(b.createdAt) - new Date(a.createdAt) || b.id - a.id;
 function getTask(id, me) {
   const t = db.tasks.find((x) => x.id === id);
   const department = empById(t?.assigneeId)?.department;
-  if (!t || (me.role !== 'ADMIN' && !involved(t, me))
+  if (!t || (me.role !== 'ADMIN' && !involved(t, me) && !inTicket(t, me))
       || !canViewDepartment(me, department)) throw notFound('Task');
   return t;
 }
@@ -175,7 +194,10 @@ const onTime = (t) => !t.dueAt || new Date(t.completedAt) <= new Date(t.dueAt);
 const round1 = (v) => Math.round(v * 10) / 10;
 
 /** The day a piece of work "belongs" to: its due date, or the day it was added if it has none. */
-const workDate = (t) => t.dueAt || t.createdAt;
+// done work belongs to the day it was finished; otherwise its due date (or the day it was added)
+const workDate = (t) => (t.status === 'COMPLETED' && t.completedAt ? t.completedAt : t.dueAt || t.createdAt);
+// when the work was planned for (performance scores count by this)
+const plannedDate = (t) => t.dueAt || t.createdAt;
 const monthKey = (d) => localDay(d).slice(0, 7); // "2026-10"
 const monthRange = (key) => {
   const [y, m] = key.split('-').map(Number);
@@ -192,7 +214,7 @@ function performance(empId, from, to) {
   // Count work that was due by now; future work only counts once it's finished early.
   const cutoff = new Date(Math.min(to.getTime(), Date.now()));
   const list = db.tasks.filter((t) => t.assigneeId === empId && t.status !== 'CANCELLED'
-    && (between(workDate(t), from, cutoff) || (t.status === 'COMPLETED' && between(workDate(t), from, to))));
+    && (between(plannedDate(t), from, cutoff) || (t.status === 'COMPLETED' && between(plannedDate(t), from, to))));
   const done = list.filter((t) => t.status === 'COMPLETED');
   const ok = done.filter(onTime).length;
   const open = list.filter((t) => OPEN.includes(t.status));
@@ -241,7 +263,7 @@ function runDeadlineReminders() {
   const soon = new Date(now.getTime() + 24 * 3600e3);
   let changed = false;
   db.tasks.forEach((t) => {
-    if (!OPEN.includes(t.status) || !t.dueAt) return;
+    if (!OPEN.includes(t.status) || !t.dueAt || isPending(t) || isOnLeave(t)) return; // pending: remind again after the ticket is resolved
     const due = new Date(t.dueAt);
     if (due < now && !t.overdueReminded) {
       notify(t.assigneeId, t.id, 'OVERDUE', `Overdue: "${t.title}" was due ${due.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`);
@@ -278,6 +300,17 @@ function ensureDailyDigest(me) {
   db.notifications.push({ id: nextId(db.notifications), recipientId: me.id, taskId: null, type: 'DAILY_DIGEST', message: msg, read: false, createdAt: nowIso() });
   db.digests[me.id] = today;
   save();
+}
+
+/** Is this person on leave on this day ("yyyy-mm-dd")? */
+const onLeaveDay = (empId, day) => (db.leaves || []).some((l) => l.employeeId === empId && l.startDate <= day && l.endDate >= day);
+/** Open work due on one of the assignee's leave days: not overdue; they decide (do it later, or skip). */
+function isOnLeave(t) {
+  return OPEN.includes(t.status) && !!t.dueAt && onLeaveDay(t.assigneeId, localDay(new Date(t.dueAt)));
+}
+function leaveOut(l) {
+  return { id: l.id, employee: empRef(l.employeeId), startDate: l.startDate, endDate: l.endDate, reason: l.reason || '',
+    createdBy: empRef(l.createdById), createdAt: l.createdAt };
 }
 
 const WEEKDAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
@@ -330,7 +363,7 @@ function runRecurring() {
     if (!tpl.active || !empById(tpl.assigneeId)?.active) return;
     for (let i = 0; i < AHEAD_DAYS; i++) {
       const day = localDay(addDays(today, i));
-      if (templateRunsOn(tpl, day) && !alreadyCreated(tpl, day)) { createFromTemplate(tpl, day); changed = true; }
+      if (templateRunsOn(tpl, day) && !alreadyCreated(tpl, day) && !onLeaveDay(tpl.assigneeId, day)) { createFromTemplate(tpl, day); changed = true; }
     }
   });
   if (changed) save();
@@ -341,10 +374,11 @@ const startOfLocalDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); 
 function removeFutureCopies(tplId) {
   const tomorrow = addDays(startOfLocalDay(new Date()), 1);
   const gone = new Set(db.tasks.filter((t) => t.recurringTemplateId === tplId && t.status === 'TODO'
-    && t.dueAt && new Date(t.dueAt) >= tomorrow).map((t) => t.id));
+    && t.dueAt && new Date(t.dueAt) >= tomorrow && !hasTicket(t)).map((t) => t.id)); // copies with a ticket stay
   db.tasks = db.tasks.filter((t) => !gone.has(t.id));
   db.activity = db.activity.filter((a) => !gone.has(a.taskId));
   db.notifications = db.notifications.filter((n) => !gone.has(n.taskId));
+  db.tickets = (db.tickets || []).filter((k) => !gone.has(k.taskId));
 }
 
 
@@ -823,7 +857,7 @@ function route(method, path, query, body, me) {
   // ----- people directory: everyone can see who they can assign work to
   if (seg[0] === 'people' && method === 'GET') {
     return db.employees.filter((e) => e.active && (!isDepartmentAdmin || canViewDepartment(me, e.department))).sort((a, b) => a.fullName.localeCompare(b.fullName))
-      .map((e) => ({ id: e.id, fullName: e.fullName, department: e.department, designation: e.designation, role: e.role, active: true }));
+      .map((e) => ({ id: e.id, fullName: e.fullName, department: e.department, designation: e.designation, role: e.role, active: true, departmentAdmin: e.departmentAdmin === true }));
   }
 
   // ----- employees (admin)
@@ -882,7 +916,9 @@ function route(method, path, query, body, me) {
 
   // ----- tasks
   if (seg[0] === 'tasks') {
-    if (method !== 'GET' && !(isDepartmentAdmin && method === 'POST' && !id)) needWrite();
+    // department admins may assign (POST /tasks), and edit or delete tasks in their departments (PUT / DELETE /tasks/{id})
+    const departmentAdminEdit = id && !seg[2] && (method === 'PUT' || method === 'DELETE');
+    if (method !== 'GET' && !(isDepartmentAdmin && method === 'POST' && !id) && !departmentAdminEdit) needWrite();
     if (seg[1] === 'batch' && seg[2] === 'approve' && method === 'POST') {
       if (!Array.isArray(body.taskIds) || body.taskIds.length < 1 || body.taskIds.length > 500) {
         throw bad('Choose between 1 and 500 tasks to approve');
@@ -958,7 +994,53 @@ function route(method, path, query, body, me) {
     }
 
     const t = getTask(id, me);
+    if (seg[2] === 'tickets') {
+      if (method === 'GET') return db.tickets.filter((k) => k.taskId === id).sort(newestFirst).map(ticketOut);
+      needWrite();
+      if (!OPEN.includes(t.status)) throw bad('This task is closed, so a ticket cannot be raised on it');
+      if (body.assignedToId == null || body.assignedToId === '') throw bad('assignedToId: choose a person');
+      const note = (body.note || '').trim();
+      if (!note) throw bad('note: must not be blank');
+      if (note.length > 4000) throw bad('note: must be 4000 characters or fewer');
+      const to = activeAssignee(body.assignedToId);
+      if (to.id === me.id) throw bad('Choose someone else to raise the ticket to');
+      const k = { id: nextId(db.tickets), taskId: id, raisedById: me.id, assignedToId: to.id, note, status: 'OPEN',
+        reply: null, resolvedById: null, createdAt: nowIso(), resolvedAt: null };
+      db.tickets.push(k);
+      log(id, me.id, 'TICKET_RAISED', null, null, `Ticket to ${to.fullName}: ${note}`);
+      notify(to.id, id, 'TICKET_RAISED', `${me.fullName} raised a ticket to you on "${t.title}": ${note}`);
+      return ticketOut(k);
+    }
     if (seg[2] === 'activity') return db.activity.filter((a) => a.taskId === id).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).map(activityOut);
+
+    if (seg[2] === 'leave-decision' && method === 'POST') {
+      if (t.assigneeId !== me.id && !isAdmin) throw forbidden('Only the person doing this task can decide about it');
+      if (!isOnLeave(t)) throw bad('This task is not due on a leave day');
+      const decision = String(body.decision || '').toUpperCase();
+      const note = (body.note || '').trim();
+      const tellCreator = t.createdById !== me.id;
+      const when = (iso) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+      if (decision === 'ALLOW') {
+        if (!body.dueAt) throw bad('Choose the new due date');
+        const due = localToIso(body.dueAt);
+        const day = localDay(new Date(due));
+        if (day < localDay(new Date())) throw bad('Choose today or a later day');
+        if (onLeaveDay(t.assigneeId, day)) throw bad('That day is also a leave day. Choose a working day');
+        const old = t.dueAt;
+        Object.assign(t, { dueAt: due, dueSoonReminded: false, overdueReminded: false, updatedAt: nowIso() });
+        log(id, me.id, 'UPDATED', null, null, `Was due on a leave day (${when(old)}), moved to ${when(due)}${note ? `: ${note}` : ''}`);
+        if (tellCreator) notify(t.createdById, id, 'TASK_ASSIGNED', `${me.fullName} was on leave and moved "${t.title}" to ${when(due)}${note ? `: ${note}` : ''}`);
+      } else if (decision === 'DENY') {
+        if (t.workflowRunId) throw bad('This is an FMS step: choose a new date instead');
+        const from = t.status;
+        Object.assign(t, { status: 'CANCELLED', updatedAt: nowIso() });
+        log(id, me.id, 'STATUS_CHANGED', from, 'CANCELLED', `Skipped: it was due on a leave day${note ? `. ${note}` : ''}`);
+        if (tellCreator) notify(t.createdById, id, 'TASK_REOPENED', `${me.fullName} was on leave and skipped "${t.title}"${note ? `: ${note}` : ''}`);
+      } else {
+        throw bad('Choose ALLOW or DENY');
+      }
+      return taskOut(t);
+    }
 
     if (seg[2] === 'checklist' && method === 'POST') {
       if (t.assigneeId !== me.id && !isAdmin) throw forbidden('Only the person doing this step can tick its checklist');
@@ -1038,9 +1120,10 @@ function route(method, path, query, body, me) {
       return taskOut(t);
     }
 
-    const canEdit = isAdmin || t.createdById === me.id; // admin, or whoever assigned / added it
+    // admins only (department admins: their departments, checked by getTask)
+    const canEdit = isAdmin;
     if (method === 'PUT') {
-      if (!canEdit) throw forbidden('Only the person who assigned this task can change it');
+      if (!canEdit) throw forbidden('Only an admin can change or delete this task');
       if (!body.title?.trim()) throw bad('title: must not be blank');
       if (!body.assigneeId) body.assigneeId = t.assigneeId;
       const newDue = localToIso(body.dueAt);
@@ -1058,6 +1141,7 @@ function route(method, path, query, body, me) {
       if (t.assigneeId !== Number(body.assigneeId)) {
         const prev = empById(t.assigneeId);
         const next = activeAssignee(body.assigneeId);
+        if (!canViewDepartment(me, next.department)) throw forbidden('You can assign tasks only to people in departments you can access');
         t.assigneeId = next.id;
         log(id, me.id, 'REASSIGNED', null, null, `Reassigned from ${prev.fullName} to ${next.fullName}`);
         notify(next.id, id, 'TASK_ASSIGNED', `New task: ${body.title.trim()}`);
@@ -1080,10 +1164,11 @@ function route(method, path, query, body, me) {
       return taskOut(t);
     }
     if (method === 'DELETE') {
-      if (!canEdit) throw forbidden();
+      if (!canEdit) throw forbidden('Only an admin can change or delete this task');
       db.tasks = db.tasks.filter((x) => x.id !== id);
       db.activity = db.activity.filter((a) => a.taskId !== id);
       db.notifications = db.notifications.filter((n) => n.taskId !== id);
+      db.tickets = db.tickets.filter((k) => k.taskId !== id);
       return null;
     }
     return method === 'GET' ? taskOut(t, true) : taskOut(t);
@@ -1135,8 +1220,8 @@ function route(method, path, query, body, me) {
     }
     const tpl = visible.find((x) => x.id === id);
     if (!tpl) throw notFound('Repeating task');
-    // employees may only change repeating tasks they set up themselves
-    if (!isAdmin && method !== 'GET' && tpl.createdById !== me.id) throw forbidden('Only the person who assigned this repeating task can change it');
+    // employees can see their repeating tasks, but only admins change, stop or delete them
+    if (!isAdmin && method !== 'GET') throw forbidden('Only an admin can change a repeating task');
     if (seg[2] === 'active') {
       tpl.active = query.get('value') === 'true';
       if (!tpl.active) removeFutureCopies(tpl.id); else runRecurring();
@@ -1146,6 +1231,7 @@ function route(method, path, query, body, me) {
       const today = localDay(new Date());
       if (alreadyCreated(tpl, today)) throw bad('Today’s task for this template has already been created');
       if (new Date().getDay() === 0 || holidayOn(today)) throw bad('Today is a weekly off or an office holiday, so no task is created');
+      if (onLeaveDay(tpl.assigneeId, today)) throw bad(`${empById(tpl.assigneeId)?.fullName} is on leave today`);
       createFromTemplate(tpl, today);
       return null;
     }
@@ -1314,7 +1400,7 @@ function route(method, path, query, body, me) {
     const removeTasksOn = (day) => {
       // repeating tasks that were already created for that day are no longer needed
       const gone = new Set(db.tasks.filter((t) => t.recurringTemplateId && t.status === 'TODO' && t.dueAt
-        && localDay(new Date(t.dueAt)) === day).map((t) => t.id));
+        && localDay(new Date(t.dueAt)) === day && !hasTicket(t)).map((t) => t.id));
       db.tasks = db.tasks.filter((t) => !gone.has(t.id));
       db.activity = db.activity.filter((a) => !gone.has(a.taskId));
     };
@@ -1341,6 +1427,158 @@ function route(method, path, query, body, me) {
       return null;
     }
     return h;
+  }
+
+  // ----- personal leave: admins add / remove; everyone sees their own
+  if (seg[0] === 'leaves') {
+    if (method === 'GET') {
+      const from = query.get('from') || '1900-01-01';
+      const to = query.get('to') || '2999-12-31';
+      const wanted = query.get('employeeId') ? Number(query.get('employeeId')) : null;
+      return db.leaves
+        .filter((l) => l.endDate >= from && l.startDate <= to)
+        .filter((l) => (isAdmin
+          ? (!wanted || l.employeeId === wanted) && canViewDepartment(me, empById(l.employeeId)?.department)
+          : l.employeeId === me.id))
+        .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id - b.id)
+        .map(leaveOut);
+    }
+    const leaveRange = (l) => (l.startDate === l.endDate ? l.startDate : `${l.startDate} to ${l.endDate}`);
+    const checkLeave = (who, start, end, ignoreId) => {
+      if (!start) throw bad('startDate: choose the first day of leave');
+      if (!end) throw bad('endDate: choose the last day of leave');
+      if (end < start) throw bad('The last day of leave must be on or after the first day');
+      if (db.leaves.some((l) => l.id !== ignoreId && l.employeeId === who.id && l.endDate >= start && l.startDate <= end)) {
+        throw bad(`${who.fullName} already has leave on some of these days`);
+      }
+    };
+    const removeLeaveCopies = (who, start, end) => {
+      const gone = new Set(db.tasks.filter((t) => t.recurringTemplateId && t.assigneeId === who.id && t.status === 'TODO' && t.dueAt
+        && localDay(new Date(t.dueAt)) >= start && localDay(new Date(t.dueAt)) <= end && !hasTicket(t)).map((t) => t.id));
+      db.tasks = db.tasks.filter((t) => !gone.has(t.id));
+      db.activity = db.activity.filter((a) => !gone.has(a.taskId));
+      db.notifications = db.notifications.filter((n) => !gone.has(n.taskId));
+    };
+    // the person on leave asks an admin to change or remove it
+    if (seg[2] === 'tickets' && method === 'POST') {
+      const l = db.leaves.find((x) => x.id === id);
+      if (!l || l.employeeId !== me.id) throw notFound('Leave');
+      const to = activeAssignee(body.assignedToId);
+      if (to.role !== 'ADMIN' || to.departmentAdmin) throw bad('Choose an admin: only admins can change leave');
+      const note = (body.note || '').trim();
+      if (!note) throw bad('note: must not be blank');
+      const subject = `Leave ${leaveRange(l)}`;
+      db.tickets ||= [];
+      const k = { id: nextId(db.tickets), taskId: null, leaveId: l.id, subject, raisedById: me.id, assignedToId: to.id, note,
+        status: 'OPEN', reply: null, resolvedById: null, createdAt: nowIso(), resolvedAt: null };
+      db.tickets.push(k);
+      notify(to.id, null, 'TICKET_RAISED', `${me.fullName} raised a ticket to you about their ${subject.toLowerCase()}: ${note}`);
+      return ticketOut(k);
+    }
+    if (method === 'POST') {
+      // employees: only their own leave, from today on; admins: anyone they can access
+      const who = empById(Number(body.employeeId));
+      if (!isAdmin && who?.id !== me.id) throw forbidden('You can add leave only for yourself');
+      if (!who || !canViewDepartment(me, who.department)) throw notFound('Employee');
+      const start = body.startDate;
+      const end = body.endDate;
+      if (!isAdmin && start && start < localDay(new Date())) throw bad('Leave starts today or later. For earlier days, ask an admin');
+      checkLeave(who, start, end, null);
+      const l = { id: nextId(db.leaves), employeeId: who.id, startDate: start, endDate: end, reason: (body.reason || '').trim(),
+        createdById: me.id, createdAt: nowIso() };
+      db.leaves.push(l);
+      if (!isAdmin) {
+        db.employees.filter((a) => a.role === 'ADMIN' && a.active && canViewDepartment(a, who.department))
+          .forEach((a) => notify(a.id, null, 'LEAVE_ADDED', `${me.fullName} added leave: ${leaveRange(l)}${l.reason ? ` (${l.reason})` : ''}`));
+      }
+      // repeating copies already made for those days and not started are not needed (copies with a ticket stay)
+      removeLeaveCopies(who, start, end);
+      if (who.id !== me.id) {
+        notify(who.id, null, 'LEAVE_ADDED', `${me.fullName} added your leave: ${start === end ? start : `${start} to ${end}`}. Repeating tasks are not created on these days; tasks due then wait for you to decide.`);
+      }
+      return leaveOut(l);
+    }
+    // only admins edit or remove leave
+    if (!isAdmin) throw forbidden('Only an admin can change or remove leave. Raise a ticket to an admin.');
+    if (method === 'PUT') {
+      const l = db.leaves.find((x) => x.id === id);
+      if (!l || !canViewDepartment(me, empById(l.employeeId)?.department)) throw notFound('Leave');
+      const who = empById(l.employeeId);
+      checkLeave(who, body.startDate, body.endDate, l.id);
+      const before = leaveRange(l);
+      Object.assign(l, { startDate: body.startDate, endDate: body.endDate, reason: (body.reason || '').trim() });
+      removeLeaveCopies(who, l.startDate, l.endDate);
+      runRecurring();   // days no longer on leave get their copies
+      if (who.id !== me.id) notify(who.id, null, 'LEAVE_ADDED', `${me.fullName} changed your leave ${before} to ${leaveRange(l)}.`);
+      return leaveOut(l);
+    }
+    if (method === 'DELETE') {
+      const l = db.leaves.find((x) => x.id === id);
+      if (!l || !canViewDepartment(me, empById(l.employeeId)?.department)) throw notFound('Leave');
+      if (l.employeeId !== me.id) notify(l.employeeId, null, 'LEAVE_ADDED', `${me.fullName} removed your leave ${leaveRange(l)}.`);
+      db.leaves = db.leaves.filter((x) => x.id !== id);
+      runRecurring();   // those days are working days again
+      return null;
+    }
+  }
+
+  // ----- tickets raised on tasks
+  if (seg[0] === 'tickets') {
+    if (seg[2] === 'resolve' && method === 'POST') {
+      const k = db.tickets.find((x) => x.id === id);
+      if (!k || (k.assignedToId !== me.id && k.raisedById !== me.id && !isFullAdmin)) throw notFound('Ticket');
+      if (k.status !== 'OPEN') throw bad('This ticket is already resolved');
+      const reply = (body.reply || '').trim();
+      if (!reply) throw bad('reply: must not be blank');
+      if (reply.length > 4000) throw bad('reply: must be 4000 characters or fewer');
+      Object.assign(k, { status: 'RESOLVED', reply, resolvedById: me.id, resolvedAt: nowIso() });
+      const t = k.taskId ? db.tasks.find((x) => x.id === k.taskId) : null;
+      if (t) log(k.taskId, me.id, 'TICKET_RESOLVED', null, null, `Ticket from ${empById(k.raisedById)?.fullName} resolved: ${reply}`);
+      const msg = `${me.fullName} resolved the ticket ${t ? `on "${t.title}"` : `about ${(k.subject || 'leave').toLowerCase()}`}: ${reply}`;
+      [k.raisedById, k.assignedToId].filter((x) => x !== me.id).forEach((x) => notify(x, k.taskId, 'TICKET_RESOLVED', msg));
+      return ticketOut(k);
+    }
+    // the person the ticket is assigned to finishes the task themselves: it moves to them and is done
+    if (seg[2] === 'done' && method === 'POST') {
+      const k = db.tickets.find((x) => x.id === id);
+      if (!k || (k.assignedToId !== me.id && k.raisedById !== me.id && !isAdmin)) throw notFound('Ticket');
+      if (k.assignedToId !== me.id) throw forbidden('Only the person this ticket is assigned to can mark the task done');
+      if (k.status !== 'OPEN') throw bad('This ticket is already resolved');
+      if (!k.taskId) throw bad('This ticket is about a leave, not a task');
+      const reply = (body.reply || '').trim();
+      if (!reply) throw bad('reply: must not be blank');
+      if (reply.length > 4000) throw bad('reply: must be 4000 characters or fewer');
+      const t = db.tasks.find((x) => x.id === k.taskId);
+      if (!t || !OPEN.includes(t.status)) throw bad('This task is already closed');
+      if (t.workflowRunId) throw bad("This is an FMS step: resolve the ticket so the step's person can finish it");
+      const now = nowIso();
+      const previousId = t.assigneeId;
+      const from = t.status;
+      if (previousId !== me.id) {
+        if (t.reviewerId === me.id) t.reviewerId = null;
+        t.assigneeId = me.id;
+        log(t.id, me.id, 'REASSIGNED', null, null, `Took over from ${empById(previousId)?.fullName} through a ticket`);
+      }
+      Object.assign(t, { status: 'COMPLETED', startedAt: t.startedAt || now, submittedAt: t.submittedAt || now, completedAt: now, updatedAt: now });
+      log(t.id, me.id, 'STATUS_CHANGED', from, 'COMPLETED', `Marked done through a ticket: ${reply}`);
+      Object.assign(k, { status: 'RESOLVED', taskDone: true, reply, resolvedById: me.id, resolvedAt: now });
+      log(t.id, me.id, 'TICKET_RESOLVED', null, null, `Ticket from ${empById(k.raisedById)?.fullName} closed: ${me.fullName} finished the task`);
+      const msg = `${me.fullName} finished "${t.title}" through the ticket: ${reply}`;
+      [...new Set([k.raisedById, previousId, t.createdById])].filter((x) => x !== me.id).forEach((x) => notify(x, t.id, 'TICKET_RESOLVED', msg));
+      return ticketOut(k);
+    }
+    if (method !== 'GET' || seg[1]) throw new HttpError(404, 'Not found');
+    const scope = query.get('scope') || 'assigned';
+    const status = query.get('status');
+    let list;
+    if (scope === 'assigned') list = db.tickets.filter((k) => k.assignedToId === me.id);
+    else if (scope === 'raised') list = db.tickets.filter((k) => k.raisedById === me.id);
+    else if (scope === 'all') { if (!isFullAdmin) throw forbidden('Only admins can see every ticket'); list = [...db.tickets]; }
+    else throw bad(`Unknown scope: ${scope}`);
+    if (status && !['OPEN', 'RESOLVED'].includes(status)) throw bad('Choose a valid ticket status');
+    return list.filter((k) => !status || k.status === status)
+      .sort((a, b) => (a.status === 'OPEN' ? 0 : 1) - (b.status === 'OPEN' ? 0 : 1) || newestFirst(a, b))
+      .map(ticketOut);
   }
 
   // ----- notifications (own)
@@ -1448,18 +1686,20 @@ function route(method, path, query, body, me) {
       const tomorrow = addDays(today, 1);
       const monday = addDays(today, -((today.getDay() + 6) % 7));
       const open = visible.filter((t) => OPEN.includes(t.status));
+      const working = open.filter((t) => !isPending(t)); // pending work is counted only as pending
       const done = visible.filter((t) => t.status === 'COMPLETED');
       const openByPriority = { LOW: 0, MEDIUM: 0, HIGH: 0, URGENT: 0 };
       open.forEach((t) => { openByPriority[t.priority] += 1; });
       return {
         totalOpen: open.length,
-        todo: open.filter((t) => t.status === 'TODO' || t.status === 'REOPENED').length,
-        inProgress: open.filter((t) => t.status === 'IN_PROGRESS').length,
-        awaitingReview: open.filter((t) => t.status === 'SUBMITTED').length,
-        overdue: open.filter(isOverdue).length,
-        dueToday: open.filter((t) => between(t.dueAt, today, tomorrow)).length,
+        todo: working.filter((t) => t.status === 'TODO' || t.status === 'REOPENED').length,
+        inProgress: working.filter((t) => t.status === 'IN_PROGRESS').length,
+        awaitingReview: working.filter((t) => t.status === 'SUBMITTED').length,
+        overdue: working.filter(isOverdue).length,
+        dueToday: working.filter((t) => between(t.dueAt, today, tomorrow)).length,
         completedToday: done.filter((t) => between(t.completedAt, today, tomorrow)).length,
         completedThisWeek: done.filter((t) => between(t.completedAt, monday, tomorrow)).length,
+        pending: open.length - working.length,
         openByPriority,
       };
     }
@@ -1528,7 +1768,7 @@ export function setMockDelay(ms) { delayMs = ms; }
 /** Entry point used by http.js. Returns { status, data } like a real HTTP call. */
 export async function mockFetch(method, fullPath, body, token) {
   if (delayMs) await new Promise((r) => setTimeout(r, delayMs)); // feel like a network call
-  db.workflows ||= []; db.workflowRuns ||= [];
+  db.workflows ||= []; db.workflowRuns ||= []; db.tickets ||= []; db.leaves ||= [];
   // FMS saved before form links existed get one (null = the owner turned it off, so leave those)
   // and long codes from before short links are made short
   db.workflows.forEach((wf) => {

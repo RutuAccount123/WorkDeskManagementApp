@@ -2,11 +2,15 @@ package com.decentdecor.workdesk.repository;
 
 import com.decentdecor.workdesk.entity.Employee;
 import com.decentdecor.workdesk.entity.Task;
+import com.decentdecor.workdesk.entity.TaskTicket;
 import com.decentdecor.workdesk.entity.enums.Priority;
 import com.decentdecor.workdesk.entity.enums.TaskStatus;
+import com.decentdecor.workdesk.entity.enums.TicketStatus;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Locale;
@@ -69,10 +73,17 @@ public final class TaskSpecifications {
 
     /** Open and past its due time. */
     public static Specification<Task> overdue(Instant now) {
-        return (root, query, cb) -> cb.and(
-                root.get("status").in(TaskStatus.OPEN),
-                cb.isNotNull(root.get("dueAt")),
-                cb.lessThan(root.<Instant>get("dueAt"), now));
+        return (root, query, cb) -> {
+            // a task with an open ticket is pending, not overdue
+            Subquery<Long> openTicket = query.subquery(Long.class);
+            Root<TaskTicket> k = openTicket.from(TaskTicket.class);
+            openTicket.select(k.get("id")).where(cb.equal(k.get("task"), root), cb.equal(k.get("status"), TicketStatus.OPEN));
+            return cb.and(
+                    root.get("status").in(TaskStatus.OPEN),
+                    cb.isNotNull(root.get("dueAt")),
+                    cb.lessThan(root.<Instant>get("dueAt"), now),
+                    cb.not(cb.exists(openTicket)));
+        };
     }
 
     /** Text in the title or details (any case). */
@@ -95,6 +106,11 @@ public final class TaskSpecifications {
 
     private static Expression<Instant> workAt(jakarta.persistence.criteria.Root<Task> root,
                                               jakarta.persistence.criteria.CriteriaBuilder cb) {
-        return cb.coalesce(root.<Instant>get("dueAt"), root.<Instant>get("createdAt"));
+        // same as Task.workAt(): done work belongs to the day it was finished
+        Expression<Instant> planned = cb.coalesce(root.<Instant>get("dueAt"), root.<Instant>get("createdAt"));
+        return cb.<Instant>selectCase()
+                .when(cb.and(cb.equal(root.get("status"), TaskStatus.COMPLETED), cb.isNotNull(root.get("completedAt"))),
+                        root.<Instant>get("completedAt"))
+                .otherwise(planned);
     }
 }

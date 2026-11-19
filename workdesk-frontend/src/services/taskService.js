@@ -68,4 +68,6 @@ export const taskService = {
   /** Tick or untick one checklist item (index) on a workflow step. */
   tick: (id, index, done) => http(`/api/tasks/${id}/checklist`, { method: 'POST', body: { index, done } }),
   addComment: (id, comment) => http(`/api/tasks/${id}/comments`, { method: 'POST', body: { comment } }),
+  /** A task due on my leave day: 'ALLOW' (do it later, dueAt = new 'yyyy-mm-ddThh:mm') or 'DENY' (skip it). */
+  leaveDecision: (id, decision, dueAt, note) => http(`/api/tasks/${id}/leave-decision`, { method: 'POST', body: { decision, dueAt, note } }),
 };

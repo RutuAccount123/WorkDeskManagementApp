@@ -118,7 +118,7 @@ export default function TeamOverview({ refreshKey, onOpen, employees = [], depar
                             </button>
                             <span className="row" style={{ gap: 6 }}>
                               {t.dueAt && <span className="muted small">{fmtTime(t.dueAt)}</span>}
-                              <StatusChip status={t.status} overdue={t.overdue} short />
+                              <StatusChip status={t.status} overdue={t.overdue} pending={t.pending} onLeave={t.onLeave} short />
                             </span>
                           </li>
                         ))}

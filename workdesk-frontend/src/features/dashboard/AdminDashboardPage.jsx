@@ -77,6 +77,7 @@ export default function Overview() {
       {error && <p className="error">{error}</p>}
 
       <div className="stats">
+        <Stat value={stats?.pending} label="Pending" tone="pending" icon="ticket" to={isAdmin ? '/tasks?status=pending' : undefined} />
         <Stat value={stats?.overdue} label="Overdue" tone="overdue" icon="alert" to={isAdmin ? '/tasks?overdue=1' : undefined} />
         <Stat value={stats?.dueToday} label="Due today" tone="today" icon="clock" to={isAdmin ? '/tasks?dueToday=1' : undefined} />
         {isAdmin
@@ -101,9 +102,9 @@ export default function Overview() {
             <h2 className="section-title">Needs attention today</h2>
             {tasks === null ? <p className="muted">Loading…</p> :
               <TaskBoard tasks={tasks.filter((t) => t.status !== 'SUBMITTED')} onOpen={setOpenId} showAssignee
-                lanes={['overdue', 'today']} maxPerLane={6}
-                moreLink={(lane) => (lane === 'overdue' ? '/tasks?overdue=1' : '/tasks')}
-                emptyText="Nothing overdue or due today." />}
+                lanes={['pending', 'overdue', 'today']} maxPerLane={6}
+                moreLink={(lane) => (lane === 'overdue' ? '/tasks?overdue=1' : lane === 'pending' ? '/tasks?status=pending' : '/tasks')}
+                emptyText="Nothing pending, overdue or due today." />}
           </section>
           <section className="panel">
             <h2 className="section-title">Last 7 days</h2>

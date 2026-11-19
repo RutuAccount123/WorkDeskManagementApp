@@ -18,6 +18,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.Formula;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -119,6 +120,21 @@ public class Task {
     @Column(name = "overdue_reminded", nullable = false)
     private boolean overdueReminded;
 
+    /**
+     * Pending = someone raised a ticket on this task and it is not resolved yet.
+     * Read from task_ticket when the task is loaded. While pending the task is not overdue.
+     */
+    @Formula("(select count(*) > 0 from task_ticket k where k.task_id = id and k.status = 'OPEN')")
+    private boolean pending;
+
+    /**
+     * Due on one of the assignee's leave days. Read from employee_leave when the task is loaded.
+     * While open it is not overdue: the person decides when back (do it later, or skip it).
+     */
+    @Formula("(select count(*) > 0 from employee_leave l where l.employee_id = assignee_id"
+            + " and due_at >= l.starts_at and due_at < l.ends_at)")
+    private boolean dueOnLeave;
+
 
     /** FMS steps never need review; otherwise the chosen reviewer (may be null). */
     public Employee effectiveReviewer() {
@@ -133,14 +149,38 @@ public class Task {
         return createdBy.getId().equals(assignee.getId());
     }
 
-    /** The day this work belongs to: its due date, or the day it was added. */
+    /**
+     * The day this work belongs to on the calendars and "today" lists: a done task belongs to the day it was
+     * finished; otherwise its due date, or the day it was added. So overdue work finished today shows today.
+     */
     public Instant workAt() {
+        if (status == TaskStatus.COMPLETED && completedAt != null) return completedAt;
+        return plannedAt();
+    }
+
+    /** When the work was planned for: its due date, or the day it was added (used for performance). */
+    public Instant plannedAt() {
         return dueAt != null ? dueAt : createdAt;
     }
 
-    /** Open work whose due time has passed. */
+    /** Open work with an unresolved ticket: waiting on another person. */
+    public boolean isPending() {
+        return pending && status.isOpen();
+    }
+
+    /** After moving the due date to a day checked to be off leave (the value is otherwise read when loaded). */
+    public void markNotDueOnLeave() {
+        this.dueOnLeave = false;
+    }
+
+    /** Open work due on one of the assignee's leave days: waiting for them to decide (do it later, or skip). */
+    public boolean isOnLeave() {
+        return dueOnLeave && status.isOpen();
+    }
+
+    /** Open work whose due time has passed. Not while pending (open ticket) or due on a leave day. */
     public boolean isOverdue(Instant now) {
-        return status.isOpen() && dueAt != null && dueAt.isBefore(now)
+        return status.isOpen() && !pending && !dueOnLeave && dueAt != null && dueAt.isBefore(now)
                 && (estimatedHours == null || startedAt != null);
     }
 

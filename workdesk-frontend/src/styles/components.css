@@ -78,7 +78,7 @@ textarea { resize: vertical; }
 .segmented button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
 
 /* ---------- stat cards ---------- */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; }
 .stat {
   --tone: var(--primary); --tone-bg: var(--primary-soft);
   display: flex; align-items: center; gap: 14px; padding: 18px 20px;
@@ -231,3 +231,7 @@ a.stat:hover { text-decoration: none; border-color: var(--border-strong); box-sh
 .scope-tabs button:hover { color: var(--text); }
 .scope-tabs button.on { color: var(--primary); border-bottom-color: var(--primary); }
 .section-title .count { margin-left: 6px; vertical-align: middle; }
+/* Pending = open work with an open ticket (see laneOf / StatusChip) */
+.chip-pending { background: #F4EBFF; color: #6941C6; border-color: #D9C8FB; }
+.tone-pending { --tone: #6941C6; --tone-bg: #F4EBFF; }
+.pending-hint { border-left: 3px solid #6941C6; }

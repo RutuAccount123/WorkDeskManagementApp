@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { taskService, holidayService, reportService, workflowService } from '@/services/index.js';
+import { taskService, holidayService, leaveService, reportService, workflowService } from '@/services/index.js';
 import StatusChip from '@/components/ui/StatusChip.jsx';
 import {
-  GROUPS, PRIORITY_LABEL, STATUS_LABEL, addDays, fmtDayLong, fmtMonth, fmtMonthShort, fmtTime, fromMonthKey,
+  GROUPS, PRIORITY_LABEL, STATUS_LABEL, addDays, fmtDate, fmtDateTime, fmtDayLong, fmtMonth, fmtMonthShort, fmtTime, fromMonthKey,
   isoDay, sameDay, startOfDay, startOfMonth, startOfWeek, statusGroup, workDate,
 } from '@/utils/format.js';
 import { useAuth } from '@/features/auth/AuthContext.jsx';
@@ -18,6 +18,10 @@ const VIEWS = [
   { key: 'year', label: 'Year' },
 ];
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const OPEN = ['TODO', 'IN_PROGRESS', 'SUBMITTED', 'REOPENED'];
+
+/** The day a task is shown on: unfinished work from earlier days is carried over to today. */
+const shownDate = (t) => (t.carriedOver ? startOfDay(new Date()) : workDate(t));
 
 /** Date range [from, to) shown for a view. */
 function rangeFor(view, anchor) {
@@ -57,7 +61,9 @@ function WorkItem({ t, onOpen, showTime = true }) {
       title={`${title} — ${STATUS_LABEL[t.status]}${t.overdue ? ', overdue' : ''}`}>
       <span className="wi-dot" aria-hidden="true" />
       <span className="wi-title">{t.repeat && <span className="wi-repeat" title={t.repeat === 'DAILY' ? 'Daily task' : 'Weekly task'}>↻ </span>}{title}</span>
-      {showTime && t.dueAt && <span className="wi-time">{fmtTime(t.dueAt)}</span>}
+      {showTime && g === 'done' && t.completedAt
+        ? <span className="wi-time" title="Done at">✓ {fmtTime(t.completedAt)}</span>
+        : showTime && t.dueAt && <span className="wi-time">{fmtTime(t.dueAt)}</span>}
       {t.overdue && <span className="sr-only">overdue</span>}
     </button>
   );
@@ -81,9 +87,16 @@ function Counts({ list }) {
 
 // ------------------------------------------------------------------ views
 
-function DayView({ tasks, onOpen, holiday, isSunday }) {
+/** The leave covering this day, if any. */
+const leaveOn = (leaves, day) => {
+  const d = isoDay(day);
+  return leaves.find((l) => l.startDate <= d && l.endDate >= d) || null;
+};
+
+function DayView({ tasks, onOpen, holiday, isSunday, leave }) {
   return (
     <>
+    {leave && <p className="holiday-banner leave">🌴 On leave{leave.reason && `: ${leave.reason}`}. No repeating tasks are created on this day.</p>}
     {holiday && <p className="holiday-banner">🎉 Office holiday: <strong>{holiday.name}</strong>{holiday.note && ` — ${holiday.note}`}</p>}
     {!holiday && isSunday && <p className="holiday-banner off">Sunday, weekly off</p>}
     <div className="day-cols">
@@ -96,12 +109,18 @@ function DayView({ tasks, onOpen, holiday, isSunday }) {
               <button key={t.id} className="day-card" onClick={() => onOpen(t.id)}>
                 <span className="day-card-title">{t.title}</span>
                 <span className="task-meta">
-                  {t.dueAt && <span className={t.overdue ? 'text-overdue' : ''}>{t.overdue ? 'Overdue, was due ' : 'Due '}{fmtTime(t.dueAt)}</span>}
+                  {t.carriedOver && <span className="tag" title="Not finished on its own day, so it carries over to today">from {fmtDate(workDate(t))}</span>}
+                  {statusGroup(t) === 'done' && t.completedAt ? (
+                    <>
+                      <span>Done {sameDay(new Date(t.completedAt), new Date()) ? fmtTime(t.completedAt) : fmtDateTime(t.completedAt)}</span>
+                      {t.dueAt && !sameDay(new Date(t.dueAt), new Date(t.completedAt)) && <span className="muted">was due {fmtDateTime(t.dueAt)}</span>}
+                    </>
+                  ) : t.dueAt && <span className={t.overdue ? 'text-overdue' : ''}>{t.overdue ? 'Overdue, was due ' : 'Due '}{fmtTime(t.dueAt)}</span>}
                   <span>{PRIORITY_LABEL[t.priority]}</span>
                   {t.repeat && <span className={`repeat-badge ${t.repeat === 'DAILY' ? 'rb-daily' : 'rb-weekly'}`}>{t.repeat === 'DAILY' ? 'Daily' : 'Weekly'}</span>}
                   {t.workflow && <span className="repeat-badge rb-flow">FMS {t.workflow.date} · run #{t.workflow.number} · step {t.workflow.step}/{t.workflow.total}: {t.workflowStageTitle}</span>}
                   {t.selfAdded && !t.repeat && <span className="tag">Added by me</span>}
-                  {(t.status === 'SUBMITTED' || t.status === 'REOPENED' || t.overdue) && <StatusChip status={t.status} overdue={t.overdue} />}
+                  {(t.status === 'SUBMITTED' || t.status === 'REOPENED' || t.overdue || t.pending || t.onLeave) && <StatusChip status={t.status} overdue={t.overdue} pending={t.pending} onLeave={t.onLeave} />}
                 </span>
               </button>
             ))}
@@ -113,13 +132,30 @@ function DayView({ tasks, onOpen, holiday, isSunday }) {
   );
 }
 
-function WeekView({ tasks, scheduled, from, onOpen, onOpenWorkflow, onPickDay, holidays }) {
+/** One week-day's items, in To do / In progress / Done groups (FMS scheduled runs go with To do). */
+function WeekDayItems({ list, onOpen, onOpenWorkflow }) {
+  if (list.length === 0) return <span className="muted small">—</span>;
+  return GROUPS.map((g) => {
+    const items = list.filter((t) => (t.scheduled ? 'todo' : statusGroup(t)) === g.key);
+    if (!items.length) return null;
+    return (
+      <div key={g.key} className={`week-group wg-${g.key}`}>
+        <span className="week-group-title">{g.title} <span className="count">{items.length}</span></span>
+        {items.map((t) => (t.scheduled
+          ? <ScheduledFmsItem key={t.id} item={t} onOpen={onOpenWorkflow} />
+          : <WorkItem key={t.id} t={t} onOpen={onOpen} />))}
+      </div>
+    );
+  });
+}
+
+function WeekView({ tasks, scheduled, from, onOpen, onOpenWorkflow, onPickDay, holidays, leaves }) {
   return (
     <div className="week-grid">
       {WEEKDAYS.map((name, i) => {
         const day = addDays(from, i);
         const list = [
-          ...tasks.filter((t) => sameDay(workDate(t), day)),
+          ...tasks.filter((t) => sameDay(shownDate(t), day)),
           ...scheduled.filter((t) => t.workflow.date === isoDay(day)),
         ].sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
         const today = sameDay(day, new Date());
@@ -130,13 +166,11 @@ function WeekView({ tasks, scheduled, from, onOpen, onOpenWorkflow, onPickDay, h
               <span><strong>{name}</strong> {day.getDate()}</span>
               {list.length > 0 && <Counts list={list} />}
               {hol && <span className="hol-tag">🎉 {hol.name}</span>}
+              {leaveOn(leaves, day) && <span className="leave-tag">🌴 On leave</span>}
               {!hol && i === 6 && list.length === 0 && <span className="muted small">Weekly off</span>}
             </button>
             <div className="week-items">
-              {list.length === 0 ? <span className="muted small">—</span>
-                : list.map((t) => t.scheduled
-                  ? <ScheduledFmsItem key={t.id} item={t} onOpen={onOpenWorkflow} />
-                  : <WorkItem key={t.id} t={t} onOpen={onOpen} />)}
+              <WeekDayItems list={list} onOpen={onOpen} onOpenWorkflow={onOpenWorkflow} />
             </div>
           </section>
         );
@@ -158,7 +192,7 @@ function MonthView({ tasks, from, onPickDay, holidays }) {
       <div className="month-grid">
         {cells.map((day) => {
           const inMonth = day.getMonth() === from.getMonth();
-          const list = inMonth ? tasks.filter((t) => sameDay(workDate(t), day)) : [];
+          const list = inMonth ? tasks.filter((t) => sameDay(shownDate(t), day)) : [];
           const done = list.filter((t) => statusGroup(t) === 'done').length;
           const late = list.filter((t) => t.overdue).length;
           const hol = inMonth ? holidays[isoDay(day)] : null;
@@ -252,6 +286,7 @@ export default function WorkCalendar({ employeeId, employeeName, onOpen, refresh
   const [year, setYear] = useState(null);
   const [error, setError] = useState('');
   const [holidays, setHolidays] = useState({});
+  const [leaves, setLeaves] = useState([]);   // this person's leave in the range
   const [workflows, setWorkflows] = useState([]);
 
   const [from, to] = useMemo(() => rangeFor(view, anchor), [view, anchor]);
@@ -259,16 +294,37 @@ export default function WorkCalendar({ employeeId, employeeName, onOpen, refresh
   useEffect(() => {
     let alive = true;
     setError('');
+    const now = new Date();
+    // only today's Day view carries over unfinished work; Week / Month show each task on its own day
+    const includesToday = view === 'day' && now >= from && now < to;
     const load = view === 'year'
       ? reportService.yearly({ employeeId, year: anchor.getFullYear() }).then((d) => alive && setYear(d))
-      : taskService.list({ assigneeId: employeeId, workFrom: isoDay(from), workTo: isoDay(addDays(to, -1)) })
-        .then((list) => alive && setTasks(groupFmsTasks(list.filter((t) => t.status !== 'CANCELLED'))
-          .sort((a, b) => workDate(a) - workDate(b))));
+      : Promise.all([
+        taskService.list({ assigneeId: employeeId, workFrom: isoDay(from), workTo: isoDay(addDays(to, -1)) }),
+        // Today's Day view also carries over unfinished work from earlier days:
+        // not started → To do, started → In progress
+        includesToday
+          ? taskService.list({ assigneeId: employeeId, status: OPEN, workTo: isoDay(addDays(from, -1)) })
+          : Promise.resolve([]),
+      ]).then(([list, earlier]) => {
+        const seen = new Set(list.map((t) => t.id));
+        const todayStart = startOfDay(new Date());
+        const all = groupFmsTasks([...earlier.filter((t) => !seen.has(t.id)), ...list].filter((t) => t.status !== 'CANCELLED'))
+          .map((t) => (includesToday && OPEN.includes(t.status) && workDate(t) < todayStart ? { ...t, carriedOver: true } : t));
+        if (alive) setTasks(all.sort((a, b) => shownDate(a) - shownDate(b)));
+      });
     load.catch((e) => alive && setError(e.message));
     if (view !== 'year') {
       holidayService.list({ from: isoDay(from), to: isoDay(addDays(to, -1)) })
         .then((list) => alive && setHolidays(Object.fromEntries(list.map((h) => [h.date, h]))))
         .catch(() => {});
+      // whose leave: the person shown (admins), or my own
+      if (isAdmin && employeeId == null) setLeaves([]);
+      else {
+        leaveService.list({ employeeId: isAdmin ? employeeId : undefined, from: isoDay(from), to: isoDay(addDays(to, -1)) })
+          .then((list) => alive && setLeaves(list))
+          .catch(() => alive && setLeaves([]));
+      }
     }
     return () => { alive = false; };
   }, [view, from, to, employeeId, refreshKey, anchor]);
@@ -333,9 +389,10 @@ export default function WorkCalendar({ employeeId, employeeName, onOpen, refresh
       {error && <p className="error">{error}</p>}
       {view === 'year' ? <YearView data={year} onPickMonth={pickMonth} />
         : tasks === null ? <p className="muted">Loading…</p>
-          : view === 'day' ? <DayView tasks={tasks} onOpen={onOpen} holiday={holidays[isoDay(anchor)]} isSunday={anchor.getDay() === 0} />
+          : view === 'day' ? <DayView tasks={tasks} onOpen={onOpen} holiday={holidays[isoDay(anchor)]} isSunday={anchor.getDay() === 0}
+            leave={leaveOn(leaves, anchor)} />
             : view === 'week' ? <WeekView tasks={tasks} scheduled={scheduled} from={from} onOpen={onOpen}
-                onOpenWorkflow={onOpenWorkflow} onPickDay={pickDay} holidays={holidays} />
+                onOpenWorkflow={onOpenWorkflow} onPickDay={pickDay} holidays={holidays} leaves={leaves} />
               : <MonthView tasks={tasks} from={from} onPickDay={pickDay} holidays={holidays} />}
     </section>
   );

@@ -71,7 +71,10 @@ class TaskRulesTest {
         assertTrue(TaskRules.canSee(t, rahul));
         assertTrue(TaskRules.canSee(t, sneha));
         assertFalse(TaskRules.canSee(t, amit));
-        assertTrue(TaskRules.canEdit(t, rahul));
+        // only admins can edit; not the assigner, the assignee, or anyone else
+        assertFalse(TaskRules.canEdit(t, rahul));
         assertFalse(TaskRules.canEdit(t, priya));
+        assertFalse(TaskRules.canEdit(t, amit));
+        assertTrue(TaskRules.canEdit(t, admin));
     }
 }

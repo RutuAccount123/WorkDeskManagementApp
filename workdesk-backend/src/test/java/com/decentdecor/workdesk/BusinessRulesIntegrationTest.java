@@ -177,18 +177,267 @@ class BusinessRulesIntegrationTest {
         Person b = person("Doer Seven");
         Person c = person("Outsider Eight");
         long id = ok(a.token(), post("/api/tasks"), map("title", "Plywood rate", "assigneeId", b.id())).get("id").asLong();
+        // only admins edit and delete: not the person doing it, and not the person who assigned it
         call(b.token(), put("/api/tasks/" + id), map("title", "Hack")).andExpect(status().isForbidden());
-        call(a.token(), put("/api/tasks/" + id), map("title", " ")).andExpect(status().isBadRequest())
+        call(a.token(), put("/api/tasks/" + id), map("title", "Changed by creator")).andExpect(status().isForbidden());
+        call(admin, put("/api/tasks/" + id), map("title", " ")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("title: must not be blank"));
-        JsonNode upd = ok(a.token(), put("/api/tasks/" + id), map("title", "Plywood rate v2", "priority", "URGENT", "assigneeId", b.id()));
+        JsonNode upd = ok(admin, put("/api/tasks/" + id), map("title", "Plywood rate v2", "priority", "URGENT", "assigneeId", b.id()));
         assertThat(upd.get("priority").asText()).isEqualTo("URGENT");
 
         ok(a.token(), post("/api/tasks/" + id + "/comments"), map("comment", "Need it by Friday"));
         assertThat(lastNote(b.token()).get("message").asText()).contains("commented on \"Plywood rate v2\": Need it by Friday");
         call(c.token(), get("/api/tasks/" + id), null).andExpect(status().isNotFound());
         call(c.token(), delete("/api/tasks/" + id), null).andExpect(status().isNotFound());
-        call(a.token(), delete("/api/tasks/" + id), null).andExpect(status().isNoContent());
+        call(a.token(), delete("/api/tasks/" + id), null).andExpect(status().isForbidden());
+        call(admin, delete("/api/tasks/" + id), null).andExpect(status().isNoContent());
         call(admin, get("/api/tasks/" + id), null).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void ticketRaisedToSomeoneElseLetsThemOpenTheTaskAndResolveIt() throws Exception {
+        Person boss = person("Ticket Boss");
+        Person worker = person("Ticket Worker");
+        Person expert = person("Ticket Expert");
+        Person outsider = person("Ticket Outsider");
+        JsonNode created = ok(boss.token(), post("/api/tasks"), map("title", "Fix vendor GST mismatch", "assigneeId", worker.id(),
+                "priority", "HIGH", "dueAt", localDue(-1)));
+        long id = created.get("id").asLong();
+        assertThat(created.get("overdue").asBoolean()).isTrue();
+        assertThat(created.get("pending").asBoolean()).isFalse();
+
+        // the expert is not part of the task yet
+        call(expert.token(), get("/api/tasks/" + id), null).andExpect(status().isNotFound());
+
+        call(worker.token(), post("/api/tasks/" + id + "/tickets"), map("assignedToId", worker.id(), "note", "Help"))
+                .andExpect(status().isBadRequest());
+        call(worker.token(), post("/api/tasks/" + id + "/tickets"), map("assignedToId", expert.id(), "note", " "))
+                .andExpect(status().isBadRequest());
+        call(outsider.token(), post("/api/tasks/" + id + "/tickets"), map("assignedToId", expert.id(), "note", "Help"))
+                .andExpect(status().isNotFound());
+
+        JsonNode ticket = ok(worker.token(), post("/api/tasks/" + id + "/tickets"),
+                map("assignedToId", expert.id(), "note", "Vendor PAN does not match the GSTIN, please check"));
+        long ticketId = ticket.get("id").asLong();
+        assertThat(ticket.get("status").asText()).isEqualTo("OPEN");
+        assertThat(ticket.at("/assignedTo/fullName").asText()).isEqualTo("Ticket Expert");
+        assertThat(lastNote(expert.token()).get("type").asText()).isEqualTo("TICKET_RAISED");
+        assertThat(lastNote(expert.token()).get("message").asText())
+                .contains("Ticket Worker raised a ticket to you on \"Fix vendor GST mismatch\"");
+
+        // the task is now pending: not overdue, not in the overdue list, counted as pending on the dashboard
+        JsonNode pendingTask = ok(expert.token(), get("/api/tasks/" + id), null);   // the expert can open it now
+        assertThat(pendingTask.get("pending").asBoolean()).isTrue();
+        assertThat(pendingTask.get("overdue").asBoolean()).isFalse();
+        assertThat(ok(worker.token(), get("/api/tasks?overdue=true"), null).findValuesAsText("title"))
+                .doesNotContain("Fix vendor GST mismatch");
+        JsonNode dash = ok(worker.token(), get("/api/reports/dashboard"), null);
+        assertThat(dash.get("pending").asLong()).isEqualTo(1);
+        assertThat(dash.get("overdue").asLong()).isZero();
+        assertThat(dash.get("todo").asLong()).isZero();
+        assertThat(ok(expert.token(), get("/api/tickets"), null).findValuesAsText("note"))
+                .contains("Vendor PAN does not match the GSTIN, please check");
+        assertThat(ok(worker.token(), get("/api/tickets?scope=raised&status=OPEN"), null).size()).isEqualTo(1);
+        call(worker.token(), get("/api/tickets?scope=all"), null).andExpect(status().isForbidden());
+        call(outsider.token(), post("/api/tickets/" + ticketId + "/resolve"), map("reply", "Done")).andExpect(status().isNotFound());
+
+        // an employee the ticket is raised to cannot edit or delete the task (only admins can)
+        call(worker.token(), put("/api/tasks/" + id), map("title", "Changed by worker")).andExpect(status().isForbidden());
+        call(expert.token(), put("/api/tasks/" + id), map("title", "Changed by expert")).andExpect(status().isForbidden());
+        call(expert.token(), delete("/api/tasks/" + id), null).andExpect(status().isForbidden());
+        // only the expert can choose "mark done"
+        call(worker.token(), post("/api/tickets/" + ticketId + "/done"), map("reply", "Me")).andExpect(status().isForbidden());
+        call(expert.token(), post("/api/tickets/" + ticketId + "/resolve"), map("reply", "")).andExpect(status().isBadRequest());
+
+        JsonNode resolved = ok(expert.token(), post("/api/tickets/" + ticketId + "/resolve"), map("reply", "Corrected the GSTIN"));
+        assertThat(resolved.get("status").asText()).isEqualTo("RESOLVED");
+        assertThat(resolved.at("/resolvedBy/fullName").asText()).isEqualTo("Ticket Expert");
+        assertThat(lastNote(worker.token()).get("type").asText()).isEqualTo("TICKET_RESOLVED");
+        call(expert.token(), post("/api/tickets/" + ticketId + "/resolve"), map("reply", "Again")).andExpect(status().isBadRequest());
+
+        assertThat(resolved.get("taskDone").asBoolean()).isFalse();
+        call(expert.token(), post("/api/tickets/" + ticketId + "/done"), map("reply", "Late")).andExpect(status().isBadRequest());
+
+        // resolved: back to its own status, and overdue again
+        JsonNode back = ok(worker.token(), get("/api/tasks/" + id), null);
+        assertThat(back.get("pending").asBoolean()).isFalse();
+        assertThat(back.get("overdue").asBoolean()).isTrue();
+        assertThat(back.get("status").asText()).isEqualTo("TODO");
+        assertThat(ok(worker.token(), get("/api/tasks?overdue=true"), null).findValuesAsText("title"))
+                .contains("Fix vendor GST mismatch");
+
+        assertThat(ok(boss.token(), get("/api/tasks/" + id + "/tickets"), null).size()).isEqualTo(1);
+        assertThat(ok(boss.token(), get("/api/tasks/" + id + "/activity"), null).findValuesAsText("action"))
+                .contains("TICKET_RAISED", "TICKET_RESOLVED");
+        assertThat(ok(admin, get("/api/tickets?scope=all"), null).findValuesAsText("note"))
+                .contains("Vendor PAN does not match the GSTIN, please check");
+    }
+
+    @Test
+    void ticketPersonCanFinishTheTaskThemselves() throws Exception {
+        Person boss = person("Done Boss");
+        Person worker = person("Done Worker");
+        Person expert = person("Done Expert");
+        long id = ok(boss.token(), post("/api/tasks"), map("title", "Release vendor payment", "assigneeId", worker.id()))
+                .get("id").asLong();
+        long ticketId = ok(worker.token(), post("/api/tasks/" + id + "/tickets"),
+                map("assignedToId", expert.id(), "note", "I cannot approve payments, please do it")).get("id").asLong();
+        call(expert.token(), post("/api/tickets/" + ticketId + "/done"), map("reply", " ")).andExpect(status().isBadRequest());
+
+        JsonNode closed = ok(expert.token(), post("/api/tickets/" + ticketId + "/done"), map("reply", "Payment released"));
+        assertThat(closed.get("status").asText()).isEqualTo("RESOLVED");
+        assertThat(closed.get("taskDone").asBoolean()).isTrue();
+
+        // the task moved to the expert and is done; it is not sent back to the worker
+        JsonNode t = ok(expert.token(), get("/api/tasks/" + id), null);
+        assertThat(t.get("status").asText()).isEqualTo("COMPLETED");
+        assertThat(t.at("/assignee/fullName").asText()).isEqualTo("Done Expert");
+        assertThat(t.get("pending").asBoolean()).isFalse();
+        assertThat(ok(expert.token(), get("/api/tasks?scope=assigned&status=COMPLETED"), null).findValuesAsText("title"))
+                .contains("Release vendor payment");
+        assertThat(ok(worker.token(), get("/api/tasks?scope=assigned"), null).findValuesAsText("title"))
+                .doesNotContain("Release vendor payment");
+        assertThat(lastNote(worker.token()).get("message").asText()).contains("Done Expert finished \"Release vendor payment\"");
+        assertThat(ok(expert.token(), get("/api/tickets?status=RESOLVED"), null).findValuesAsText("note"))
+                .contains("I cannot approve payments, please do it");
+    }
+
+    @Test
+    void employeeAsksAdminToStopARepeatingTaskAndTheTicketCopyStays() throws Exception {
+        Person p = person("Repeat Asker");
+        long tplId = ok(admin, post("/api/recurring"), map("title", "Daily stock count", "frequency", "DAILY", "assigneeId", p.id()))
+                .get("id").asLong();
+        call(p.token(), patch("/api/recurring/" + tplId + "/active?value=false"), null).andExpect(status().isForbidden());
+
+        java.time.Instant tomorrow = LocalDate.now(OFFICE).plusDays(1).atStartOfDay(OFFICE).toInstant();
+        JsonNode future = null;
+        for (JsonNode t : ok(admin, get("/api/tasks?assigneeId=" + p.id()), null)) {
+            if (t.get("recurringTemplateId").asLong() == tplId && java.time.Instant.parse(t.get("dueAt").asText()).isAfter(tomorrow)) {
+                future = t;
+                break;
+            }
+        }
+        assertThat(future).isNotNull();
+        long futureId = future.get("id").asLong();
+        // the employee finds the same copy in their own list (the screen raises the ticket on it)
+        assertThat(ok(p.token(), get("/api/tasks?scope=assigned"), null).findValuesAsText("id")).contains(String.valueOf(futureId));
+        JsonNode me = ok(admin, get("/api/auth/me"), null);
+        long ticketId = ok(p.token(), post("/api/tasks/" + futureId + "/tickets"),
+                map("assignedToId", me.get("id").asLong(), "note", "Please stop this repeating task")).get("id").asLong();
+
+        ok(admin, patch("/api/recurring/" + tplId + "/active?value=false"), null);
+        ok(admin, get("/api/tasks/" + futureId), null);   // the copy with the ticket was not removed
+        ok(admin, post("/api/tickets/" + ticketId + "/resolve"), map("reply", "Stopped it"));
+        assertThat(lastNote(p.token()).get("type").asText()).isEqualTo("TICKET_RESOLVED");
+    }
+
+    @Test
+    void personalLeaveStopsRepeatingCopiesAndTasksWaitForTheEmployeesDecision() throws Exception {
+        Person p = person("Leave Taker");
+        Person boss = person("Leave Boss");
+        LocalDate today = LocalDate.now(OFFICE);
+        LocalDate yesterday = today.minusDays(1);
+        long tplId = ok(admin, post("/api/recurring"), map("title", "Daily leave check", "frequency", "DAILY", "assigneeId", p.id()))
+                .get("id").asLong();
+        // one-off tasks due yesterday (a leave day) and today
+        long late = ok(boss.token(), post("/api/tasks"), map("title", "Due on leave A", "assigneeId", p.id(),
+                "dueAt", yesterday + "T11:00")).get("id").asLong();
+        long late2 = ok(boss.token(), post("/api/tasks"), map("title", "Due on leave B", "assigneeId", p.id(),
+                "dueAt", yesterday + "T12:00")).get("id").asLong();
+        assertThat(ok(p.token(), get("/api/tasks/" + late), null).get("overdue").asBoolean()).isTrue();
+
+        // employees add only their own leave, and not for past days
+        call(p.token(), post("/api/leaves"), map("employeeId", p.id(), "startDate", yesterday.toString(), "endDate", today.plusDays(2).toString()))
+                .andExpect(status().isBadRequest());
+        call(p.token(), post("/api/leaves"), map("employeeId", boss.id(), "startDate", today.toString(), "endDate", today.toString()))
+                .andExpect(status().isForbidden());
+        call(admin, post("/api/leaves"), map("employeeId", p.id(), "startDate", today.toString(), "endDate", yesterday.toString()))
+                .andExpect(status().isBadRequest());
+        long leaveId = ok(admin, post("/api/leaves"), map("employeeId", p.id(), "startDate", yesterday.toString(),
+                "endDate", today.plusDays(2).toString(), "reason", "Family function")).get("id").asLong();
+        call(admin, post("/api/leaves"), map("employeeId", p.id(), "startDate", today.toString(), "endDate", today.toString()))
+                .andExpect(status().isBadRequest());   // overlaps
+        assertThat(lastNote(p.token()).get("type").asText()).isEqualTo("LEAVE_ADDED");
+        assertThat(ok(p.token(), get("/api/leaves"), null).size()).isEqualTo(1);
+
+        // no repeating copies on the leave days; the task due on leave is not overdue
+        java.time.Instant leaveEnd = today.plusDays(3).atStartOfDay(OFFICE).toInstant();
+        for (JsonNode t : ok(admin, get("/api/tasks?assigneeId=" + p.id()), null)) {
+            if (t.get("recurringTemplateId").isNull()) continue;
+            assertThat(java.time.Instant.parse(t.get("dueAt").asText())).isAfterOrEqualTo(leaveEnd);
+        }
+        JsonNode onLeave = ok(p.token(), get("/api/tasks/" + late), null);
+        assertThat(onLeave.get("onLeave").asBoolean()).isTrue();
+        assertThat(onLeave.get("overdue").asBoolean()).isFalse();
+        assertThat(ok(p.token(), get("/api/tasks?overdue=true"), null).findValuesAsText("title")).doesNotContain("Due on leave A");
+        call(admin, post("/api/recurring/" + tplId + "/generate-now"), null).andExpect(status().isBadRequest());
+
+        // the employee decides: allow = new date (not in the past, not on leave), deny = skip
+        call(boss.token(), post("/api/tasks/" + late + "/leave-decision"), map("decision", "ALLOW", "dueAt", today.plusDays(4) + "T18:00"))
+                .andExpect(status().isForbidden());
+        call(p.token(), post("/api/tasks/" + late + "/leave-decision"), map("decision", "ALLOW", "dueAt", yesterday + "T18:00"))
+                .andExpect(status().isBadRequest());
+        call(p.token(), post("/api/tasks/" + late + "/leave-decision"), map("decision", "ALLOW", "dueAt", today.plusDays(1) + "T18:00"))
+                .andExpect(status().isBadRequest());   // still on leave then
+        JsonNode moved = ok(p.token(), post("/api/tasks/" + late + "/leave-decision"),
+                map("decision", "ALLOW", "dueAt", today.plusDays(4) + "T18:00"));
+        assertThat(moved.get("onLeave").asBoolean()).isFalse();
+        assertThat(moved.get("status").asText()).isEqualTo("TODO");
+        assertThat(lastNote(boss.token()).get("message").asText()).contains("was on leave and moved \"Due on leave A\"");
+        JsonNode skipped = ok(p.token(), post("/api/tasks/" + late2 + "/leave-decision"), map("decision", "DENY", "note", "No longer needed"));
+        assertThat(skipped.get("status").asText()).isEqualTo("CANCELLED");
+        assertThat(lastNote(boss.token()).get("message").asText()).contains("skipped \"Due on leave B\"");
+
+        // removing the leave makes the repeating copies again
+        ok(admin, delete("/api/leaves/" + leaveId), null);
+        boolean todayCopy = false;
+        for (JsonNode t : ok(admin, get("/api/tasks?assigneeId=" + p.id()), null)) {
+            if (!t.get("recurringTemplateId").isNull()
+                    && java.time.Instant.parse(t.get("dueAt").asText()).atZone(OFFICE).toLocalDate().equals(today)) todayCopy = true;
+        }
+        assertThat(todayCopy || today.getDayOfWeek() == DayOfWeek.SUNDAY).isTrue();
+    }
+
+    @Test
+    void employeeAddsOwnLeaveButOnlyAdminsChangeItAskedForWithATicket() throws Exception {
+        Person p = person("Leave Self");
+        LocalDate today = LocalDate.now(OFFICE);
+        JsonNode leave = ok(p.token(), post("/api/leaves"), map("employeeId", p.id(), "startDate", today.plusDays(5).toString(),
+                "endDate", today.plusDays(6).toString(), "reason", "Wedding"));
+        long leaveId = leave.get("id").asLong();
+        assertThat(lastNote(admin).get("message").asText()).contains("Leave Self added leave");
+
+        // only admins edit or remove it
+        call(p.token(), put("/api/leaves/" + leaveId), map("employeeId", p.id(), "startDate", today.plusDays(5).toString(),
+                "endDate", today.plusDays(8).toString())).andExpect(status().isForbidden());
+        call(p.token(), delete("/api/leaves/" + leaveId), null).andExpect(status().isForbidden());
+
+        // so the employee raises a ticket about the leave to an admin
+        long adminId = ok(admin, get("/api/auth/me"), null).get("id").asLong();
+        Person other = person("Leave Other");
+        call(p.token(), post("/api/leaves/" + leaveId + "/tickets"), map("assignedToId", other.id(), "note", "Change it"))
+                .andExpect(status().isBadRequest());   // must be an admin
+        call(other.token(), post("/api/leaves/" + leaveId + "/tickets"), map("assignedToId", adminId, "note", "Change it"))
+                .andExpect(status().isNotFound());     // not their leave
+        JsonNode ticket = ok(p.token(), post("/api/leaves/" + leaveId + "/tickets"),
+                map("assignedToId", adminId, "note", "Please make it 3 days, till the 8th"));
+        assertThat(ticket.get("task").isNull()).isTrue();
+        assertThat(ticket.get("subject").asText()).startsWith("Leave ");
+        assertThat(ticket.get("leaveId").asLong()).isEqualTo(leaveId);
+        assertThat(ok(admin, get("/api/tickets"), null).findValuesAsText("note")).contains("Please make it 3 days, till the 8th");
+
+        JsonNode changed = ok(admin, put("/api/leaves/" + leaveId), map("employeeId", p.id(), "startDate", today.plusDays(5).toString(),
+                "endDate", today.plusDays(8).toString(), "reason", "Wedding"));
+        assertThat(changed.get("endDate").asText()).isEqualTo(today.plusDays(8).toString());
+        call(admin, post("/api/tickets/" + ticket.get("id").asLong() + "/done"), map("reply", "x")).andExpect(status().isBadRequest());
+        ok(admin, post("/api/tickets/" + ticket.get("id").asLong() + "/resolve"), map("reply", "Changed to 3 days"));
+        assertThat(lastNote(p.token()).get("type").asText()).isEqualTo("TICKET_RESOLVED");
+
+        // removing the leave keeps the ticket (it just no longer points to the leave)
+        ok(admin, delete("/api/leaves/" + leaveId), null);
+        JsonNode kept = ok(p.token(), get("/api/tickets?scope=raised&status=RESOLVED"), null).get(0);
+        assertThat(kept.get("subject").asText()).startsWith("Leave ");
+        assertThat(kept.get("leaveId").isNull()).isTrue();
     }
 
     @Test
@@ -281,7 +530,14 @@ class BusinessRulesIntegrationTest {
         assertThat(assigned.at("/createdBy/id").asLong()).isEqualTo(p.id());
         JsonNode fromAdmin = ok(admin, post("/api/recurring"), map("title", "Admin plan", "frequency", "DAILY", "assigneeId", p.id()));
         call(p.token(), patch("/api/recurring/" + fromAdmin.get("id").asLong() + "/active?value=false"), null)
-                .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value("Only the person who assigned this repeating task can change it"));
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value("Only an admin can change a repeating task"));
+        // not even one they set up themselves: they can see it, but only an admin changes or stops it
+        call(p.token(), patch("/api/recurring/" + assigned.get("id").asLong() + "/active?value=false"), null)
+                .andExpect(status().isForbidden());
+        call(p.token(), delete("/api/recurring/" + assigned.get("id").asLong()), null).andExpect(status().isForbidden());
+        assertThat(ok(p.token(), get("/api/recurring"), null).findValuesAsText("title")).contains("My plan", "Admin plan");
+        assertThat(ok(admin, patch("/api/recurring/" + assigned.get("id").asLong() + "/active?value=false"), null)
+                .get("active").asBoolean()).isFalse();
         call(other.token(), patch("/api/recurring/" + fromAdmin.get("id").asLong() + "/active?value=false"), null).andExpect(status().isNotFound());
     }
 

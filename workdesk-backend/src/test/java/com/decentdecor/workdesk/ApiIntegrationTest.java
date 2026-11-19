@@ -173,6 +173,13 @@ class ApiIntegrationTest {
         mvc.perform(as(departmentAdmin, post("/api/tasks/" + assignedTask.path("id").asText() + "/status"))
                         .content(json("status", "IN_PROGRESS")))
                 .andExpect(status().isForbidden());
+        // department admins can edit tasks in their departments, but not move them to someone outside
+        mvc.perform(as(departmentAdmin, put("/api/tasks/" + assignedTask.path("id").asText()))
+                        .content(json("title", "Department-scoped assignment v2", "assigneeId", allowedAssigneeId, "noReview", true)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.title").value("Department-scoped assignment v2"));
+        mvc.perform(as(departmentAdmin, put("/api/tasks/" + assignedTask.path("id").asText()))
+                        .content(json("title", "Moved out", "assigneeId", outsideTask.path("assignee").path("id").asLong(), "noReview", true)))
+                .andExpect(status().isForbidden());
         mvc.perform(as(departmentAdmin, post("/api/tasks"))
                         .content(json("title", "Out-of-scope assignment",
                                 "assigneeId", outsideTask.path("assignee").path("id").asLong(), "noReview", true)))
@@ -499,7 +506,8 @@ class ApiIntegrationTest {
         mvc.perform(as(a[1], get("/api/tasks/abc"))).andExpect(status().isBadRequest());
         mvc.perform(as(a[1], post("/api/tasks")).content("{not json")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Invalid request: check the values you sent"));
-        mvc.perform(as(a[1], delete("/api/tasks/" + t.get("id").asText()))).andExpect(status().isNoContent());
+        // own work: only an admin (or the person a ticket on it is raised to) can delete it
+        mvc.perform(as(a[1], delete("/api/tasks/" + t.get("id").asText()))).andExpect(status().isForbidden());
     }
 
     @Test

@@ -11,6 +11,12 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.js'],
     // tests always use the built-in sample data, whatever .env says
     env: { TZ: 'Asia/Kolkata', VITE_USE_MOCK: 'true' },
+    // Node 25+ ships its own global localStorage (undefined without --localstorage-file),
+    // which hides jsdom's. Turn it off so tests use the browser-like one.
+    poolOptions: {
+      forks: { execArgv: ['--no-experimental-webstorage'] },
+      threads: { execArgv: ['--no-experimental-webstorage'] },
+    },
     coverage: { reporter: ['text-summary', 'html'], include: ['src/**/*.{js,jsx}'], exclude: ['src/test/**', 'src/main.jsx'] },
   },
 });

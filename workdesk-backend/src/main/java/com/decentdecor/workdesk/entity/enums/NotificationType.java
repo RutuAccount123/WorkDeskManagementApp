@@ -11,5 +11,8 @@ public enum NotificationType {
     OVERDUE,
     DAILY_DIGEST,
     WORKFLOW_STEP,
-    WORKFLOW_DONE
+    WORKFLOW_DONE,
+    TICKET_RAISED,
+    TICKET_RESOLVED,
+    LEAVE_ADDED
 }
