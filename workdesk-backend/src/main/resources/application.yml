@@ -69,7 +69,7 @@ wd:
     secret: ${WD_JWT_SECRET:}
     ttl: ${WD_JWT_TTL:12h}
   cors:
-    allowed-origins: ${WD_CORS_ORIGINS:http://localhost:5173}
+    allowed-origins: ${WD_CORS_ORIGINS:http://localhost:3000}
   login:
     max-attempts: 10
     window: 15m

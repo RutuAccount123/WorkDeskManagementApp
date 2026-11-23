@@ -15,12 +15,17 @@ import Modal from '@/components/ui/Modal.jsx';
 import LinkedText from '@/components/ui/LinkedText.jsx';
 import TaskForm from './TaskForm.jsx';
 import TaskTickets from '@/features/tickets/TaskTickets.jsx';
+import ProofFilePicker, { toAttachments } from './ProofFilePicker.jsx';
+import TaskProofs from './TaskProofs.jsx';
 import { ACTION_TEXT, actionsFor, yourTurn } from './taskActions.js';
 
 /**
  * Full page for one task. For a workflow (FMS) step it also shows the run's form
  * (to fill, or the filled answers), the How instructions with checklist, and every step's progress.
  */
+const HISTORY_PREVIEW = 5;
+const isFinish = (action) => ['COMPLETED', 'SUBMITTED'].includes(action.to);
+
 export default function TaskDetailPage() {
   const { id } = useParams();
   const taskId = Number(id);
@@ -38,6 +43,8 @@ export default function TaskDetailPage() {
   const [linkedRuns, setLinkedRuns] = useState([]);
   const [starting, setStarting] = useState(null);
   const [showAttachment, setShowAttachment] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const [proofFiles, setProofFiles] = useState([]);   // proof of work sent with Mark done / Submit
   const [schedule, setSchedule] = useState(null);   // the daily / weekly schedule this task is a copy of
 
   const load = useCallback(async () => {
@@ -73,7 +80,14 @@ export default function TaskDetailPage() {
       return;
     }
     if (action.to === 'CANCELLED' && !window.confirm('Cancel this task? It will be removed from the to-do lists.')) return;
-    guard(async () => { await taskService.changeStatus(taskId, action.to, note.trim() || null); setNote(''); });
+    // the person doing the work sends the note and any proof files together with Mark done / Submit
+    const withProof = isFinish(action) && task.assignee.id === user.id;
+    guard(async () => {
+      const attachments = withProof ? await toAttachments(proofFiles) : [];
+      await taskService.changeStatus(taskId, action.to, note.trim() || null, attachments);
+      setNote('');
+      if (withProof) setProofFiles([]);
+    });
   };
   const addComment = (e) => {
     e.preventDefault();
@@ -123,6 +137,7 @@ export default function TaskDetailPage() {
   const checksDone = checks.filter((c) => c.done).length;
   const open = ['TODO', 'IN_PROGRESS', 'SUBMITTED', 'REOPENED'].includes(task.status);
   const canTick = !isDepartmentAdmin && (mine || isAdmin) && open && !formGate;
+  const canAttachProof = mine && actions.some(isFinish);
 
   return (
     <div className="page task-page">
@@ -222,6 +237,33 @@ export default function TaskDetailPage() {
             </section>
           )}
 
+          <section className={`panel ${isFlow ? 'workflow-action-card' : ''}`}>
+            {isFlow && <h2 className="section-title">Update task</h2>}
+            {!isFlow && <StatusSteps status={task.status} />}
+            {!isDepartmentAdmin && isFlow && actions.length === 0 && <p className="muted">This workflow step is already complete.</p>}
+            {isDepartmentAdmin && <p className="muted small">Department admin access is view-only.</p>}
+            {/* order: note → proof files → Mark done / Submit (sent together, no extra page) */}
+            {!isDepartmentAdmin && !isFlow && <form onSubmit={addComment} className="comment-box">
+              <label htmlFor="note" className="section-title note-label">Notes</label>
+              <textarea id="note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} disabled={busy}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(e); } }}
+                placeholder="Write a note and press Enter. It is also sent with Mark done / Submit / Send back." />
+              <p className="muted small note-hint">Enter adds the note · Shift + Enter for a new line</p>
+            </form>}
+            {canAttachProof && <ProofFilePicker files={proofFiles} onChange={setProofFiles} onError={setError} disabled={busy} />}
+            {actions.length > 0 && (
+              <div className="actions task-actions">
+                {actions.map((a) => (
+                  <button key={a.to + a.label} className={`btn ${a.kind}`} disabled={busy} onClick={() => move(a)}>{a.label}</button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <TaskProofs taskId={task.id} refreshKey={task.updatedAt} />
+
+          <TaskTickets task={task} canRaise={!isDepartmentAdmin && open} onChanged={load} />
+
           {!isFlow && (
             <section className="panel">
               <div className="perf-head">
@@ -263,32 +305,10 @@ export default function TaskDetailPage() {
             </section>
           )}
 
-          <section className={`panel ${isFlow ? 'workflow-action-card' : ''}`}>
-            {isFlow && <h2 className="section-title">Update task</h2>}
-            {!isFlow && <StatusSteps status={task.status} />}
-            {actions.length > 0 && (
-              <div className="actions task-actions">
-                {actions.map((a) => (
-                  <button key={a.to + a.label} className={`btn ${a.kind}`} disabled={busy} onClick={() => move(a)}>{a.label}</button>
-                ))}
-              </div>
-            )}
-            {!isDepartmentAdmin && isFlow && actions.length === 0 && <p className="muted">This workflow step is already complete.</p>}
-            {isDepartmentAdmin && <p className="muted small">Department admin access is view-only.</p>}
-            {!isDepartmentAdmin && !isFlow && <form onSubmit={addComment} className="comment-box">
-              <label htmlFor="note" className="section-title note-label">Notes</label>
-              <textarea id="note" rows={3} value={note} onChange={(e) => setNote(e.target.value)}
-                placeholder="Add a note or update. Also used as the reason when sending work back." />
-              <button className="btn ghost small" disabled={busy || !note.trim()}>Add note</button>
-            </form>}
-          </section>
-
-          <TaskTickets task={task} canRaise={!isDepartmentAdmin && open} onChanged={load} />
-
           {!isFlow && <section className="panel">
             <h2 className="section-title">History</h2>
             <ol className="timeline">
-              {[...history].reverse().map((h) => (
+              {[...history].reverse().slice(0, showAllHistory ? undefined : HISTORY_PREVIEW).map((h) => (
                 <li key={h.id} className={`tl tl-${h.action.toLowerCase()}`}>
                   <div>
                     <strong>{h.actorName}</strong>{' '}
@@ -301,6 +321,11 @@ export default function TaskDetailPage() {
                 </li>
               ))}
             </ol>
+            {history.length > HISTORY_PREVIEW && (
+              <button className="link-btn history-more" onClick={() => setShowAllHistory((v) => !v)}>
+                {showAllHistory ? 'Show less' : `Show all ${history.length}`}
+              </button>
+            )}
           </section>}
         </div>
 

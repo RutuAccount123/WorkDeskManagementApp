@@ -4,6 +4,7 @@ import { useAuth } from '@/features/auth/AuthContext.jsx';
 import { DAYS, PRIORITIES, PRIORITY_LABEL, dayLabel, isoDay, toLocalInput } from '@/utils/format.js';
 import { encodeImage } from '@/utils/image.js';
 import Modal from '@/components/ui/Modal.jsx';
+import EmployeePicker from '@/components/ui/EmployeePicker.jsx';
 
 const NO_REVIEW = 'none';
 
@@ -161,27 +162,18 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
           }} />
         </label>
         {image && <img className="task-reference-image" src={`data:image/jpeg;base64,${image}`} alt="Task reference" />}
-        <fieldset className="assignee-picker">
-          <legend>Assign to</legend>
-          {!task && !isDepartmentAdmin && (
-            <label className="assignee-option">
-              <input type="checkbox" checked={allOtherAssigneesSelected}
-                onChange={toggleAllOtherAssignees} />
-              <span>Select all employees except me</span>
-            </label>
-          )}
-          <div className="assignee-options">
-            {people.map((p) => (
-              <label key={p.id} className="assignee-option">
-                <input type="checkbox" checked={assigneeIds.includes(String(p.id))}
-                  onChange={() => toggleAssignee(String(p.id))} />
-                <span>{p.id === user.id ? `Me (${p.fullName})` : p.fullName}
-                  {p.department && <small className="muted">{p.department}</small>}
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        <EmployeePicker
+          people={people}
+          selectedIds={assigneeIds}
+          onToggle={(id) => toggleAssignee(String(id))}
+          currentUserId={user.id}
+          multiple={!task}
+          selectAll={!task && !isDepartmentAdmin ? {
+            label: 'Select all employees except me',
+            checked: allOtherAssigneesSelected,
+            onChange: toggleAllOtherAssignees,
+          } : undefined}
+        />
         {assigneeIds.length > 1 && (
           <p className="hint">
             A separate task will be created for each selected person. Each person can track their own copy.

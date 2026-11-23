@@ -9,7 +9,7 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   server: {
-    port: 5173,
+    port: 3000,
     // In development, /api calls go to the Spring Boot backend (only used when VITE_USE_MOCK=false). Same port as server.port in the backend.
     proxy: { '/api': 'http://localhost:8082' },
   },

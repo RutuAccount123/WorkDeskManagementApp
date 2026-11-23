@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { employeeService, formLinkUrl, taskService, workflowService } from '@/services/index.js';
 import { useAuth } from '@/features/auth/AuthContext.jsx';
 import Modal from '@/components/ui/Modal.jsx';
+import EmployeePicker from '@/components/ui/EmployeePicker.jsx';
 
 /** The message sent with the link (WhatsApp and the task). */
 export const shareMessage = (name, url) => `Please fill this form: ${name}\n${url}`;
@@ -114,19 +115,8 @@ export default function FormLinkDialog({ workflow, canManage, onClose, onChanged
           <form className="form form-link-assign" onSubmit={assign}>
             <h3 className="section-title">Ask Work Desk members to fill it</h3>
             <p className="muted small">Each person you choose gets a task with this link. They mark it done after filling the form.</p>
-            <fieldset className="assignee-picker">
-              <legend>Assign to</legend>
-              <div className="assignee-options">
-                {people.map((p) => (
-                  <label key={p.id} className="assignee-option">
-                    <input type="checkbox" checked={chosen.includes(p.id)} onChange={() => toggle(p.id)} disabled={busy} />
-                    <span>{p.id === user?.id ? `Me (${p.fullName})` : p.fullName}
-                      {p.department && <small className="muted">{p.department}</small>}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+            <EmployeePicker people={people} selectedIds={chosen} onToggle={toggle}
+              currentUserId={user?.id} disabled={busy} />
             <div className="grid-2">
               <label>Due date (optional)
                 <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} disabled={busy} />

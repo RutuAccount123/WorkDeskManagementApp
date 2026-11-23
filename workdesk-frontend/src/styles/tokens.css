@@ -1,54 +1,54 @@
 /* =====================================================================
-   DESIGN TOKENS — fresh lime accents, deep forest navigation and mint surfaces.
+   DESIGN TOKENS — soft blue-green to green: teal navigation, blue-green buttons, cool mint surfaces.
    ===================================================================== */
 :root {
   /* surfaces */
-  --bg: #F4F8F3;
+  --bg: #F2F7F7;
   --surface: #FFFFFF;
-  --surface-2: #F7FAF6;
-  --border: #E5EDE3;
-  --border-strong: #CFDCCB;
+  --surface-2: #F5FAF9;
+  --border: #E0EBEA;
+  --border-strong: #C8DAD8;
 
   /* text (deep navy, never pure black) */
-  --text: #203326;
-  --text-2: #465B4A;
-  --muted: #718174;
+  --text: #1E3236;
+  --text-2: #42595C;
+  --muted: #6C8285;
 
   /* sidebar (the dark part) */
-  --nav-bg: #123B2A;
-  --nav-bg-2: #123B2A;
-  --nav-text: #C6DDCC;
+  --nav-bg: #17505C;
+  --nav-bg-2: #19614E;
+  --nav-text: #CBE2E2;
   --nav-text-strong: #FFFFFF;
-  --nav-section: #91B49B;
+  --nav-section: #94BDBA;
   --nav-hover: rgba(255, 255, 255, 0.08);
   --nav-active: rgba(255, 255, 255, 0.14);
 
   /* brand accent (the rich colour) */
-  --primary: #2E7D16;
-  --primary-hover: #256214;
-  --primary-soft: #EDFAE7;
-  --primary-text: #246A12;
-  --on-primary: #17381A;
+  --primary: #23797F;
+  --primary-hover: #1C6267;
+  --primary-soft: #E4F3F1;
+  --primary-text: #1D6A6F;
+  --on-primary: #FFFFFF;
 
-  /* solid accent colours (no gradients) */
-  --accent: #54D621;
-  --hero-bg: #1B6632;
-  --button-bg: #54D621;
-  --nav-solid: #123B2A;
+  /* accent colours; --button-bg is the blue-green → green gradient of the dashboard */
+  --accent: #5FD3A6;
+  --hero-bg: #2A7F8A;
+  --button-bg: linear-gradient(120deg, #2C7E95 0%, #2E9583 55%, #379E72 100%);
+  --nav-solid: #17505C;
 
   /* faint pastel card fills */
-  --pastel-green: #EFF9E9;
-  --pastel-pink: #EFF9E9;
+  --pastel-green: #E8F5F1;
+  --pastel-pink: #E8F5F1;
   --pastel-peach: #FFF1E6;
-  --pastel-mint: #EAF7E5;
-  --pastel-sky: #E9F5FF;
+  --pastel-mint: #E6F4EE;
+  --pastel-sky: #E8F1F6;
   --pastel-rose: #FFEDEF;
 
   /* status: strong text on a faint tint */
   --todo: #B54708;      --todo-bg: #FEF6EE;      --todo-line: #F79009;
-  --progress: #175CD3;  --progress-bg: #EFF6FF;  --progress-line: #2E90FA;
-  --review: #3F751F;    --review-bg: #EFF6E7;    --review-line: #79A94D;
-  --done: #267A25;      --done-bg: #ECF9E8;      --done-line: #2E7D16;
+  --progress: #2F6886;  --progress-bg: #EAF2F7;  --progress-line: #4A8FB0;
+  --review: #1E7268;    --review-bg: #E6F5F2;    --review-line: #2A9D8F;
+  --done: #237A55;      --done-bg: #E8F6EE;      --done-line: #379E72;
   --overdue: #B42318;   --overdue-bg: #FEF3F2;   --overdue-line: #F04438;
   --back: #93370D;      --back-bg: #FFFAEB;      --back-line: #FDB022;
   --holiday: #C4320A;   --holiday-bg: #FFF4ED;   --holiday-line: #FB6514;
@@ -70,10 +70,10 @@
   --r-md: 12px;
   --r-lg: 18px;
   --r-pill: 999px;
-  --shadow-sm: 0 1px 3px rgba(35, 91, 24, 0.06);
-  --shadow-md: 0 2px 6px rgba(35, 91, 24, 0.06), 0 10px 24px rgba(35, 91, 24, 0.08);
+  --shadow-sm: 0 1px 3px rgba(23, 80, 92, 0.07);
+  --shadow-md: 0 2px 6px rgba(23, 80, 92, 0.06), 0 10px 24px rgba(23, 80, 92, 0.08);
   --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.16);
-  --focus: 0 0 0 4px rgba(84, 214, 33, 0.28);
+  --focus: 0 0 0 4px rgba(42, 138, 140, 0.25);
 
   /* layout */
   --sidebar-w: 256px;

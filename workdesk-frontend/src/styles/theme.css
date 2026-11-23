@@ -1,53 +1,58 @@
 /* =====================================================================
-   THEME LAYER — fresh green accents, deep forest navigation and soft mint cards.
+   THEME LAYER — soft blue-green to green, everywhere (sign-in, menu, buttons, cards).
    Loaded last, so it styles on top of the base components.
    ===================================================================== */
 
 /* ---------- side menu: solid forest green ---------- */
-.sidebar { background: var(--nav-solid); }
-.brand-mark { background: var(--button-bg); color: #17381A; }
+/* blue-green to green, top to bottom */
+/* a very small touch of parrot green only at the green end (bottom) */
+.sidebar { background: radial-gradient(circle at 50% 100%, rgba(140, 214, 90, 0.3) 0, rgba(140, 214, 90, 0) 90px), linear-gradient(180deg, #17505C 0%, #186155 50%, #1B6B47 100%); }
+.brand-mark { background: var(--button-bg); color: #fff; }
 .nav-item.active { background: var(--nav-active); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
 .nav-item.active::before { background: var(--accent); }
 .nav-item.active svg { color: var(--accent); }
-.mobile-tabs { background: var(--nav-solid); }
+.mobile-tabs { background: linear-gradient(90deg, #17505C 0%, #1B6B47 100%); }
 
 /* ---------- buttons: solid primary ---------- */
-.btn.primary { background: var(--button-bg); box-shadow: none; }
-.btn.primary:hover:not(:disabled) { background: #68E344; filter: none; }
+.btn.primary { background: var(--button-bg); color: #fff; border-color: transparent; box-shadow: none; }
+.btn.primary:hover:not(:disabled) { background: var(--button-bg); filter: brightness(1.08); }
 
-/* ---------- welcome banner (dashboard & my work) ---------- */
+/* ---------- welcome banner (dashboard & my work): soft blue-green to green ---------- */
 .page-head.hero {
   position: relative; overflow: hidden; align-items: center;
-  padding: 28px 30px; border-radius: var(--r-lg); background: var(--hero-bg); color: #fff;
+  padding: 28px 30px; border-radius: var(--r-lg); color: #fff;
+  background: radial-gradient(circle at 100% 100%, rgba(140, 214, 90, 0.3) 0, rgba(140, 214, 90, 0) 14%),
+    linear-gradient(120deg, #2C6E8E 0%, #2A8A8C 50%, #379E72 100%);
 }
 .page-head.hero h1 { color: #fff; font-size: var(--fs-2xl); font-weight: 800; }
-.page-head.hero p { color: rgba(255, 255, 255, 0.85); }
-.page-head.hero .btn.primary { background: var(--accent); color: #17381A; }
-.page-head.hero .btn.primary:hover:not(:disabled) { background: #6FE446; }
-.page-head.hero .btn.ghost { background: #145A34; border-color: #54D621; color: #fff; }
-.page-head.hero .btn.ghost:hover:not(:disabled) { background: #10482B; }
+.page-head.hero p { color: rgba(255, 255, 255, 0.88); }
+.page-head.hero .btn.primary { background: #fff; color: var(--primary-text); }
+.page-head.hero .btn.primary:hover:not(:disabled) { background: #EAF6F4; filter: none; }
+.page-head.hero .btn.ghost { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.5); color: #fff; }
+.page-head.hero .btn.ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.24); }
 
 /* ---------- panels: soft lift ---------- */
 .panel { border-color: transparent; box-shadow: var(--shadow-md); }
 
-/* ---------- headline cards: pastel fill, bold icon & number ---------- */
+/* ---------- headline cards: pastel fill, bold icon & number (soft blue-green / green mix) ---------- */
 .stat {
   position: relative; overflow: hidden; border: 0; padding: 20px 22px;
-  background: var(--card-fill, var(--pastel-green)); box-shadow: none;
+  background: var(--card-fill, #E7F3F4); box-shadow: none;
 }
 a.stat:hover { box-shadow: var(--shadow-md); border: 0; }
-.stat-icon { width: 50px; height: 50px; border-radius: 14px; background: var(--tone-line, var(--primary)); color: #fff; box-shadow: none; }
+.stat-icon { width: 50px; height: 50px; border-radius: 14px; background: var(--tone-line, #2F86A0); color: #fff; box-shadow: none; }
 .stat-value { color: var(--tone, var(--text)); }
 .stat-label { color: var(--text-2); }
+.tone-pending { --card-fill: #E7F2F5; --tone-line: #2F86A0; --tone: #236A7F; }
 .tone-overdue { --card-fill: var(--pastel-rose); --tone-line: #F43F5E; --tone: #BE123C; }
 .tone-today { --card-fill: var(--pastel-peach); --tone-line: #F97316; --tone: #C2410C; }
-.tone-review { --card-fill: var(--pastel-green); --tone-line: #79A94D; --tone: #3F751F; }
-.tone-progress { --card-fill: var(--pastel-sky); --tone-line: #0EA5E9; --tone: #0369A1; }
-.tone-done { --card-fill: var(--pastel-mint); --tone-line: var(--primary); --tone: #267A25; }
+.tone-review { --card-fill: #E6F5F2; --tone-line: #2A9D8F; --tone: #1E7268; }
+.tone-progress { --card-fill: #E8F1F6; --tone-line: #4A8FB0; --tone: #2F6886; }
+.tone-done { --card-fill: #E8F6EE; --tone-line: #379E72; --tone: #237A55; }
 
 /* ---------- employee cards: tinted header band ---------- */
 .member { border: 0; border-top: 0; padding: 0; overflow: hidden; box-shadow: var(--shadow-md); }
-.member:hover { box-shadow: 0 6px 18px rgba(28, 67, 38, 0.12); }
+.member:hover { box-shadow: 0 6px 18px rgba(23, 80, 92, 0.12); }
 .member-top { padding: 16px 18px 14px; background: color-mix(in srgb, var(--member-color) 10%, white); }
 .member-top .avatar { box-shadow: 0 0 0 3px #fff; }
 .member-counts, .member-work, .member-empty, .member-more { margin: 0 18px; }
@@ -73,8 +78,39 @@ a.stat:hover { box-shadow: var(--shadow-md); border: 0; }
 /* ---------- task lists & calendar ---------- */
 .task-list { border-color: var(--border); }
 .task-row:hover, .work-item:hover { background: var(--pastel-green); }
-.week-day.is-today, .month-cell.is-today { background: #F2F8EF; }
+.week-day.is-today, .month-cell.is-today { background: #EEF7F5; }
 .day-col { background: var(--surface-2); }
 .dc-todo { background: #FFFBF6; }
 .dc-progress { background: #F7FBFF; }
-.dc-done { background: #F0F8F1; }
+.dc-done { background: #EEF7F3; }
+
+/* ---------- task page: compact, everything close together ---------- */
+.page.task-page { gap: 10px; }
+.task-page .back-link { margin-bottom: -4px; }
+.task-page-head { gap: 10px; align-items: center; }
+.task-page-head h1 { margin: 2px 0 6px; font-size: var(--fs-lg); line-height: 1.25; }
+.task-page .task-chips { gap: 6px; }
+.task-page .big-hint { font-size: var(--fs-sm); padding: 8px 12px; }
+.task-page .task-layout { gap: 12px; }
+.task-page .task-main-col { gap: 10px; }
+.task-page .task-main-col .panel { padding: 14px 16px; }
+.task-page .task-main-col .section-title { font-size: var(--fs-base); margin-bottom: 8px; }
+.task-page .perf-head { margin-bottom: 8px; }
+.task-page .description { padding: 8px 12px; margin: 0; }
+.task-page .task-reference-image { max-height: 220px; margin-top: 8px; }
+.task-page .steps { margin-bottom: 4px; }
+.task-page .note-label { margin: 10px 0 0; }
+.task-page .comment-box { gap: 6px; }
+.task-page .comment-box textarea { padding: 8px 10px; min-height: 0; }
+.task-page .proof-picker { margin-top: 8px; gap: 4px; }
+.task-page .task-actions { margin-top: 10px; gap: 6px; }
+.task-page .timeline { gap: 8px; }
+.task-page .tl-comment { margin: 4px 0; padding: 6px 10px; }
+.task-page .history-more { margin-top: 8px; font-size: var(--fs-sm); }
+.task-page .proof-list { margin-top: 0; gap: 6px; }
+.task-page .proof-item { padding: 6px; }
+.task-page .proof-thumb, .task-page .proof-icon { width: 44px; height: 44px; }
+.task-page .linked-fms { margin-bottom: 0; gap: 6px; }
+.task-page .linked-fms li { padding: 8px 12px; }
+.task-page .how-note-box { margin-top: 8px; }
+.task-page .note-hint { margin: 0; }

@@ -77,7 +77,7 @@ export default function Overview() {
       {error && <p className="error">{error}</p>}
 
       <div className="stats">
-        <Stat value={stats?.pending} label="Pending" tone="pending" icon="ticket" to={isAdmin ? '/tasks?status=pending' : undefined} />
+        <Stat value={stats?.pending} label="Waiting on ticket" tone="pending" icon="ticket" to={isAdmin ? '/tasks?status=pending' : undefined} />
         <Stat value={stats?.overdue} label="Overdue" tone="overdue" icon="alert" to={isAdmin ? '/tasks?overdue=1' : undefined} />
         <Stat value={stats?.dueToday} label="Due today" tone="today" icon="clock" to={isAdmin ? '/tasks?dueToday=1' : undefined} />
         {isAdmin

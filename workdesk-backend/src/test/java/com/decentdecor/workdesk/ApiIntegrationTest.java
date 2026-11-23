@@ -276,6 +276,61 @@ class ApiIntegrationTest {
     }
 
     @Test
+    void assigneeAttachesProofOfWorkWhenSubmittingAndReviewerCanOpenIt() throws Exception {
+        String[] assignee = newEmployee("Proof Assignee");
+        String[] reviewer = newEmployee("Proof Reviewer");
+        String[] outsider = newEmployee("Proof Outsider");
+        String id = read(mvc.perform(as(admin, post("/api/tasks"))
+                        .content(json("title", "Fix the site gate", "assigneeId", Long.parseLong(assignee[0]),
+                                "reviewerId", Long.parseLong(reviewer[0]))))
+                .andExpect(status().isCreated()).andReturn()).get("id").asText();
+        mvc.perform(as(assignee[1], post("/api/tasks/" + id + "/status")).content(json("status", "IN_PROGRESS")))
+                .andExpect(status().isOk());
+
+        String pdf = Base64.getEncoder().encodeToString("%PDF-1.4 proof".getBytes());
+        var photo = java.util.Map.of("fileName", "gate.jpg", "contentType", "image/jpeg", "data", pngBase64());
+        var report = java.util.Map.of("fileName", "report.pdf", "data", pdf);
+
+        // a file type that is not allowed: nothing is saved and the task does not move
+        mvc.perform(as(assignee[1], post("/api/tasks/" + id + "/status"))
+                        .content(json("status", "SUBMITTED", "attachments", java.util.List.of(
+                                photo, java.util.Map.of("fileName", "run.exe", "data", pdf)))))
+                .andExpect(status().isBadRequest());
+        mvc.perform(as(assignee[1], get("/api/tasks/" + id + "/attachments")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+
+        mvc.perform(as(assignee[1], post("/api/tasks/" + id + "/status"))
+                        .content(json("status", "SUBMITTED", "attachments", java.util.List.of(photo, report))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUBMITTED"));
+
+        JsonNode list = read(mvc.perform(as(reviewer[1], get("/api/tasks/" + id + "/attachments")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].fileName").value("gate.jpg"))
+                .andExpect(jsonPath("$[0].contentType").value("image/jpeg"))
+                .andExpect(jsonPath("$[0].uploadedByName").value("Proof Assignee"))
+                .andExpect(jsonPath("$[0].data").doesNotExist())
+                .andExpect(jsonPath("$[1].contentType").value("application/pdf"))
+                .andReturn());
+        mvc.perform(as(reviewer[1], get("/api/tasks/" + id + "/attachments/" + list.get(1).get("id").asText())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").value(pdf));
+        mvc.perform(as(outsider[1], get("/api/tasks/" + id + "/attachments"))).andExpect(status().isNotFound());
+
+        // proof goes only with marking done / submitting
+        mvc.perform(as(reviewer[1], post("/api/tasks/" + id + "/status"))
+                        .content(json("status", "REOPENED", "comment", "Again", "attachments", java.util.List.of(report))))
+                .andExpect(status().isBadRequest());
+    }
+
+    String pngBase64() throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(4, 4, BufferedImage.TYPE_INT_RGB), "png", out);
+        return Base64.getEncoder().encodeToString(out.toByteArray());
+    }
+
+    @Test
     void reviewerCanApproveMultipleSubmittedTasksInOneRequest() throws Exception {
         String[] firstAssignee = newEmployee("Approval Assignee One");
         String[] secondAssignee = newEmployee("Approval Assignee Two");

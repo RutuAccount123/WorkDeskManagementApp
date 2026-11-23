@@ -354,6 +354,37 @@ describe('task page', () => {
     expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send back' })).toBeInTheDocument();
   });
+  it('marking a task done lets the person attach proof of work, shown on the task page', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');   // Rahul, own task with no review
+    const task = await taskService.create({ title: 'Photo of the fixed gate', status: 'IN_PROGRESS' });
+    start(`/tasks/${task.id}`);
+    // note, then files, then Mark done: sent straight away, no extra window
+    await user.type(await screen.findByLabelText('Notes'), 'Gate fixed');
+    await user.upload(screen.getByLabelText(/Attach proof of work/),
+      [new File(['photo'], 'gate.png', { type: 'image/png' }), new File(['%PDF'], 'bill.pdf', { type: 'application/pdf' })]);
+    expect(screen.getByText('gate.png')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Mark done' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    const proofs = (await screen.findByRole('heading', { name: 'Proof of work' })).closest('section');
+    expect(await within(proofs).findByText('gate.png')).toBeInTheDocument();
+    expect(within(proofs).getByText('bill.pdf')).toBeInTheDocument();
+    expect((await taskService.get(task.id)).status).toBe('COMPLETED');
+    expect((await taskService.attachments(task.id)).map((a) => a.fileName)).toEqual(['gate.png', 'bill.pdf']);
+    expect((await taskService.activity(task.id)).some((a) => a.comment === 'Gate fixed')).toBe(true);
+  });
+  it('a note is added by pressing Enter, with no Add note button', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');
+    const task = await taskService.create({ title: 'Note by Enter key', status: 'IN_PROGRESS' });
+    start(`/tasks/${task.id}`);
+    const box = await screen.findByLabelText('Notes');
+    expect(screen.queryByRole('button', { name: 'Add note' })).not.toBeInTheDocument();
+    await user.type(box, 'Called the supplier{Enter}');
+    await waitFor(async () => expect((await taskService.activity(task.id)).some((a) => a.comment === 'Called the supplier')).toBe(true));
+    await waitFor(() => expect(box).toHaveValue(''));
+  });
   it('send back without a note asks for one', async () => {
     const user = userEvent.setup();
     tokenStore.set('mock-1');

@@ -117,6 +117,42 @@ function taskOut(t, includeImage = false) {
     submittedAt: t.submittedAt, completedAt: t.completedAt,
   };
 }
+const PROOF_TYPES = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic',
+  pdf: 'application/pdf', txt: 'text/plain', csv: 'text/csv', doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', zip: 'application/zip',
+};
+
+function attachmentOut(a) {
+  const by = db.employees.find((e) => e.id === a.uploadedById);
+  return { id: a.id, fileName: a.fileName, contentType: a.contentType, sizeBytes: a.sizeBytes,
+    uploadedByName: by?.fullName || '', createdAt: a.createdAt, data: null };
+}
+
+/** Proof of work sent with "Mark done" / "Submit": checked first, then saved (same rules as the server). */
+function saveProofs(t, me, to, files) {
+  if (!['COMPLETED', 'SUBMITTED'].includes(to)) throw bad('Attach proof only when marking the task done or submitting it');
+  if (t.assigneeId !== me.id && me.role !== 'ADMIN') throw forbidden('Only the person doing this task can attach proof of work');
+  if (files.length > 5) throw bad('Attach up to 5 files at a time');
+  db.attachments ||= [];
+  if (db.attachments.filter((a) => a.taskId === t.id).length + files.length > 20) throw bad('A task can have up to 20 proof files');
+  const checked = files.map((f) => {
+    const name = String(f.fileName || '').trim();
+    const type = PROOF_TYPES[name.split('.').pop().toLowerCase()];
+    if (!name || !type) throw bad(`"${name}" is not a supported file. Attach a photo, PDF, Word, Excel, PowerPoint, text or ZIP file`);
+    const size = Math.floor((String(f.data || '').length * 3) / 4);
+    if (!size) throw bad(`"${name}" is empty`);
+    if (size > 5 * 1024 * 1024) throw bad(`"${name}" is larger than 5 MB`);
+    return { fileName: name, contentType: type, sizeBytes: size, data: f.data };
+  });
+  for (const f of checked) {
+    db.attachments.push({ id: nextId(db.attachments), taskId: t.id, uploadedById: me.id, createdAt: nowIso(), ...f });
+  }
+  log(t.id, me.id, 'COMMENTED', null, null, `Attached proof of work: ${checked.map((f) => f.fileName).join(', ')}`);
+}
+
 function activityOut(a) {
   return {
     id: a.id, action: a.action, actorName: a.actorId ? empById(a.actorId)?.fullName : 'System',
@@ -1011,6 +1047,15 @@ function route(method, path, query, body, me) {
       notify(to.id, id, 'TICKET_RAISED', `${me.fullName} raised a ticket to you on "${t.title}": ${note}`);
       return ticketOut(k);
     }
+    if (seg[2] === 'attachments' && method === 'GET') {
+      const list = (db.attachments || []).filter((a) => a.taskId === id);
+      if (seg[3]) {
+        const a = list.find((x) => x.id === Number(seg[3]));
+        if (!a) throw notFound('Attachment');
+        return { ...attachmentOut(a), data: a.data };
+      }
+      return list.map(attachmentOut);
+    }
     if (seg[2] === 'activity') return db.activity.filter((a) => a.taskId === id).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).map(activityOut);
 
     if (seg[2] === 'leave-decision' && method === 'POST') {
@@ -1087,6 +1132,8 @@ function route(method, path, query, body, me) {
         const run = db.workflowRuns.find((r) => r.id === t.workflowRunId);
         if (run?.taskIds[t.workflowStep]) throw bad('The next step has already started, so this step stays done');
       }
+      const files = Array.isArray(body.attachments) ? body.attachments : [];
+      if (files.length) saveProofs(t, me, to, files);
       const now = nowIso();
       t.status = to;
       t.updatedAt = now;

@@ -101,13 +101,13 @@ a.stat:hover { text-decoration: none; border-color: var(--border-strong); box-sh
 .chip::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .chip-todo { background: var(--todo-bg); color: var(--todo); border-color: #FEDF89; }
 .chip-progress { background: var(--progress-bg); color: var(--progress); border-color: #B2DDFF; }
-.chip-review { background: var(--review-bg); color: var(--review); border-color: #D4E5C5; }
+.chip-review { background: var(--review-bg); color: var(--review); border-color: #C4E3DD; }
 .chip-done { background: var(--done-bg); color: var(--done); border-color: #ABEFC6; }
 .chip-back { background: var(--back-bg); color: var(--back); border-color: #FEDF89; }
 .chip-cancel { background: var(--surface-2); color: var(--muted); border-color: var(--border); }
 .chip-late { background: var(--overdue-bg); color: var(--overdue); border-color: #FECDCA; }
 .tag { display: inline-block; padding: 1px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; }
-.tag-review { background: var(--review-bg); color: var(--review); border-color: #D4E5C5; }
+.tag-review { background: var(--review-bg); color: var(--review); border-color: #C4E3DD; }
 .tag-warn { background: var(--back-bg); color: var(--back); border-color: #FEDF89; }
 .repeat-badge { display: inline-block; padding: 1px 9px; border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 700; }
 .rb-daily { background: var(--daily-bg); color: var(--daily); }

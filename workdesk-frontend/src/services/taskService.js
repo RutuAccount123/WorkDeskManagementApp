@@ -64,7 +64,14 @@ export const taskService = {
   },
   update: (id, data) => http(`/api/tasks/${id}`, { method: 'PUT', body: data }),
   remove: (id) => http(`/api/tasks/${id}`, { method: 'DELETE' }),
-  changeStatus: (id, status, comment) => http(`/api/tasks/${id}/status`, { method: 'POST', body: { status, comment } }),
+  /** attachments: optional proof of work [{ fileName, contentType, data (Base64) }] when marking done / submitting. */
+  changeStatus: (id, status, comment, attachments) => http(`/api/tasks/${id}/status`, {
+    method: 'POST', body: attachments?.length ? { status, comment, attachments } : { status, comment },
+  }),
+  /** Proof-of-work files on a task (no contents). */
+  attachments: (id) => http(`/api/tasks/${id}/attachments`),
+  /** One proof-of-work file with its contents (Base64 in data). */
+  attachment: (id, attachmentId) => http(`/api/tasks/${id}/attachments/${attachmentId}`),
   /** Tick or untick one checklist item (index) on a workflow step. */
   tick: (id, index, done) => http(`/api/tasks/${id}/checklist`, { method: 'POST', body: { index, done } }),
   addComment: (id, comment) => http(`/api/tasks/${id}/comments`, { method: 'POST', body: { comment } }),

@@ -49,6 +49,18 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <!-- same as the app: the JVM runs in UTC so TIME columns are not shifted -->
+          <jvmArguments>-Duser.timezone=UTC</jvmArguments>
+        </configuration>
+      </plugin>
+      <plugin>
+        <!-- tests run in UTC on every machine, the same as GitHub CI and the server -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <argLine>-Duser.timezone=UTC</argLine>
+        </configuration>
       </plugin>
     </plugins>
   </build>

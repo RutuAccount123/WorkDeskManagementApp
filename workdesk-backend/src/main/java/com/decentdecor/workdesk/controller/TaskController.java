@@ -1,6 +1,7 @@
 package com.decentdecor.workdesk.controller;
 
 import com.decentdecor.workdesk.dto.task.ActivityResponse;
+import com.decentdecor.workdesk.dto.task.AttachmentResponse;
 import com.decentdecor.workdesk.dto.task.ChecklistTickRequest;
 import com.decentdecor.workdesk.dto.task.CommentRequest;
 import com.decentdecor.workdesk.dto.task.LeaveDecisionRequest;
@@ -11,6 +12,7 @@ import com.decentdecor.workdesk.dto.task.TaskFilter;
 import com.decentdecor.workdesk.dto.task.TaskRequest;
 import com.decentdecor.workdesk.dto.task.TaskResponse;
 import com.decentdecor.workdesk.security.CurrentUser;
+import com.decentdecor.workdesk.service.TaskProofService;
 import com.decentdecor.workdesk.service.TaskService;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
@@ -34,9 +36,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/tasks")
 public class TaskController {
     private final TaskService taskService;
+    private final TaskProofService proofs;
 
-    public TaskController(TaskService taskService) {
+    public TaskController(TaskService taskService, TaskProofService proofs) {
         this.taskService = taskService;
+        this.proofs = proofs;
     }
 
     /** ?scope=assigned|created|review|all &status=TODO&status=… &assigneeId= &priority= &overdue= &q= &workFrom= &workTo= */
@@ -91,7 +95,20 @@ public class TaskController {
     @PostMapping("/{id}/status")
     public ResponseEntity<TaskResponse> changeStatus(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id,
                                                      @Valid @RequestBody StatusRequest request) {
-        return ResponseEntity.ok(taskService.changeStatus(me, id, request.status(), request.comment()));
+        return ResponseEntity.ok(proofs.changeStatus(me, id, request));
+    }
+
+    /** Proof-of-work files on a task (without their contents). */
+    @GetMapping("/{id}/attachments")
+    public ResponseEntity<List<AttachmentResponse>> attachments(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id) {
+        return ResponseEntity.ok(proofs.list(me, id));
+    }
+
+    /** One proof-of-work file with its contents (Base64). */
+    @GetMapping("/{id}/attachments/{attachmentId}")
+    public ResponseEntity<AttachmentResponse> attachment(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id,
+                                                         @PathVariable Long attachmentId) {
+        return ResponseEntity.ok(proofs.get(me, id, attachmentId));
     }
 
     @PostMapping("/{id}/comments")
