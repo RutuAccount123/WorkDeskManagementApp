@@ -85,6 +85,11 @@ public class RecurringGenerator {
         return tasks.existsCopyBetween(tpl.getId(), time.startOf(day), time.startOf(day.plusDays(1)));
     }
 
+    /** The id of the copy for this day, if one exists. */
+    public java.util.Optional<Long> copyIdOn(RecurringTemplate tpl, LocalDate day) {
+        return tasks.findCopyIdsBetween(tpl.getId(), time.startOf(day), time.startOf(day.plusDays(1))).stream().findFirst();
+    }
+
     /** Makes the copy for one day. Only today's copy is announced; future ones appear quietly in the calendar. */
     @Transactional
     public Task makeCopy(RecurringTemplate tpl, LocalDate day) {
@@ -101,9 +106,9 @@ public class RecurringGenerator {
         t.setStatus(TaskStatus.TODO);
         Instant scheduledAt = tpl.getScheduledTime() == null ? null : time.at(day, tpl.getScheduledTime());
         t.setScheduledAt(scheduledAt);
-        t.setDueAt(scheduledAt == null
-                ? time.at(day, tpl.getDueTime())
-                : scheduledAt.plus(Duration.ofMinutes(tpl.getDurationMinutes())));
+        t.setDueAt(scheduledAt != null && tpl.getDurationMinutes() != null
+                ? scheduledAt.plus(Duration.ofMinutes(tpl.getDurationMinutes()))
+                : time.at(day.plusDays(tpl.getDueDaysAfter()), tpl.getDueTime()));
         t.setEstimatedHours(tpl.getEstimatedHours());
         t.setCreatedAt(now);
         t.setUpdatedAt(now);

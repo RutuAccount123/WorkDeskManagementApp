@@ -10,4 +10,6 @@ export const recurringService = {
   setActive: (id, active) => http(`/api/recurring/${id}/active?value=${active}`, { method: 'PATCH' }),
   remove: (id) => http(`/api/recurring/${id}`, { method: 'DELETE' }),
   generateNow: (id) => http(`/api/recurring/${id}/generate-now`, { method: 'POST' }),
+  /** Makes (or finds) the task for one upcoming day, so it can be opened. Returns { taskId }. */
+  copyFor: (id, date) => http(`/api/recurring/${id}/copies?date=${date}`, { method: 'POST' }),
 };

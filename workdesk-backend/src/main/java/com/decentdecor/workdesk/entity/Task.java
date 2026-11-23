@@ -151,10 +151,14 @@ public class Task {
 
     /**
      * The day this work belongs to on the calendars and "today" lists: a done task belongs to the day it was
-     * finished; otherwise its due date, or the day it was added. So overdue work finished today shows today.
+     * finished; work started ahead of its date belongs to the day it was started; otherwise its due date,
+     * or the day it was added. So overdue work finished today shows today, and upcoming work started today shows today.
      */
     public Instant workAt() {
         if (status == TaskStatus.COMPLETED && completedAt != null) return completedAt;
+        // started ahead of its date: the work belongs to the day it was started
+        if ((status == TaskStatus.IN_PROGRESS || status == TaskStatus.SUBMITTED)
+                && startedAt != null && startedAt.isBefore(plannedAt())) return startedAt;
         return plannedAt();
     }
 

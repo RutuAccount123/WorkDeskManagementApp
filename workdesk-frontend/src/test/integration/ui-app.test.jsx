@@ -1,6 +1,6 @@
 // Full app in a browser-like page: sign in, move around, check every screen uses the same format.
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '@/app/App.jsx';
 import { ADMIN_NAV, EMPLOYEE_NAV } from '@/config/navigation.js';
@@ -114,6 +114,52 @@ describe('today view carries over unfinished work', () => {
     expect(within(todoGroup).getByText('Week due today to do')).toBeInTheDocument();
     expect(within(today.querySelector('.wg-progress')).getByText('Week due today started')).toBeInTheDocument();
     expect(within(today).queryByText('Week old unfinished')).toBeNull();
+  });
+
+  it('week view: a repeating task weeks ahead shows on its day and opens when clicked', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-1');   // admin sets it up for Rahul
+    await recurringService.create({ title: 'Far weekly check', assigneeId: 3, frequency: 'WEEKLY', dayOfWeek: 'TUESDAY', dueTime: '17:00' });
+    tokenStore.set('mock-3');   // Rahul
+
+    start('/');
+    await user.click(await screen.findByRole('tab', { name: 'Week' }));
+    for (let i = 0; i < 3; i += 1) await user.click(screen.getByRole('button', { name: 'Next' }));
+    const grid = await waitFor(() => { const g = document.querySelector('.week-grid'); expect(g).not.toBeNull(); return g; });
+    const item = (await within(grid).findByText('Far weekly check')).closest('button');
+    expect(item).toHaveClass('wi-upcoming');
+    expect(item.closest('.week-day').querySelector('.week-head strong').textContent).toBe('Tue');
+    await user.click(item);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Far weekly check' })).toBeInTheDocument();
+  });
+
+  it('upcoming work started today shows today under In progress, with the time it was started', async () => {
+    tokenStore.set('mock-3');   // Rahul
+    const due = new Date(); due.setDate(due.getDate() + 10); due.setHours(18, 0, 0, 0);
+    const local = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const t = await taskService.create({ title: 'Upcoming started early', dueAt: local(due) });
+    const started = await taskService.changeStatus(t.id, 'IN_PROGRESS');
+    expect(started.startedAt).toBeTruthy();
+
+    start('/');
+    const progressCol = (await screen.findByRole('heading', { level: 4, name: /^In progress/ })).closest('section');
+    const card = (await within(progressCol).findByText('Upcoming started early')).closest('button');
+    expect(within(card).getByText(/^Started /)).toBeInTheDocument();
+
+    // it also shows on the day it was scheduled for, with its status and real start time, and opens the task
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Week' }));
+    let copy = null;
+    for (let i = 0; i < 3 && !copy; i += 1) {
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+      copy = await waitFor(() => document.querySelector('.week-grid')).then(() =>
+        [...document.querySelectorAll('.week-grid .wi-planned')].find((b) => b.textContent.includes('Upcoming started early')) || null);
+    }
+    expect(copy).not.toBeNull();
+    expect(copy).toHaveClass('wi-progress');
+    expect(copy.closest('.week-day').querySelector('.week-head span').textContent).toMatch(new RegExp(`\\s${due.getDate()}$`));
+    await user.click(copy);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Upcoming started early' })).toBeInTheDocument();
   });
 
   it('overdue work finished today shows today under Done, with the time it was done', async () => {
@@ -571,6 +617,55 @@ describe('assign a task form', () => {
     await waitFor(async () => {
       const templates = await recurringService.list();
       expect(templates.filter((template) => template.title === 'Weekly shared safety check')).toHaveLength(2);
+    });
+  });
+  it('weekly task: start time, then due date and time (no minutes); each copy is due that many days after it starts', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');
+    start('/tasks?scope=created');
+    await user.click(await screen.findByRole('button', { name: 'Assign a task' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Assign a task' });
+    await user.type(within(dialog).getByLabelText('Title'), 'Weekly stock count');
+    const assign = within(dialog).getByRole('group', { name: 'Assign to' });
+    await user.click(await within(assign).findByRole('checkbox', { name: /Priya Sharma/ }));
+    await user.selectOptions(within(dialog).getByLabelText('Repeat'), 'WEEKLY');
+    await user.selectOptions(within(dialog).getByLabelText('Every'), 'MONDAY');
+    expect(within(dialog).queryByLabelText('Duration (minutes)')).not.toBeInTheDocument();
+
+    const startDay = within(dialog).getByLabelText('Due date').getAttribute('min');   // first Monday
+    const due = new Date(`${startDay}T00:00`);
+    due.setDate(due.getDate() + 2);                                                     // Wednesday
+    const dueDay = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`;
+    fireEvent.change(within(dialog).getByLabelText('Due date'), { target: { value: dueDay } });
+    fireEvent.change(within(dialog).getByLabelText('Due time'), { target: { value: '17:00' } });
+    expect(within(dialog).getByText(/starts Monday 09:30 and is due Wednesday 17:00/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Create repeating task' }));
+
+    await waitFor(async () => {
+      const template = (await recurringService.list()).find((t) => t.title === 'Weekly stock count');
+      expect(template).toMatchObject({ frequency: 'WEEKLY', dayOfWeek: 'MONDAY', scheduledTime: '09:30', durationMinutes: null, dueDaysAfter: 2 });
+      expect(template.dueTime.slice(0, 5)).toBe('17:00');
+    });
+  });
+  it('daily task: only start date, start time, due date and due time (no minutes, no checkbox)', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');
+    start('/tasks?scope=created');
+    await user.click(await screen.findByRole('button', { name: 'Assign a task' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Assign a task' });
+    await user.type(within(dialog).getByLabelText('Title'), 'Daily site photo');
+    await user.click(await within(within(dialog).getByRole('group', { name: 'Assign to' })).findByRole('checkbox', { name: /Priya Sharma/ }));
+    await user.selectOptions(within(dialog).getByLabelText('Repeat'), 'DAILY');
+    for (const name of ['Start date', 'Start time', 'Due date', 'Due time']) expect(within(dialog).getByLabelText(name)).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/Duration/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('checkbox', { name: /scheduled start|start time and/i })).not.toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Due time'), { target: { value: '12:00' } });
+    await user.click(within(dialog).getByRole('button', { name: 'Create repeating task' }));
+
+    await waitFor(async () => {
+      const template = (await recurringService.list()).find((t) => t.title === 'Daily site photo');
+      expect(template).toMatchObject({ frequency: 'DAILY', scheduledTime: '09:30', durationMinutes: null, dueDaysAfter: 0 });
+      expect(template.dueTime.slice(0, 5)).toBe('12:00');
     });
   });
   it('creates repeating tasks without a reviewer when no review is selected', async () => {

@@ -104,13 +104,31 @@ public final class TaskSpecifications {
         return (root, query, cb) -> cb.lessThan(workAt(root, cb), to);
     }
 
+    /**
+     * The work day is in [from, to), or the planned day (due date, or the day it was added) is:
+     * so a calendar also gets the work that was started or finished on another day than it was scheduled for.
+     */
+    public static Specification<Task> workOrPlannedBetween(Instant from, Instant to) {
+        return (root, query, cb) -> {
+            Expression<Instant> work = workAt(root, cb);
+            Expression<Instant> planned = cb.coalesce(root.<Instant>get("dueAt"), root.<Instant>get("createdAt"));
+            return cb.or(
+                    cb.and(cb.greaterThanOrEqualTo(work, from), cb.lessThan(work, to)),
+                    cb.and(cb.greaterThanOrEqualTo(planned, from), cb.lessThan(planned, to)));
+        };
+    }
+
     private static Expression<Instant> workAt(jakarta.persistence.criteria.Root<Task> root,
                                               jakarta.persistence.criteria.CriteriaBuilder cb) {
         // same as Task.workAt(): done work belongs to the day it was finished
         Expression<Instant> planned = cb.coalesce(root.<Instant>get("dueAt"), root.<Instant>get("createdAt"));
+        Expression<Instant> started = root.<Instant>get("startedAt");
         return cb.<Instant>selectCase()
                 .when(cb.and(cb.equal(root.get("status"), TaskStatus.COMPLETED), cb.isNotNull(root.get("completedAt"))),
                         root.<Instant>get("completedAt"))
+                // started ahead of its date: the work belongs to the day it was started
+                .when(cb.and(root.get("status").in(TaskStatus.IN_PROGRESS, TaskStatus.SUBMITTED),
+                        cb.isNotNull(started), cb.lessThan(started, planned)), started)
                 .otherwise(planned);
     }
 }

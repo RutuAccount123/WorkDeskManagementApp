@@ -3,6 +3,8 @@ import { employeeService, taskService, recurringService, workflowService } from 
 import { useAuth } from '@/features/auth/AuthContext.jsx';
 import { DAYS, PRIORITIES, PRIORITY_LABEL, dayLabel, isoDay, toLocalInput } from '@/utils/format.js';
 import Modal from '@/components/ui/Modal.jsx';
+import RepeatDueFields from '@/components/form/RepeatDueFields.jsx';
+import { addDays, dueError, firstStartDay } from '@/utils/repeatDue.js';
 
 const REPEATS = [
   ['ONCE', 'One time'],
@@ -28,7 +30,8 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
     date: existing ? existing.slice(0, 10) : isoDay(defaultDate || new Date()),
     time: existing ? existing.slice(11, 16) : '18:00',
     scheduledTime: '09:30',
-    durationMinutes: '20',
+    dueGap: 0,          // weekly / monthly / yearly: days from each start to its due date
+    dueTime: '18:00',
     priority: task?.priority || 'MEDIUM',
     status: 'TODO',
     reviewerId: task?.reviewer ? String(task.reviewer.id) : '',
@@ -46,12 +49,17 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const repeating = !task && form.repeat !== 'ONCE';
+  const repeatStart = firstStartDay(form.repeat, form.dayOfWeek, form.date);
 
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
+      if (repeating) {
+        const problem = dueError(form.repeat, repeatStart, form.scheduledTime, addDays(repeatStart, Number(form.dueGap) || 0), form.dueTime);
+        if (problem) throw new Error(problem);
+      }
       let saved;
       if (repeating) {
         saved = await recurringService.create({
@@ -60,7 +68,8 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
             dayOfWeek: form.repeat === 'WEEKLY' ? form.dayOfWeek : null,
             startDate: form.date,
             scheduledTime: form.scheduledTime,
-            durationMinutes: Number(form.durationMinutes),
+            // daily: due some minutes after the start; weekly / monthly / yearly: due on a date and time
+            durationMinutes: null, dueTime: form.dueTime, dueDaysAfter: Number(form.dueGap) || 0,
             workflowId: workflowId ? Number(workflowId) : null,
         });
       } else {
@@ -119,28 +128,15 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
         {workflowError && <p className="error" role="alert">Could not load FMS list: {workflowError}</p>}
 
         <div className="grid-3">
-          {form.repeat === 'ONCE' || task ? (
-            <label>Date<input type="date" value={form.date} onChange={set('date')} required /></label>
-          ) : form.repeat === 'WEEKLY' ? (
+          {!repeating && <label>Date<input type="date" value={form.date} onChange={set('date')} required /></label>}
+          {!repeating && (
+            <label>Due by<input type="time" value={form.time} onChange={set('time')} required /></label>
+          )}
+          {repeating && form.repeat === 'WEEKLY' && (
             <label>Every
               <select value={form.dayOfWeek} onChange={set('dayOfWeek')}>
                 {DAYS.filter((d) => d !== 'SUNDAY').map((d) => <option key={d} value={d}>{dayLabel(d)}</option>)}
               </select>
-            </label>
-          ) : form.repeat === 'MONTHLY' || form.repeat === 'YEARLY' ? (
-            <label>{form.repeat === 'YEARLY' ? 'Repeat every year on' : 'Repeat on'}
-              <input type="date" value={form.date} onChange={set('date')} required />
-            </label>
-          ) : (
-            <label>Starts from<input type="date" value={form.date} onChange={set('date')} required /></label>
-          )}
-          <label>{repeating ? 'Scheduled start' : 'Due by'}
-            <input type="time" value={repeating ? form.scheduledTime : form.time}
-              onChange={set(repeating ? 'scheduledTime' : 'time')} required />
-          </label>
-          {repeating && (
-            <label>Duration (minutes)
-              <input type="number" min="1" max="1439" value={form.durationMinutes} onChange={set('durationMinutes')} required />
             </label>
           )}
           <label>Priority
@@ -150,6 +146,13 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
           </label>
         </div>
 
+        {repeating && (
+          <RepeatDueFields frequency={form.repeat} start={repeatStart}
+            startDate={form.date} onStartDate={(v) => setForm((f) => ({ ...f, date: v }))}
+            startTime={form.scheduledTime} onStartTime={(v) => setForm((f) => ({ ...f, scheduledTime: v }))}
+            gap={form.dueGap} onGap={(v) => setForm((f) => ({ ...f, dueGap: v }))}
+            dueTime={form.dueTime} onDueTime={(v) => setForm((f) => ({ ...f, dueTime: v }))} />
+        )}
         {repeating ? (
           <p className="hint">
             {form.repeat === 'DAILY'
@@ -159,7 +162,8 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
                 : form.repeat === 'MONTHLY'
                   ? `This task will be added monthly on day ${Number(form.date.slice(-2))}, starting ${form.date}. Months without that day are skipped.`
                   : `This task will be added every year on ${form.date.slice(5)}, starting ${form.date}. Non-leap years skip February 29.`}
-            {' '}It starts at {form.scheduledTime} and is due {form.durationMinutes || 20} minutes later. Sundays and office holidays are skipped. You can pause or delete it any time from “Repeating tasks”.
+            {' '}It starts at the start time and is due on the due date and time.
+            {' '}Sundays and office holidays are skipped. You can pause or delete it any time from “Repeating tasks”.
           </p>
         ) : (
           <label>Review by

@@ -64,6 +64,16 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
             """)
     boolean existsCopyBetween(@Param("templateId") Long templateId, @Param("from") Instant from, @Param("to") Instant to);
 
+    /** Ids of a repeating task's copies starting in [from, to), oldest first. */
+    @Query("""
+            select t.id from Task t
+            where t.recurringTemplate.id = :templateId
+              and ((t.scheduledAt >= :from and t.scheduledAt < :to)
+                   or (t.scheduledAt is null and t.dueAt >= :from and t.dueAt < :to))
+            order by t.id
+            """)
+    List<Long> findCopyIdsBetween(@Param("templateId") Long templateId, @Param("from") Instant from, @Param("to") Instant to);
+
     /**
      * Future copies nobody has started (removed when the repeating task is paused, changed or deleted).
      * Copies with a ticket on them stay, so the ticket and its answer do not disappear.

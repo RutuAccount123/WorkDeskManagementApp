@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { taskService, holidayService, leaveService, reportService, workflowService } from '@/services/index.js';
+import { taskService, holidayService, leaveService, reportService, workflowService, recurringService } from '@/services/index.js';
 import StatusChip from '@/components/ui/StatusChip.jsx';
 import {
   GROUPS, PRIORITY_LABEL, STATUS_LABEL, addDays, fmtDate, fmtDateTime, fmtDayLong, fmtMonth, fmtMonthShort, fmtTime, fromMonthKey,
@@ -9,6 +9,7 @@ import {
 import { useAuth } from '@/features/auth/AuthContext.jsx';
 import { groupFmsTasks } from '@/features/tasks/taskGroups.js';
 import { scheduledFmsForWeek } from './scheduledFms.js';
+import { REPEAT_LABEL, upcomingRepeats } from './scheduledRepeats.js';
 import TaskPdfExport from '@/components/TaskPdfExport.jsx';
 
 const VIEWS = [
@@ -22,6 +23,8 @@ const OPEN = ['TODO', 'IN_PROGRESS', 'SUBMITTED', 'REOPENED'];
 
 /** The day a task is shown on: unfinished work from earlier days is carried over to today. */
 const shownDate = (t) => (t.carriedOver ? startOfDay(new Date()) : workDate(t));
+/** The day a task was scheduled for (its due date, or the day it was added). */
+const plannedDate = (t) => new Date(t.dueAt || t.createdAt);
 
 /** Date range [from, to) shown for a view. */
 function rangeFor(view, anchor) {
@@ -60,10 +63,12 @@ function WorkItem({ t, onOpen, showTime = true }) {
     <button className={`work-item wi-${g} ${t.overdue ? 'wi-late' : ''}`} onClick={() => onOpen(t.id)}
       title={`${title} — ${STATUS_LABEL[t.status]}${t.overdue ? ', overdue' : ''}`}>
       <span className="wi-dot" aria-hidden="true" />
-      <span className="wi-title">{t.repeat && <span className="wi-repeat" title={t.repeat === 'DAILY' ? 'Daily task' : 'Weekly task'}>↻ </span>}{title}</span>
+      <span className="wi-title">{t.repeat && <span className="wi-repeat" title={`${REPEAT_LABEL[t.repeat] || 'Repeating'} task`}>↻ </span>}{title}</span>
       {showTime && g === 'done' && t.completedAt
         ? <span className="wi-time" title="Done at">✓ {fmtTime(t.completedAt)}</span>
-        : showTime && t.dueAt && <span className="wi-time">{fmtTime(t.dueAt)}</span>}
+        : showTime && g === 'progress' && t.startedAt
+          ? <span className="wi-time" title={`Started at${t.dueAt ? `, due ${fmtDateTime(t.dueAt)}` : ''}`}>▶ {fmtTime(t.startedAt)}</span>
+          : showTime && t.dueAt && <span className="wi-time">{fmtTime(t.dueAt)}</span>}
       {t.overdue && <span className="sr-only">overdue</span>}
     </button>
   );
@@ -80,7 +85,42 @@ function ScheduledFmsItem({ item, onOpen }) {
   );
 }
 
+/** A repeating task's future copy that the server has not created yet (it makes copies 7 days ahead). */
+function UpcomingRepeatItem({ item, onOpen }) {
+  const label = REPEAT_LABEL[item.repeat] || 'Repeating';
+  return (
+    <button className="work-item wi-scheduled wi-upcoming" onClick={() => onOpen(item)}
+      title={`${item.title}: ${label.toLowerCase()} task. Click to open it.`}>
+      <span className="wi-dot" aria-hidden="true" />
+      <span className="wi-title"><span className="wi-repeat">↻ </span>{item.title}</span>
+      <span className="wi-time">{label} · {fmtTime(item.dueAt)}</span>
+    </button>
+  );
+}
+
+/** When the work really happened, for a task shown on its scheduled day but done / started on another. */
+function actualLabel(t) {
+  if (statusGroup(t) === 'done' && t.completedAt) return `Done ${fmtDateTime(t.completedAt)}`;
+  if (t.startedAt) return `Started ${fmtDateTime(t.startedAt)}`;
+  return STATUS_LABEL[t.status];
+}
+
+/** A task on its scheduled day, when it was started or finished on another day. Opens the real task. */
+function PlannedItem({ t, onOpen }) {
+  const title = t.workflow?.name || t.title;
+  return (
+    <button className={`work-item wi-${statusGroup(t)} wi-planned`} onClick={() => onOpen(t.taskId)}
+      title={`${title}: scheduled for this day — ${STATUS_LABEL[t.status]}, ${actualLabel(t).toLowerCase()}`}>
+      <span className="wi-dot" aria-hidden="true" />
+      <span className="wi-title">{t.repeat && <span className="wi-repeat">↻ </span>}{title}</span>
+      <span className="wi-time">{statusGroup(t) === 'done' ? '✓' : '▶'} {actualLabel(t).replace(/^(Done|Started) /, '')}</span>
+    </button>
+  );
+}
+
 function Counts({ list }) {
+  list = list.filter((t) => !t.plannedCopy && !t.upcoming && !t.scheduled);
+  if (!list.length) return null;
   const done = list.filter((t) => statusGroup(t) === 'done').length;
   return <span className="muted small">{done}/{list.length} done</span>;
 }
@@ -93,7 +133,7 @@ const leaveOn = (leaves, day) => {
   return leaves.find((l) => l.startDate <= d && l.endDate >= d) || null;
 };
 
-function DayView({ tasks, onOpen, holiday, isSunday, leave }) {
+function DayView({ tasks, planned = [], upcoming = [], onOpen, onOpenUpcoming, holiday, isSunday, leave }) {
   return (
     <>
     {leave && <p className="holiday-banner leave">🌴 On leave{leave.reason && `: ${leave.reason}`}. No repeating tasks are created on this day.</p>}
@@ -102,10 +142,33 @@ function DayView({ tasks, onOpen, holiday, isSunday, leave }) {
     <div className="day-cols">
       {GROUPS.map((g) => {
         const list = tasks.filter((t) => statusGroup(t) === g.key);
+        const later = g.key === 'todo' ? upcoming : [];
+        const moved = planned.filter((t) => statusGroup(t) === g.key);
         return (
           <section key={g.key} className={`day-col dc-${g.key}`}>
-            <h4>{g.title} <span className="count">{list.length}</span></h4>
-            {list.length === 0 ? <p className="muted small">Nothing here.</p> : list.map((t) => (
+            <h4>{g.title} <span className="count">{list.length + later.length}</span></h4>
+            {moved.map((t) => (
+              <button key={t.id} className="day-card wi-planned" onClick={() => onOpen(t.taskId)}>
+                <span className="day-card-title">{t.title}</span>
+                <span className="task-meta">
+                  <span>Scheduled for this day</span>
+                  <span>{actualLabel(t)}</span>
+                  {t.repeat && <span className={`repeat-badge ${t.repeat === 'DAILY' ? 'rb-daily' : 'rb-weekly'}`}>{REPEAT_LABEL[t.repeat] || 'Repeats'}</span>}
+                  <StatusChip status={t.status} />
+                </span>
+              </button>
+            ))}
+            {later.map((t) => (
+              <button key={t.id} className="day-card wi-scheduled wi-upcoming" onClick={() => onOpenUpcoming(t)}>
+                <span className="day-card-title">{t.title}</span>
+                <span className="task-meta">
+                  <span>Due {fmtTime(t.dueAt)}</span>
+                  <span className={`repeat-badge ${t.repeat === 'DAILY' ? 'rb-daily' : 'rb-weekly'}`}>{REPEAT_LABEL[t.repeat]}</span>
+                  <span className="muted">Upcoming</span>
+                </span>
+              </button>
+            ))}
+            {list.length === 0 && later.length === 0 && moved.length === 0 ? <p className="muted small">Nothing here.</p> : list.map((t) => (
               <button key={t.id} className="day-card" onClick={() => onOpen(t.id)}>
                 <span className="day-card-title">{t.title}</span>
                 <span className="task-meta">
@@ -115,9 +178,17 @@ function DayView({ tasks, onOpen, holiday, isSunday, leave }) {
                       <span>Done {sameDay(new Date(t.completedAt), new Date()) ? fmtTime(t.completedAt) : fmtDateTime(t.completedAt)}</span>
                       {t.dueAt && !sameDay(new Date(t.dueAt), new Date(t.completedAt)) && <span className="muted">was due {fmtDateTime(t.dueAt)}</span>}
                     </>
-                  ) : t.dueAt && <span className={t.overdue ? 'text-overdue' : ''}>{t.overdue ? 'Overdue, was due ' : 'Due '}{fmtTime(t.dueAt)}</span>}
+                  ) : (
+                    <>
+                      {statusGroup(t) === 'progress' && t.startedAt && (
+                        <span>Started {sameDay(new Date(t.startedAt), new Date()) ? fmtTime(t.startedAt) : fmtDateTime(t.startedAt)}</span>
+                      )}
+                      {t.dueAt && <span className={t.overdue ? 'text-overdue' : ''}>{t.overdue ? 'Overdue, was due ' : 'Due '}
+                        {sameDay(new Date(t.dueAt), workDate(t)) ? fmtTime(t.dueAt) : fmtDateTime(t.dueAt)}</span>}
+                    </>
+                  )}
                   <span>{PRIORITY_LABEL[t.priority]}</span>
-                  {t.repeat && <span className={`repeat-badge ${t.repeat === 'DAILY' ? 'rb-daily' : 'rb-weekly'}`}>{t.repeat === 'DAILY' ? 'Daily' : 'Weekly'}</span>}
+                  {t.repeat && <span className={`repeat-badge ${t.repeat === 'DAILY' ? 'rb-daily' : 'rb-weekly'}`}>{REPEAT_LABEL[t.repeat] || 'Repeats'}</span>}
                   {t.workflow && <span className="repeat-badge rb-flow">FMS {t.workflow.date} · run #{t.workflow.number} · step {t.workflow.step}/{t.workflow.total}: {t.workflowStageTitle}</span>}
                   {t.selfAdded && !t.repeat && <span className="tag">Added by me</span>}
                   {(t.status === 'SUBMITTED' || t.status === 'REOPENED' || t.overdue || t.pending || t.onLeave) && <StatusChip status={t.status} overdue={t.overdue} pending={t.pending} onLeave={t.onLeave} />}
@@ -133,30 +204,33 @@ function DayView({ tasks, onOpen, holiday, isSunday, leave }) {
 }
 
 /** One week-day's items, in To do / In progress / Done groups (FMS scheduled runs go with To do). */
-function WeekDayItems({ list, onOpen, onOpenWorkflow }) {
+function WeekDayItems({ list, onOpen, onOpenWorkflow, onOpenUpcoming }) {
   if (list.length === 0) return <span className="muted small">—</span>;
   return GROUPS.map((g) => {
-    const items = list.filter((t) => (t.scheduled ? 'todo' : statusGroup(t)) === g.key);
+    const items = list.filter((t) => (t.scheduled || t.upcoming ? 'todo' : statusGroup(t)) === g.key);
     if (!items.length) return null;
     return (
       <div key={g.key} className={`week-group wg-${g.key}`}>
         <span className="week-group-title">{g.title} <span className="count">{items.length}</span></span>
-        {items.map((t) => (t.scheduled
-          ? <ScheduledFmsItem key={t.id} item={t} onOpen={onOpenWorkflow} />
-          : <WorkItem key={t.id} t={t} onOpen={onOpen} />))}
+        {items.map((t) => (t.plannedCopy ? <PlannedItem key={t.id} t={t} onOpen={onOpen} />
+          : t.upcoming ? <UpcomingRepeatItem key={t.id} item={t} onOpen={onOpenUpcoming} />
+          : t.scheduled ? <ScheduledFmsItem key={t.id} item={t} onOpen={onOpenWorkflow} />
+            : <WorkItem key={t.id} t={t} onOpen={onOpen} />))}
       </div>
     );
   });
 }
 
-function WeekView({ tasks, scheduled, from, onOpen, onOpenWorkflow, onPickDay, holidays, leaves }) {
+function WeekView({ tasks, planned, scheduled, upcoming, from, onOpen, onOpenWorkflow, onOpenUpcoming, onPickDay, holidays, leaves }) {
   return (
     <div className="week-grid">
       {WEEKDAYS.map((name, i) => {
         const day = addDays(from, i);
         const list = [
           ...tasks.filter((t) => sameDay(shownDate(t), day)),
+          ...planned.filter((t) => sameDay(plannedDate(t), day)),
           ...scheduled.filter((t) => t.workflow.date === isoDay(day)),
+          ...upcoming.filter((t) => sameDay(new Date(t.dueAt), day)),
         ].sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
         const today = sameDay(day, new Date());
         const hol = holidays[isoDay(day)];
@@ -170,7 +244,7 @@ function WeekView({ tasks, scheduled, from, onOpen, onOpenWorkflow, onPickDay, h
               {!hol && i === 6 && list.length === 0 && <span className="muted small">Weekly off</span>}
             </button>
             <div className="week-items">
-              <WeekDayItems list={list} onOpen={onOpen} onOpenWorkflow={onOpenWorkflow} />
+              <WeekDayItems list={list} onOpen={onOpen} onOpenWorkflow={onOpenWorkflow} onOpenUpcoming={onOpenUpcoming} />
             </div>
           </section>
         );
@@ -179,7 +253,7 @@ function WeekView({ tasks, scheduled, from, onOpen, onOpenWorkflow, onPickDay, h
   );
 }
 
-function MonthView({ tasks, from, onPickDay, holidays }) {
+function MonthView({ tasks, planned, upcoming, from, onPickDay, holidays }) {
   // Full weeks from the Monday before the 1st to the Sunday after the last day.
   const first = startOfWeek(from);
   const lastDay = new Date(from.getFullYear(), from.getMonth() + 1, 0);
@@ -192,9 +266,13 @@ function MonthView({ tasks, from, onPickDay, holidays }) {
       <div className="month-grid">
         {cells.map((day) => {
           const inMonth = day.getMonth() === from.getMonth();
-          const list = inMonth ? tasks.filter((t) => sameDay(shownDate(t), day)) : [];
+          const list = inMonth ? [
+            ...tasks.filter((t) => sameDay(shownDate(t), day)),
+            ...upcoming.filter((t) => sameDay(new Date(t.dueAt), day)),
+          ] : [];
           const done = list.filter((t) => statusGroup(t) === 'done').length;
           const late = list.filter((t) => t.overdue).length;
+          const moved = inMonth ? planned.filter((t) => sameDay(plannedDate(t), day)).length : 0;
           const hol = inMonth ? holidays[isoDay(day)] : null;
           return (
             <button key={isoDay(day)} disabled={!inMonth}
@@ -209,6 +287,7 @@ function MonthView({ tasks, from, onPickDay, holidays }) {
                   <span className="mc-count">{done}/{list.length}{late > 0 && <em> · {late} late</em>}</span>
                 </>
               )}
+              {moved > 0 && <span className="mc-count muted" title="Scheduled for this day, but started or done on another day">{moved} done/started on another day</span>}
             </button>
           );
         })}
@@ -283,11 +362,13 @@ export default function WorkCalendar({ employeeId, employeeName, onOpen, refresh
   const [view, setView] = useState(initialView);
   const [anchor, setAnchor] = useState(() => new Date());
   const [tasks, setTasks] = useState(null);
+  const [planned, setPlanned] = useState([]);   // on their scheduled day, when started / done on another day
   const [year, setYear] = useState(null);
   const [error, setError] = useState('');
   const [holidays, setHolidays] = useState({});
   const [leaves, setLeaves] = useState([]);   // this person's leave in the range
   const [workflows, setWorkflows] = useState([]);
+  const [templates, setTemplates] = useState([]);   // repeating tasks, to show copies not created yet
 
   const [from, to] = useMemo(() => rangeFor(view, anchor), [view, anchor]);
 
@@ -300,7 +381,8 @@ export default function WorkCalendar({ employeeId, employeeName, onOpen, refresh
     const load = view === 'year'
       ? reportService.yearly({ employeeId, year: anchor.getFullYear() }).then((d) => alive && setYear(d))
       : Promise.all([
-        taskService.list({ assigneeId: employeeId, workFrom: isoDay(from), workTo: isoDay(addDays(to, -1)) }),
+        // withPlanned: also work scheduled in this range but started / finished on another day
+        taskService.list({ assigneeId: employeeId, workFrom: isoDay(from), workTo: isoDay(addDays(to, -1)), withPlanned: true }),
         // Today's Day view also carries over unfinished work from earlier days:
         // not started → To do, started → In progress
         includesToday
@@ -311,7 +393,17 @@ export default function WorkCalendar({ employeeId, employeeName, onOpen, refresh
         const todayStart = startOfDay(new Date());
         const all = groupFmsTasks([...earlier.filter((t) => !seen.has(t.id)), ...list].filter((t) => t.status !== 'CANCELLED'))
           .map((t) => (includesToday && OPEN.includes(t.status) && workDate(t) < todayStart ? { ...t, carriedOver: true } : t));
-        if (alive) setTasks(all.sort((a, b) => shownDate(a) - shownDate(b)));
+        const inRange = (d) => d >= from && d < to;
+        // each task once on the day it really belongs to (started / done / due) ...
+        const shown = all.filter((t) => inRange(shownDate(t)));
+        // ... and again on its scheduled day when that is another day, with its status and real dates
+        const moved = all
+          .filter((t) => !t.carriedOver && inRange(plannedDate(t)) && !sameDay(plannedDate(t), shownDate(t)))
+          .map((t) => ({ ...t, id: `planned-${t.id}`, taskId: t.id, plannedCopy: true }));
+        if (alive) {
+          setTasks(shown.sort((a, b) => shownDate(a) - shownDate(b)));
+          setPlanned(moved);
+        }
       });
     load.catch((e) => alive && setError(e.message));
     if (view !== 'year') {
@@ -342,20 +434,43 @@ export default function WorkCalendar({ employeeId, employeeName, onOpen, refresh
     return () => { alive = false; };
   }, [view, employeeId, isDepartmentAdmin, refreshKey]);
 
+  useEffect(() => {
+    if (isDepartmentAdmin) { setTemplates([]); return undefined; }
+    let alive = true;
+    recurringService.list()
+      .then((list) => alive && setTemplates(list))
+      .catch(() => alive && setTemplates([]));
+    return () => { alive = false; };
+  }, [isDepartmentAdmin, refreshKey]);
+
   const pickDay = (d) => { setAnchor(d); setView('day'); };
   const pickMonth = (d) => { setAnchor(d); setView('month'); };
   const onOpenWorkflow = (workflowId) => navigate(`/workflows/${workflowId}/sheet`);
+  /** An upcoming repeating task has no task yet: make that day's task now, then open it. */
+  const onOpenUpcoming = async (item) => {
+    setError('');
+    try {
+      const { taskId } = await recurringService.copyFor(item.templateId, item.startDate);
+      if (onOpen) onOpen(taskId); else navigate(`/tasks/${taskId}`);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
   const isCurrent = view === 'year' ? anchor.getFullYear() === new Date().getFullYear() : new Date() >= from && new Date() < to;
   const scheduleEmployeeId = employeeId ?? (isAdmin ? null : user?.id);
   const scheduled = view === 'week' && tasks
     ? scheduledFmsForWeek(workflows, tasks, from, holidays, scheduleEmployeeId)
     : [];
+  const upcoming = useMemo(() => (view !== 'year' && tasks
+    ? upcomingRepeats(templates, [...tasks, ...planned], from, to, { holidays, leaves, employeeId: scheduleEmployeeId })
+    : []), [view, tasks, planned, templates, from, to, holidays, leaves, scheduleEmployeeId]);
 
   const summary = tasks && view !== 'year' && (() => {
     const c = { todo: 0, progress: 0, done: 0 };
     tasks.forEach((t) => { c[statusGroup(t)] += 1; });
     const late = tasks.filter((t) => t.overdue).length;
-    return `${tasks.length} task${tasks.length === 1 ? '' : 's'}: ${c.done} done, ${c.progress} in progress, ${c.todo} to do${late ? `, ${late} overdue` : ''}`;
+    return `${tasks.length} task${tasks.length === 1 ? '' : 's'}: ${c.done} done, ${c.progress} in progress, ${c.todo} to do${late ? `, ${late} overdue` : ''}`
+      + (upcoming.length ? ` · ${upcoming.length} upcoming repeating` : '');
   })();
 
   return (
@@ -382,18 +497,18 @@ export default function WorkCalendar({ employeeId, employeeName, onOpen, refresh
         <p className="color-key small" aria-hidden="true">
           <span className="ck ck-todo">To do</span><span className="ck ck-progress">In progress</span>
           <span className="ck ck-done">Done</span><span className="ck ck-late">Overdue</span>
-          <span className="ck-repeat"><b>↻</b> Daily / weekly task</span>
+          <span className="ck-repeat"><b>↻</b> Repeating task (daily / weekly / monthly / yearly)</span>
         </p>
       )}
 
       {error && <p className="error">{error}</p>}
       {view === 'year' ? <YearView data={year} onPickMonth={pickMonth} />
         : tasks === null ? <p className="muted">Loading…</p>
-          : view === 'day' ? <DayView tasks={tasks} onOpen={onOpen} holiday={holidays[isoDay(anchor)]} isSunday={anchor.getDay() === 0}
+          : view === 'day' ? <DayView tasks={tasks} planned={planned} upcoming={upcoming} onOpen={onOpen} onOpenUpcoming={onOpenUpcoming} holiday={holidays[isoDay(anchor)]} isSunday={anchor.getDay() === 0}
             leave={leaveOn(leaves, anchor)} />
-            : view === 'week' ? <WeekView tasks={tasks} scheduled={scheduled} from={from} onOpen={onOpen}
-                onOpenWorkflow={onOpenWorkflow} onPickDay={pickDay} holidays={holidays} leaves={leaves} />
-              : <MonthView tasks={tasks} from={from} onPickDay={pickDay} holidays={holidays} />}
+            : view === 'week' ? <WeekView tasks={tasks} planned={planned} scheduled={scheduled} upcoming={upcoming} from={from} onOpen={onOpen}
+                onOpenWorkflow={onOpenWorkflow} onOpenUpcoming={onOpenUpcoming} onPickDay={pickDay} holidays={holidays} leaves={leaves} />
+              : <MonthView tasks={tasks} planned={planned} upcoming={upcoming} from={from} onPickDay={pickDay} holidays={holidays} />}
     </section>
   );
 }

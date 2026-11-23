@@ -169,6 +169,7 @@ function templateOut(t) {
     workflowId: t.workflowId || null,
     reviewer: empRef(t.noReview ? null : t.reviewerId ?? (t.createdById !== t.assigneeId ? t.createdById : null)),
     startDate: t.startDate || null, scheduledTime: t.scheduledTime || null, durationMinutes: t.durationMinutes || null,
+    dueDaysAfter: t.dueDaysAfter || 0,
     image: t.image || null,
   };
 }
@@ -231,7 +232,13 @@ const round1 = (v) => Math.round(v * 10) / 10;
 
 /** The day a piece of work "belongs" to: its due date, or the day it was added if it has none. */
 // done work belongs to the day it was finished; otherwise its due date (or the day it was added)
-const workDate = (t) => (t.status === 'COMPLETED' && t.completedAt ? t.completedAt : t.dueAt || t.createdAt);
+// same as the server's Task.workAt: done → finished time; started ahead of its date → started time; else due date
+const workDate = (t) => {
+  if (t.status === 'COMPLETED' && t.completedAt) return t.completedAt;
+  const planned = t.dueAt || t.createdAt;
+  if (['IN_PROGRESS', 'SUBMITTED'].includes(t.status) && t.startedAt && new Date(t.startedAt) < new Date(planned)) return t.startedAt;
+  return planned;
+};
 // when the work was planned for (performance scores count by this)
 const plannedDate = (t) => t.dueAt || t.createdAt;
 const monthKey = (d) => localDay(d).slice(0, 7); // "2026-10"
@@ -364,11 +371,16 @@ function templateRunsOn(tpl, day) {
   if (tpl.frequency === 'YEARLY') return d.getDate() === start.getDate() && d.getMonth() === start.getMonth();
   return false;
 }
+// a copy belongs to the day it starts (or, with no start time, the day it is due) — same as the server
 const alreadyCreated = (tpl, day) =>
-  db.tasks.some((t) => t.recurringTemplateId === tpl.id && t.dueAt && localDay(new Date(t.dueAt)) === day);
+  db.tasks.some((t) => t.recurringTemplateId === tpl.id
+    && localDay(new Date(t.scheduledAt || t.dueAt || 0)) === day && (t.scheduledAt || t.dueAt));
+const plusDays = (day, n) => { const d = new Date(`${day}T00:00`); d.setDate(d.getDate() + n); return localDay(d); };
 
 function createFromTemplate(tpl, day) {
-  const due = new Date(`${day}T${tpl.dueTime.slice(0, 5)}`).toISOString();
+  // weekly / monthly / yearly with a due date: due dueDaysAfter days after the start day
+  const dueDay = tpl.durationMinutes ? day : plusDays(day, tpl.dueDaysAfter || 0);
+  const due = new Date(`${dueDay}T${tpl.dueTime.slice(0, 5)}`).toISOString();
   const t = {
     id: nextId(db.tasks), title: tpl.title, description: tpl.description,
     assigneeId: tpl.assigneeId, createdById: tpl.createdById, priority: tpl.priority, status: 'TODO',
@@ -980,7 +992,11 @@ function route(method, path, query, body, me) {
       return db.tasks
         .filter(inScope)
         .filter((t) => !isDepartmentAdmin || canViewDepartment(me, empById(t.assigneeId)?.department))
-        .filter((t) => (!workFrom || new Date(workDate(t)) >= workFrom) && (!workTo || new Date(workDate(t)) < workTo))
+        .filter((t) => {
+          const inRange = (iso) => (!workFrom || new Date(iso) >= workFrom) && (!workTo || new Date(iso) < workTo);
+          // withPlanned: also work scheduled in the range but started / finished on another day
+          return inRange(workDate(t)) || (query.get('withPlanned') === 'true' && workFrom && workTo && inRange(t.dueAt || t.createdAt));
+        })
         .filter((t) => !assigneeId || t.assigneeId === Number(assigneeId))
         .filter((t) => !statuses.length || statuses.includes(t.status))
         .filter((t) => !priority || t.priority === priority)
@@ -1245,14 +1261,26 @@ function route(method, path, query, body, me) {
       if (body.frequency === 'WEEKLY' && body.dayOfWeek === 'SUNDAY') throw bad('Sunday is the weekly off. Choose Monday to Saturday.');
       if (['MONTHLY', 'YEARLY'].includes(body.frequency) && !body.startDate) throw bad('Choose the date this task should repeat on');
       const scheduledTime = body.scheduledTime || null;
-      const dueTime = scheduledTime
+      const byMinutes = scheduledTime && body.durationMinutes != null;
+      const dueDaysAfter = scheduledTime && !byMinutes ? Number(body.dueDaysAfter || 0) : 0;
+      const plainDue = (body.dueTime || '18:00').length === 5 ? `${body.dueTime || '18:00'}:00` : body.dueTime;
+      if (scheduledTime && !byMinutes) {
+        const max = { DAILY: 0, WEEKLY: 6, MONTHLY: 27, YEARLY: 364 }[body.frequency];
+        if (dueDaysAfter < 0) throw bad('The due date cannot be before the start date');
+        if (dueDaysAfter > max) {
+          throw bad(body.frequency === 'DAILY' ? 'A daily task is due on the same day it starts'
+            : `The due date must be before the next ${body.frequency.toLowerCase().replace('ly', '')} starts`);
+        }
+        if (dueDaysAfter === 0 && plainDue.slice(0, 5) <= scheduledTime.slice(0, 5)) throw bad('The due time must be after the start time');
+      }
+      const dueTime = byMinutes
         ? new Date(new Date(`2000-01-01T${scheduledTime}`).getTime() + Number(body.durationMinutes || 0) * 60000).toTimeString().slice(0, 8)
-        : (body.dueTime || '18:00').length === 5 ? `${body.dueTime || '18:00'}:00` : body.dueTime;
+        : plainDue;
       Object.assign(tpl, {
         title: body.title.trim(), description: body.description || '', assigneeId: a.id, priority: body.priority || 'MEDIUM',
         frequency: body.frequency, dayOfWeek: body.frequency === 'WEEKLY' ? body.dayOfWeek : null,
-        startDate: body.startDate || localDay(new Date()), scheduledTime, durationMinutes: body.durationMinutes || null,
-        dueTime,
+        startDate: body.startDate || localDay(new Date()), scheduledTime, durationMinutes: byMinutes ? body.durationMinutes : null,
+        dueTime, dueDaysAfter,
         estimatedHours,
         reviewerId, noReview: !!body.noReview, image: body.image || tpl.image || null,
         workflowId: body.workflowId === undefined ? (tpl.workflowId || null) : linkedWorkflowId(body.workflowId),
@@ -1267,6 +1295,26 @@ function route(method, path, query, body, me) {
     }
     const tpl = visible.find((x) => x.id === id);
     if (!tpl) throw notFound('Repeating task');
+    // opening an upcoming day from the calendar: make that day's task now (or return the one already there)
+    if (seg[2] === 'copies' && method === 'POST') {
+      const day = query.get('date');
+      const existing = db.tasks.find((t) => t.recurringTemplateId === tpl.id
+        && localDay(new Date(t.scheduledAt || t.dueAt || 0)) === day);
+      if (existing) return { taskId: existing.id };
+      if (!tpl.active) throw bad('This repeating task is stopped');
+      if (day < localDay(new Date())) throw bad('No task was made for this past day');
+      const d = new Date(`${day}T00:00`);
+      const runs = d.getDay() !== 0 && !holidayOn(day) && (!tpl.startDate || day >= tpl.startDate)
+        && ({
+          DAILY: true,
+          WEEKLY: ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][d.getDay()] === tpl.dayOfWeek,
+          MONTHLY: !!tpl.startDate && d.getDate() === Number(tpl.startDate.slice(8, 10)),
+          YEARLY: !!tpl.startDate && day.slice(5) === tpl.startDate.slice(5),
+        })[tpl.frequency];
+      if (!runs) throw bad('This task does not repeat on that day');
+      if (onLeaveDay(tpl.assigneeId, day)) throw bad(`${empById(tpl.assigneeId)?.fullName} is on leave that day`);
+      return { taskId: createFromTemplate(tpl, day).id };
+    }
     // employees can see their repeating tasks, but only admins change, stop or delete them
     if (!isAdmin && method !== 'GET') throw forbidden('Only an admin can change a repeating task');
     if (seg[2] === 'active') {

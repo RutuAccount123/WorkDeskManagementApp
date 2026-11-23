@@ -91,8 +91,18 @@ export const fmtMonthShort = (d) => monthShortFmt.format(d);
 export const fmtDayLong = (d) => dayFmt.format(d);
 export const fmtTime = (iso) => (iso ? timeFmt.format(new Date(iso)) : '');
 
-/** The day a piece of work belongs to: its due date, or the day it was added. */
-export const workDate = (t) => new Date(t.status === 'COMPLETED' && t.completedAt ? t.completedAt : t.dueAt || t.createdAt);
+/**
+ * The day a piece of work belongs to (same as the server's Task.workAt): done work → when it was finished;
+ * work started ahead of its date → when it was started; otherwise its due date, or the day it was added.
+ */
+export const workDate = (t) => {
+  if (t.status === 'COMPLETED' && t.completedAt) return new Date(t.completedAt);
+  const planned = new Date(t.dueAt || t.createdAt);
+  if ((t.status === 'IN_PROGRESS' || t.status === 'SUBMITTED') && t.startedAt && new Date(t.startedAt) < planned) {
+    return new Date(t.startedAt);
+  }
+  return planned;
+};
 
 /** Groups used on the Day view and in counts. */
 export function statusGroup(t) {

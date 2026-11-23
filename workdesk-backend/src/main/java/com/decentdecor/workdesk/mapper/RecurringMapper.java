@@ -22,6 +22,7 @@ public class RecurringMapper {
                 t.getStartDate(), t.getScheduledTime() == null ? null : TIME.format(t.getScheduledTime()), t.getDurationMinutes(),
                 t.getEstimatedHours(), t.isActive(), t.getLastGeneratedOn(), t.getCreatedAt(), employees.toRef(t.getCreatedBy()), t.isSelfOwned(),
                 t.getWorkflow() == null ? null : t.getWorkflow().getId(), employees.toRef(t.getReviewer()),
-                t.getImageData() == null ? null : Base64.getEncoder().encodeToString(t.getImageData()));
+                t.getImageData() == null ? null : Base64.getEncoder().encodeToString(t.getImageData()),
+                t.getDueDaysAfter());
     }
 }

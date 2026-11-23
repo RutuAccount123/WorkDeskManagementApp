@@ -26,5 +26,6 @@ public record RecurringResponse(
         boolean selfOwned,
         Long workflowId,
         PersonRef reviewer,
-        String image) {
+        String image,
+        int dueDaysAfter) {
 }

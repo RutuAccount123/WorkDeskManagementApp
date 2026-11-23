@@ -4,10 +4,23 @@ import { useAuth } from '@/features/auth/AuthContext.jsx';
 import { DAYS, PRIORITIES, PRIORITY_LABEL, dayLabel, fmtDate, isoDay } from '@/utils/format.js';
 import { encodeImage } from '@/utils/image.js';
 import Modal from '@/components/ui/Modal.jsx';
+import RepeatDueFields from '@/components/form/RepeatDueFields.jsx';
+import { addDays, dueError, firstStartDay } from '@/utils/repeatDue.js';
+
+/** "starts 09:30, due 2 days later at 17:00" / "starts 09:30 for 20 min (due 09:50)" / "due 18:00". */
+const repeatTimeText = (t) => {
+  const due = t.dueTime.slice(0, 5);
+  if (!t.scheduledTime) return ` due ${due}`;
+  const start = t.scheduledTime.slice(0, 5);
+  if (t.durationMinutes != null) return ` starts ${start} for ${t.durationMinutes} min (due ${due})`;
+  const gap = t.dueDaysAfter || 0;
+  return ` starts ${start}, due ${gap === 0 ? 'same day' : `${gap} day${gap === 1 ? '' : 's'} later`} at ${due}`;
+};
 
 const EMPTY = {
   title: '', description: '', assigneeId: '', priority: 'MEDIUM', frequency: 'DAILY', dayOfWeek: 'MONDAY',
-  dueTime: '18:00', startDate: isoDay(), scheduleEnabled: true, scheduledTime: '09:30', durationMinutes: '20',
+  dueTime: '18:00', startDate: isoDay(), scheduledTime: '09:30',
+  dueGap: 0,   // weekly / monthly / yearly: days from each start to its due date
 };
 
 function TemplateForm({ template, employees, onClose, onSaved }) {
@@ -18,19 +31,24 @@ function TemplateForm({ template, employees, onClose, onSaved }) {
       ...EMPTY, ...template, assigneeId: template.assignee.id, dayOfWeek: template.dayOfWeek || 'MONDAY',
       reviewerId: template.reviewer?.id ? String(template.reviewer.id)
         : template.assignee.id === user.id ? 'none' : String(template.createdBy?.id || user.id),
-      startDate: template.startDate || isoDay(), scheduleEnabled: Boolean(template.scheduledTime),
-      scheduledTime: template.scheduledTime ? template.scheduledTime.slice(0, 5) : '',
-      durationMinutes: template.durationMinutes == null ? '20' : String(template.durationMinutes),
+      startDate: template.startDate || isoDay(),
+      // older tasks saved without a start time get 09:30; ones saved with minutes keep their due time, same day
+      scheduledTime: template.scheduledTime ? template.scheduledTime.slice(0, 5) : '09:30',
       dueTime: template.dueTime.slice(0, 5),
+      dueGap: template.dueDaysAfter || 0,
     }
     : { ...EMPTY, reviewerId: String(user.id) });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
+  const repeatStart = firstStartDay(form.frequency, form.dayOfWeek, form.startDate);
+
   const submit = async (e) => {
     e.preventDefault();
     setError('');
+    const problem = dueError(form.frequency, repeatStart, form.scheduledTime, addDays(repeatStart, Number(form.dueGap) || 0), form.dueTime);
+    if (problem) { setError(problem); return; }
     setBusy(true);
     const body = {
       title: form.title, description: form.description, assigneeId: Number(form.assigneeId), priority: form.priority,
@@ -38,8 +56,10 @@ function TemplateForm({ template, employees, onClose, onSaved }) {
       dayOfWeek: form.frequency === 'WEEKLY' ? form.dayOfWeek : null,
       startDate: form.startDate,
       dueTime: form.dueTime,
-      scheduledTime: form.scheduleEnabled ? form.scheduledTime : null,
-      durationMinutes: form.scheduleEnabled ? Number(form.durationMinutes) : null,
+      // start date + start time, due on a date and time (no minutes)
+      scheduledTime: form.scheduledTime,
+      durationMinutes: null,
+      dueDaysAfter: Number(form.dueGap) || 0,
       estimatedHours: null,
       reviewerId: form.reviewerId === 'none' ? null : Number(form.reviewerId),
       image: image || null,
@@ -95,7 +115,7 @@ function TemplateForm({ template, employees, onClose, onSaved }) {
           </label>
         </div>
         {image && <img className="task-reference-image" src={`data:image/jpeg;base64,${image}`} alt="Task reference" />}
-        <div className="grid-3">
+        <div className="grid-2">
           <label>Repeats
             <select value={form.frequency} onChange={set('frequency')}>
               <option value="DAILY">Every day (Mon–Sat)</option>
@@ -104,44 +124,19 @@ function TemplateForm({ template, employees, onClose, onSaved }) {
               <option value="YEARLY">Every year</option>
             </select>
           </label>
-          {form.frequency === 'WEEKLY' ? (
+          {form.frequency === 'WEEKLY' && (
             <label>On
               <select value={form.dayOfWeek} onChange={set('dayOfWeek')}>
                 {DAYS.filter((d) => d !== 'SUNDAY').map((d) => <option key={d} value={d}>{dayLabel(d)}</option>)}
               </select>
             </label>
-          ) : form.frequency === 'MONTHLY' || form.frequency === 'YEARLY' ? (
-            <label>Repeat on
-              <input type="date" value={form.startDate} onChange={set('startDate')} required />
-            </label>
-          ) : (
-            <label>Starts from
-              <input type="date" value={form.startDate} onChange={set('startDate')} required />
-            </label>
-          )}
-          {form.scheduleEnabled ? (
-            <>
-              <label>Scheduled start<input type="time" value={form.scheduledTime} onChange={set('scheduledTime')} required /></label>
-              <label>Duration (minutes)
-                <input type="number" min="1" max="1439" value={form.durationMinutes} onChange={set('durationMinutes')} required />
-              </label>
-            </>
-          ) : (
-            <label>Due by<input type="time" value={form.dueTime} onChange={set('dueTime')} required /></label>
           )}
         </div>
-        {template && (
-          <label className="check-label">
-            <input type="checkbox" checked={form.scheduleEnabled}
-              onChange={(e) => setForm({ ...form, scheduleEnabled: e.target.checked })} />
-            Set a scheduled start time and duration
-          </label>
-        )}
-        {form.scheduleEnabled ? (
-          <p className="hint">Each task starts at the scheduled time and is due after the selected duration. You’ll be reminded at its start time; unfinished tasks become overdue after the deadline.</p>
-        ) : (
-          <p className="hint">Each task is due at the Due by time on its day.</p>
-        )}
+        <RepeatDueFields frequency={form.frequency} start={repeatStart}
+          startDate={form.startDate} onStartDate={(v) => setForm((f) => ({ ...f, startDate: v }))}
+          startTime={form.scheduledTime} onStartTime={(v) => setForm((f) => ({ ...f, scheduledTime: v }))}
+          gap={form.dueGap} onGap={(v) => setForm((f) => ({ ...f, dueGap: v }))}
+          dueTime={form.dueTime} onDueTime={(v) => setForm((f) => ({ ...f, dueTime: v }))} />
         <p className="hint">Tasks are created for the next 7 days. Monthly dates that do not exist in a month, and February 29 in non-leap years, are skipped. Sundays and office holidays are skipped.</p>
         {error && <p className="error" role="alert">{error}</p>}
         <div className="form-actions">
@@ -191,7 +186,7 @@ export default function Recurring() {
                   <td><strong>{t.title}</strong><small className="block muted">{PRIORITY_LABEL[t.priority]} priority</small></td>
                   <td>{t.assignee.fullName}{t.selfOwned && <small className="block muted">set up by employee</small>}</td>
                   <td>{t.frequency === 'DAILY' ? 'Every day' : t.frequency === 'WEEKLY' ? `Every ${dayLabel(t.dayOfWeek)}` : t.frequency === 'MONTHLY' ? `Monthly on day ${Number(t.startDate?.slice(-2))}` : `Yearly on ${t.startDate}`},
-                    {t.scheduledTime ? ` starts ${t.scheduledTime.slice(0, 5)} for ${t.durationMinutes} min (due ${t.dueTime.slice(0, 5)})` : ` due ${t.dueTime.slice(0, 5)}`}</td>
+                    {repeatTimeText(t)}</td>
                   <td>{t.lastGeneratedOn ? fmtDate(t.lastGeneratedOn) : 'Not yet'}</td>
                   <td>{t.active ? 'Running' : 'Stopped'}</td>
                   <td className="row-actions">

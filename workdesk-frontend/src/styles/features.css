@@ -175,6 +175,9 @@
 .wi-repeat { color: var(--daily); font-weight: 800; }
 .wi-scheduled { border: 1px dashed var(--border-strong); color: var(--muted); cursor: default; }
 .wi-scheduled .wi-dot { background: var(--daily); }
+.wi-upcoming { cursor: pointer; }
+/* a task on its scheduled day, when it was started / done on another day */
+.wi-planned { border-style: dashed; opacity: .8; }
 
 /* day */
 .day-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }

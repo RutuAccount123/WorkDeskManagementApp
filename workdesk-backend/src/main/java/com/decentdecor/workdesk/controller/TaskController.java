@@ -43,7 +43,7 @@ public class TaskController {
         this.proofs = proofs;
     }
 
-    /** ?scope=assigned|created|review|all &status=TODO&status=… &assigneeId= &priority= &overdue= &q= &workFrom= &workTo= */
+    /** ?scope=assigned|created|review|all &status=TODO&status=… &assigneeId= &priority= &overdue= &q= &workFrom= &workTo= &withPlanned=true */
     @GetMapping
     public ResponseEntity<List<TaskResponse>> list(@AuthenticationPrincipal CurrentUser me,
                                                    @RequestParam(required = false) String scope,
@@ -53,8 +53,9 @@ public class TaskController {
                                                    @RequestParam(required = false) Boolean overdue,
                                                    @RequestParam(required = false) String q,
                                                    @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workFrom,
-                                                   @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workTo) {
-        TaskFilter filter = new TaskFilter(scope, status, assigneeId, priority, overdue, q, workFrom, workTo);
+                                                   @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate workTo,
+                                                   @RequestParam(required = false) Boolean withPlanned) {
+        TaskFilter filter = new TaskFilter(scope, status, assigneeId, priority, overdue, q, workFrom, workTo, withPlanned);
         return ResponseEntity.ok(taskService.list(me, filter));
     }
 

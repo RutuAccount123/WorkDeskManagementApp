@@ -2,6 +2,7 @@ package com.decentdecor.workdesk.service;
 
 import com.decentdecor.workdesk.dto.recurring.RecurringRequest;
 import com.decentdecor.workdesk.dto.recurring.RecurringBatchRequest;
+import com.decentdecor.workdesk.dto.recurring.RecurringCopyResponse;
 import com.decentdecor.workdesk.dto.recurring.RecurringResponse;
 import com.decentdecor.workdesk.entity.Employee;
 import com.decentdecor.workdesk.entity.RecurringTemplate;
@@ -22,6 +23,7 @@ import com.decentdecor.workdesk.util.Enums;
 import com.decentdecor.workdesk.util.OfficeTime;
 import com.decentdecor.workdesk.util.Texts;
 import java.util.List;
+import java.util.Locale;
 import java.util.HashSet;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -92,7 +94,7 @@ public class RecurringTaskService {
             RecurringRequest perEmployee = new RecurringRequest(task.title(), task.description(), assigneeId,
                     task.priority(), task.frequency(), task.dayOfWeek(), task.dueTime(), task.workflowId(),
                     task.estimatedHours(), task.startDate(), task.scheduledTime(), task.durationMinutes(),
-                    task.reviewerId(), task.image(), task.noReview());
+                    task.reviewerId(), task.image(), task.noReview(), task.dueDaysAfter());
             return create(user, perEmployee);
         }).toList();
     }
@@ -151,6 +153,26 @@ public class RecurringTaskService {
         generator.makeCopy(tpl, time.today());
     }
 
+    /**
+     * Opening an upcoming day of a repeating task from the calendar: makes that day's task now
+     * (normally made 7 days ahead) or returns the one already there. Anyone who can see the repeating task may do this.
+     */
+    @Transactional
+    public RecurringCopyResponse copyFor(CurrentUser user, Long id, String date) {
+        people.requireNotDepartmentAdmin(user);
+        Employee me = people.me(user);
+        RecurringTemplate tpl = find(id, me, false);
+        LocalDate day = OfficeTime.parseDate(date, "date");
+        if (day == null) throw new BadRequestException("Choose the day of the task");
+        var existing = generator.copyIdOn(tpl, day);
+        if (existing.isPresent()) return new RecurringCopyResponse(existing.get());
+        if (!tpl.isActive()) throw new BadRequestException("This repeating task is stopped");
+        if (day.isBefore(time.today())) throw new BadRequestException("No task was made for this past day");
+        if (!generator.runsOn(tpl, day)) throw new BadRequestException("This task does not repeat on that day");
+        if (generator.onLeave(tpl, day)) throw new BadRequestException(tpl.getAssignee().getFullName() + " is on leave that day");
+        return new RecurringCopyResponse(generator.makeCopy(tpl, day).getId());
+    }
+
     // ------------------------------------------------------------ inside
 
     /** Admins: any. Employees: see the ones they do or set up, but only admins change, stop or delete them. */
@@ -179,8 +201,32 @@ public class RecurringTaskService {
 
         LocalTime scheduledTime = null;
         Integer durationMinutes = null;
+        int dueDaysAfter = 0;
         LocalTime dueTime;
-        if (!Texts.isBlank(req.scheduledTime()) || req.durationMinutes() != null) {
+        if (!Texts.isBlank(req.scheduledTime()) && req.durationMinutes() == null) {
+            // start time + due day and time (weekly / monthly / yearly)
+            if (req.estimatedHours() != null) {
+                throw new BadRequestException("Use either a due date or estimated hours, not both");
+            }
+            scheduledTime = OfficeTime.parseTime(req.scheduledTime(), "Choose a valid scheduled time");
+            dueTime = OfficeTime.parseTime(Texts.isBlank(req.dueTime()) ? "18:00" : req.dueTime(), "Choose a due time");
+            dueDaysAfter = req.dueDaysAfter() == null ? 0 : req.dueDaysAfter();
+            int maxDays = switch (frequency) {
+                case DAILY -> 0;
+                case WEEKLY -> 6;
+                case MONTHLY -> 27;
+                case YEARLY -> 364;
+            };
+            if (dueDaysAfter < 0) throw new BadRequestException("The due date cannot be before the start date");
+            if (dueDaysAfter > maxDays) {
+                throw new BadRequestException(frequency == RepeatFrequency.DAILY
+                        ? "A daily task is due on the same day it starts"
+                        : "The due date must be before the next " + frequency.name().toLowerCase(Locale.ROOT).replace("ly", "") + " starts");
+            }
+            if (dueDaysAfter == 0 && !dueTime.isAfter(scheduledTime)) {
+                throw new BadRequestException("The due time must be after the start time");
+            }
+        } else if (!Texts.isBlank(req.scheduledTime()) || req.durationMinutes() != null) {
             if (Texts.isBlank(req.scheduledTime()) || req.durationMinutes() == null) {
                 throw new BadRequestException("Choose both a start time and a duration");
             }
@@ -212,6 +258,7 @@ public class RecurringTaskService {
         tpl.setStartDate(startDate);
         tpl.setScheduledTime(scheduledTime);
         tpl.setDurationMinutes(durationMinutes);
+        tpl.setDueDaysAfter(dueDaysAfter);
         tpl.setDueTime(dueTime);
         tpl.setEstimatedHours(req.estimatedHours());
         if (req.estimatedHours() != null

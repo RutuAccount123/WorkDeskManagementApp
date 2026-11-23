@@ -79,6 +79,10 @@ public class RecurringTemplate {
     @Column(name = "duration_minutes")
     private Integer durationMinutes;
 
+    /** Days after the start day the copy is due (weekly / monthly / yearly with a due date). 0 = same day. */
+    @Column(name = "due_days_after", nullable = false)
+    private int dueDaysAfter;
+
     @Column(name = "estimated_hours", precision = 7, scale = 4)
     private BigDecimal estimatedHours;
 
@@ -203,6 +207,14 @@ public class RecurringTemplate {
 
     public void setScheduledTime(LocalTime scheduledTime) {
         this.scheduledTime = scheduledTime;
+    }
+
+    public int getDueDaysAfter() {
+        return dueDaysAfter;
+    }
+
+    public void setDueDaysAfter(int dueDaysAfter) {
+        this.dueDaysAfter = dueDaysAfter;
     }
 
     public Integer getDurationMinutes() {

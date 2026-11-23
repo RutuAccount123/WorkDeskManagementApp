@@ -2,6 +2,7 @@ package com.decentdecor.workdesk.controller;
 
 import com.decentdecor.workdesk.dto.recurring.RecurringRequest;
 import com.decentdecor.workdesk.dto.recurring.RecurringBatchRequest;
+import com.decentdecor.workdesk.dto.recurring.RecurringCopyResponse;
 import com.decentdecor.workdesk.dto.recurring.RecurringResponse;
 import com.decentdecor.workdesk.security.CurrentUser;
 import com.decentdecor.workdesk.service.RecurringTaskService;
@@ -62,6 +63,13 @@ public class RecurringTaskController {
     public ResponseEntity<Void> delete(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id) {
         recurringService.delete(me, id);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Make (or find) the task for one upcoming day, so it can be opened from the calendar. */
+    @PostMapping("/{id}/copies")
+    public ResponseEntity<RecurringCopyResponse> copyFor(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id,
+                                                         @RequestParam String date) {
+        return ResponseEntity.ok(recurringService.copyFor(me, id, date));
     }
 
     @PostMapping("/{id}/generate-now")

@@ -5,6 +5,8 @@ import { DAYS, PRIORITIES, PRIORITY_LABEL, dayLabel, isoDay, toLocalInput } from
 import { encodeImage } from '@/utils/image.js';
 import Modal from '@/components/ui/Modal.jsx';
 import EmployeePicker from '@/components/ui/EmployeePicker.jsx';
+import RepeatDueFields from '@/components/form/RepeatDueFields.jsx';
+import { addDays, dueError, firstStartDay } from '@/utils/repeatDue.js';
 
 const NO_REVIEW = 'none';
 
@@ -38,7 +40,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
       : new Date().toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase(),
     scheduleDate: isoDay(),
     scheduleTime: '09:30',
-    durationMinutes: '20',
+    dueGap: 0,   // weekly / monthly / yearly: days from each start to its due date
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -90,6 +92,8 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
     && (!isDepartmentAdmin || (String(p.id) !== String(user.id) && !p.departmentAdmin)));
   const assigneeName = people.find((p) => String(p.id) === assigneeIds[0])?.fullName;
 
+  const repeatStart = firstStartDay(form.repeat, form.dayOfWeek, form.scheduleDate);
+
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -97,6 +101,10 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
     try {
       if (!assigneeIds.length) throw new Error('Choose at least one person to assign this task to.');
       if (task && assigneeIds.length !== 1) throw new Error('Choose one assignee when editing a task.');
+      if (!task && form.repeat !== 'ONCE') {
+        const problem = dueError(form.repeat, repeatStart, form.scheduleTime, addDays(repeatStart, Number(form.dueGap) || 0), form.dueTime);
+        if (problem) throw new Error(problem);
+      }
       const body = {
         title: form.title, description: form.description, priority: form.priority,
         ...(form.repeat === 'ONCE' || task ? {
@@ -110,7 +118,8 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
           dayOfWeek: form.repeat === 'WEEKLY' ? form.dayOfWeek : null,
           startDate: form.scheduleDate,
           scheduledTime: form.scheduleTime,
-          durationMinutes: Number(form.durationMinutes),
+          // start date + start time, due on a date and time (no minutes)
+          durationMinutes: null, dueTime: form.dueTime, dueDaysAfter: Number(form.dueGap) || 0,
           estimatedHours: null,
           workflowId: workflowId ? Number(workflowId) : null,
           reviewerId: form.reviewerId === NO_REVIEW ? null : Number(form.reviewerId),
@@ -226,32 +235,22 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
           </>
         ) : (
           <>
-            <div className="grid-3">
-              {form.repeat === 'WEEKLY' ? (
-                <label>Every
-                  <select value={form.dayOfWeek} onChange={set('dayOfWeek')}>
-                    {DAYS.filter((day) => day !== 'SUNDAY').map((day) => <option key={day} value={day}>{dayLabel(day)}</option>)}
-                  </select>
-                </label>
-              ) : form.repeat === 'MONTHLY' || form.repeat === 'YEARLY' ? (
-                <label>Repeat on
-                  <input type="date" value={form.scheduleDate} onChange={set('scheduleDate')} required />
-                </label>
-              ) : (
-                <label>Starts from
-                  <input type="date" value={form.scheduleDate} onChange={set('scheduleDate')} required />
-                </label>
-              )}
-              <label>Scheduled start
-                <input type="time" value={form.scheduleTime} onChange={set('scheduleTime')} required />
+            {form.repeat === 'WEEKLY' && (
+              <label>Every
+                <select value={form.dayOfWeek} onChange={set('dayOfWeek')}>
+                  {DAYS.filter((day) => day !== 'SUNDAY').map((day) => <option key={day} value={day}>{dayLabel(day)}</option>)}
+                </select>
               </label>
-              <label>Duration (minutes)
-                <input type="number" min="1" max="1439" value={form.durationMinutes} onChange={set('durationMinutes')} required />
-              </label>
-            </div>
+            )}
+            <RepeatDueFields frequency={form.repeat} start={repeatStart}
+              startDate={form.scheduleDate} onStartDate={(v) => setForm((f) => ({ ...f, scheduleDate: v }))}
+              startTime={form.scheduleTime} onStartTime={(v) => setForm((f) => ({ ...f, scheduleTime: v }))}
+              gap={form.dueGap} onGap={(v) => setForm((f) => ({ ...f, dueGap: v }))}
+              dueTime={form.dueTime} onDueTime={(v) => setForm((f) => ({ ...f, dueTime: v }))} />
             <p className="hint">
-              This task will appear on each scheduled working day. The due time is {form.durationMinutes || 0} minutes after its start;
-              you’ll be reminded at the scheduled time and notified if it becomes overdue.
+              This task will appear on each scheduled working day.
+              {' '}It starts at the start time and is due on the due date and time;
+              {' '}you’ll be reminded at the scheduled time and notified if it becomes overdue.
               {form.reviewerId === NO_REVIEW
                 ? ' No review will be required.'
                 : ` ${form.reviewerId === String(user.id) ? 'You' : people.find((person) => String(person.id) === form.reviewerId)?.fullName || 'The selected reviewer'} will review each task.`}

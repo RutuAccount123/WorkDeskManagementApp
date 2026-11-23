@@ -140,8 +140,12 @@ public class TaskService {
             if (f.q().length() > 200) throw new BadRequestException("Search text is too long");
             spec = spec.and(TaskSpecifications.search(f.q().trim()));
         }
-        if (f.workFrom() != null) spec = spec.and(TaskSpecifications.workAtOrAfter(time.startOf(f.workFrom())));
-        if (f.workTo() != null) spec = spec.and(TaskSpecifications.workBefore(time.startOf(f.workTo().plusDays(1))));
+        if (Boolean.TRUE.equals(f.withPlanned()) && f.workFrom() != null && f.workTo() != null) {
+            spec = spec.and(TaskSpecifications.workOrPlannedBetween(time.startOf(f.workFrom()), time.startOf(f.workTo().plusDays(1))));
+        } else {
+            if (f.workFrom() != null) spec = spec.and(TaskSpecifications.workAtOrAfter(time.startOf(f.workFrom())));
+            if (f.workTo() != null) spec = spec.and(TaskSpecifications.workBefore(time.startOf(f.workTo().plusDays(1))));
+        }
         if (departmentAdmin) spec = spec.and(TaskSpecifications.assignedToDepartments(me.getAccessibleDepartments()));
 
         List<Task> found = new ArrayList<>(tasks.findAll(spec));

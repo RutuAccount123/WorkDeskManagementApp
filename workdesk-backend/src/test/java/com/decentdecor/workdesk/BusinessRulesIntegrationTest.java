@@ -521,6 +521,92 @@ class BusinessRulesIntegrationTest {
     }
 
     @Test
+    void upcomingWorkStartedTodayShowsTodayAndFinishedWorkShowsWhenItWasDone() throws Exception {
+        Person assigner = person("Early Assigner");
+        Person worker = person("Early Worker");
+        LocalDate today = LocalDate.now(OFFICE);
+        long id = ok(assigner.token(), post("/api/tasks"), map("title", "Start early " + worker.id(), "assigneeId", worker.id(),
+                "dueAt", localDue(10))).get("id").asLong();
+        String todayList = "/api/tasks?workFrom=" + today + "&workTo=" + today;
+        assertThat(ok(worker.token(), get(todayList), null).findValuesAsText("id")).doesNotContain(String.valueOf(id));
+
+        JsonNode started = ok(worker.token(), post("/api/tasks/" + id + "/status"), map("status", "IN_PROGRESS"));
+        assertThat(java.time.Instant.parse(started.get("startedAt").asText()).atZone(OFFICE).toLocalDate()).isEqualTo(today);
+        assertThat(ok(worker.token(), get(todayList), null).findValuesAsText("id")).contains(String.valueOf(id));
+        // not on its old due day any more
+        LocalDate due = java.time.Instant.parse(started.get("dueAt").asText()).atZone(OFFICE).toLocalDate();
+        assertThat(ok(worker.token(), get("/api/tasks?workFrom=" + due + "&workTo=" + due), null).findValuesAsText("id"))
+                .doesNotContain(String.valueOf(id));
+        // ... unless the calendar asks for work scheduled on that day too
+        assertThat(ok(worker.token(), get("/api/tasks?workFrom=" + due + "&workTo=" + due + "&withPlanned=true"), null)
+                .findValuesAsText("id")).contains(String.valueOf(id));
+    }
+
+    @Test
+    void anUpcomingMonthlyDayCanBeOpenedFromTheCalendar() throws Exception {
+        Person p = person("Monthly Open Ahead");
+        var holidays = ok(admin, get("/api/holidays"), null).findValuesAsText("date");
+        LocalDate start = LocalDate.now(OFFICE).plusDays(1);
+        long tplId = ok(admin, post("/api/recurring"), map(
+                "title", "Monthly open " + p.id(), "assigneeId", p.id(), "frequency", "MONTHLY",
+                "startDate", start.toString(), "scheduledTime", "09:30", "durationMinutes", 20)).get("id").asLong();
+        // a later month whose day is a working day, well past the 7 days the server fills
+        LocalDate later = start.plusMonths(2);
+        for (int i = 0; i < 12 && (later.getDayOfWeek() == DayOfWeek.SUNDAY || holidays.contains(later.toString())
+                || later.getDayOfMonth() != start.getDayOfMonth()); i++) {
+            later = start.plusMonths(3 + i);
+        }
+
+        long taskId = ok(p.token(), post("/api/recurring/" + tplId + "/copies?date=" + later), null).get("taskId").asLong();
+        JsonNode task = ok(p.token(), get("/api/tasks/" + taskId), null);
+        assertThat(task.get("repeat").asText()).isEqualTo("MONTHLY");
+        assertThat(java.time.Instant.parse(task.get("scheduledAt").asText()).atZone(OFFICE).toLocalDate()).isEqualTo(later);
+        // opening it again gives the same task, not a second copy
+        assertThat(ok(p.token(), post("/api/recurring/" + tplId + "/copies?date=" + later), null).get("taskId").asLong()).isEqualTo(taskId);
+        // a day it does not repeat on
+        call(p.token(), post("/api/recurring/" + tplId + "/copies?date=" + later.plusDays(1)), null).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void monthlyTaskCanBeDueOnALaterDayInsteadOfAfterMinutes() throws Exception {
+        Person p = person("Monthly Due Later");
+        var holidays = ok(admin, get("/api/holidays"), null).findValuesAsText("date");
+        LocalDate occurrence = LocalDate.now(OFFICE).plusDays(1);
+        for (int i = 0; i < 7 && (occurrence.getDayOfWeek() == DayOfWeek.SUNDAY || holidays.contains(occurrence.toString())); i++) {
+            occurrence = occurrence.plusDays(1);
+        }
+
+        JsonNode template = ok(admin, post("/api/recurring"), map(
+                "title", "Monthly bills " + p.id(), "assigneeId", p.id(), "frequency", "MONTHLY",
+                "startDate", occurrence.toString(), "scheduledTime", "09:30",
+                "dueTime", "17:00", "dueDaysAfter", 3));
+        assertThat(template.get("durationMinutes").isNull()).isTrue();
+        assertThat(template.get("dueDaysAfter").asInt()).isEqualTo(3);
+        assertThat(template.get("dueTime").asText()).isEqualTo("17:00:00");
+
+        JsonNode task = null;
+        for (JsonNode t : ok(admin, get("/api/tasks?assigneeId=" + p.id()), null)) {
+            if (t.get("recurringTemplateId").asLong() == template.get("id").asLong()) task = t;
+        }
+        assertThat(task).isNotNull();
+        var start = java.time.Instant.parse(task.get("scheduledAt").asText()).atZone(OFFICE);
+        var due = java.time.Instant.parse(task.get("dueAt").asText()).atZone(OFFICE);
+        assertThat(start.toLocalDate()).isEqualTo(occurrence);
+        assertThat(start.toLocalTime().toString()).isEqualTo("09:30");
+        assertThat(due.toLocalDate()).isEqualTo(occurrence.plusDays(3));
+        assertThat(due.toLocalTime().toString()).isEqualTo("17:00");
+
+        // a weekly task must be due before the next week's copy starts
+        call(admin, post("/api/recurring"), map("title", "Too late", "assigneeId", p.id(), "frequency", "WEEKLY",
+                "dayOfWeek", "MONDAY", "scheduledTime", "09:30", "dueTime", "17:00", "dueDaysAfter", 7))
+                .andExpect(status().isBadRequest());
+        // same day: due time must be after the start time
+        call(admin, post("/api/recurring"), map("title", "Backwards", "assigneeId", p.id(), "frequency", "MONTHLY",
+                "startDate", occurrence.toString(), "scheduledTime", "09:30", "dueTime", "09:00", "dueDaysAfter", 0))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void employeesCanCreateRepeatingWorkForOthersButCannotChangeAdminAssignments() throws Exception {
         Person p = person("Self Twelve");
         Person other = person("Other Thirteen");
