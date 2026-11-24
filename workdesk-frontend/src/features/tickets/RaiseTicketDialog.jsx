@@ -20,7 +20,9 @@ export default function RaiseTicketDialog({
 
   useEffect(() => {
     employeeService.directory().then((list) => {
-      const shown = list.filter((p) => p.id !== user.id && (!onlyAdmins || (p.role === 'ADMIN' && !p.departmentAdmin)));
+      // admins: full admins, and department admins who look after my department
+      const canHelp = (p) => p.role === 'ADMIN' && (!p.departmentAdmin || (p.accessibleDepartments || []).includes(user.department));
+      const shown = list.filter((p) => p.id !== user.id && (!onlyAdmins || canHelp(p)));
       setPeople(shown);
       const first = shown.find((p) => p.id === preferredId) || (onlyAdmins && shown.length === 1 ? shown[0] : null);
       if (first) setAssignedToId(String(first.id));

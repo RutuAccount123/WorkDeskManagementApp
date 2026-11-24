@@ -5,6 +5,7 @@ import { useAuth } from '@/features/auth/AuthContext.jsx';
 import Modal from '@/components/ui/Modal.jsx';
 import { encodeImage } from '@/utils/image.js';
 import { personColor } from '@/utils/colors.js';
+import { matchesPerson } from '@/utils/personSearch.js';
 
 const EMPTY = { employeeCode: '', fullName: '', email: '', password: '', role: 'EMPLOYEE', departmentAdmin: false, accessibleDepartments: [], department: '', designation: '', phone: '' };
 
@@ -172,6 +173,8 @@ export default function Employees() {
   const [list, setList] = useState(null);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState('');
+  const [q, setQ] = useState('');
+  const shown = (list || []).filter((e) => matchesPerson(e, q));
 
   const load = () => { setError(''); return employeeService.list().then(setList).catch((e) => setError(e.message)); };
   useEffect(() => { load(); }, []);
@@ -207,14 +210,23 @@ export default function Employees() {
         {isFullAdmin && <button className="btn primary" onClick={() => setEditing({})}>Add employee</button>}
       </header>
       {error && <p className="error">{error}</p>}
-      {list === null ? <p className="muted">Loading…</p> : (
+      {list !== null && list.length > 0 && (
+        <div className="employee-search">
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search employees"
+            placeholder="Search by name, code, department, designation or email" />
+          {q && <span className="muted small" role="status">{shown.length} of {list.length} employees</span>}
+        </div>
+      )}
+      {list === null ? <p className="muted">Loading…</p> : q && shown.length === 0 ? (
+        <p className="muted">No employee matches “{q}”. <button className="link-btn" onClick={() => setQ('')}>Clear search</button></p>
+      ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr><th>Name</th><th>Department</th><th>Email</th><th>Access</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr>
             </thead>
             <tbody>
-              {list.map((e) => (
+              {shown.map((e) => (
                 <tr key={e.id} className={e.active ? '' : 'inactive'}>
                   <td>
                     <Link to={`/employees/${e.id}`}><strong>{e.fullName}</strong></Link>
@@ -223,7 +235,7 @@ export default function Employees() {
                   <td>{e.department || '—'}</td>
                   <td>{e.email}</td>
                   <td>{e.departmentAdmin
-                    ? `Department admin (view-only: ${(e.accessibleDepartments?.length ? e.accessibleDepartments : [e.department].filter(Boolean)).join(', ')})`
+                    ? `Department admin (manages: ${(e.accessibleDepartments?.length ? e.accessibleDepartments : [e.department].filter(Boolean)).join(', ')})`
                     : e.role === 'ADMIN' ? 'Admin' : 'Employee'}</td>
                   <td>{e.active ? 'Active' : 'Inactive'}</td>
                   {isFullAdmin ? (

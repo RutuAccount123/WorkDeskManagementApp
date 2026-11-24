@@ -17,7 +17,7 @@ import EmployeeProfileCard from '@/features/dashboard/EmployeeProfileCard.jsx';
 
 /** Personal home: today's reminder, day/week/month/year views, and monthly performance. */
 export default function MyWork({ personalDashboard = false }) {
-  const { user, isAdmin, isDepartmentAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [today, setToday] = useState(null);
   const [late, setLate] = useState(0);
   const [adding, setAdding] = useState(false);
@@ -70,10 +70,8 @@ export default function MyWork({ personalDashboard = false }) {
           <p className="muted">Your work, day by day.</p>
         </div>
         <div className="row">
-          {(!personalDashboard || !isDepartmentAdmin) && <>
-            <button className="btn ghost" onClick={() => setAssigning(true)}>Assign a task</button>
-            <button className="btn primary" onClick={() => setAdding(true)}>Add my work</button>
-          </>}
+          <button className="btn ghost" onClick={() => setAssigning(true)}>Assign a task</button>
+          <button className="btn primary" onClick={() => setAdding(true)}>Add my work</button>
         </div>
       </header>
 
@@ -117,17 +115,17 @@ export default function MyWork({ personalDashboard = false }) {
         </section>
       )}
 
-      {!isDepartmentAdmin && <LeaveTasksPanel refreshKey={refresh} onChanged={bump} />}
+      <LeaveTasksPanel refreshKey={refresh} onChanged={bump} />
       <WorkCalendar employeeId={personalDashboard ? user.id : undefined}
         onOpen={setOpenId} refreshKey={refresh} initialView="day" />
-      {!isDepartmentAdmin && <RepeatingTaskList refreshKey={refresh} onChanged={bump}
-        employeeId={personalDashboard && isAdmin ? user.id : undefined} />}
+      <RepeatingTaskList refreshKey={refresh} onChanged={bump}
+        employeeId={personalDashboard && isAdmin ? user.id : undefined} />
 
       <TaskPanel openId={openId} onClose={() => setOpenId(null)} onChanged={bump} />
-      {assigning && (!personalDashboard || !isDepartmentAdmin) && (
+      {assigning && (
         <TaskForm onClose={() => setAssigning(false)} onSaved={() => { setAssigning(false); bump(); }} />
       )}
-      {adding && (!personalDashboard || !isDepartmentAdmin) && (
+      {adding && (
         <AddWorkForm onClose={() => setAdding(false)} onSaved={() => { setAdding(false); bump(); }} />
       )}
     </div>

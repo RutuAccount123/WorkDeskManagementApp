@@ -102,7 +102,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    void departmentAdminCanAssignTasksOnlyWithinItsScopeAndRemainsOtherwiseReadOnly() throws Exception {
+    void departmentAdminWorksLikeAnAdminOnlyWithinItsDepartments() throws Exception {
         String email = "accounts.admin." + UUID.randomUUID().toString().substring(0, 8) + "@company.com";
         JsonNode created = read(mvc.perform(as(admin, post("/api/employees"))
                         .content(json("fullName", "Accounts Department Admin", "email", email, "password", "Start@1234",
@@ -122,7 +122,9 @@ class ApiIntegrationTest {
 
         JsonNode people = read(mvc.perform(as(departmentAdmin, get("/api/people")))
                 .andExpect(status().isOk()).andReturn());
+        // the people they can give work to: their departments, plus themselves
         for (JsonNode person : people) {
+            if (person.get("id").asLong() == created.get("id").asLong()) continue;
             assertThat(person.get("department").asText()).isIn("Accounts", "Projects");
         }
 
@@ -170,8 +172,28 @@ class ApiIntegrationTest {
                                 "noReview", true)))
                 .andExpect(status().isCreated()).andReturn());
         assertThat(assignedTask.get("reviewer") == null || assignedTask.get("reviewer").isNull()).isTrue();
+        // they move their departments' work like an admin
         mvc.perform(as(departmentAdmin, post("/api/tasks/" + assignedTask.path("id").asText() + "/status"))
                         .content(json("status", "IN_PROGRESS")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+        // ... add their own work
+        mvc.perform(as(departmentAdmin, post("/api/tasks")).content(json("title", "My own work", "noReview", true)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.assignee.id").value(created.get("id").asLong()));
+        // ... set up repeating tasks for their departments only
+        mvc.perform(as(departmentAdmin, post("/api/recurring"))
+                        .content(json("title", "Scoped daily check", "frequency", "DAILY", "assigneeId", allowedAssigneeId)))
+                .andExpect(status().isCreated());
+        mvc.perform(as(departmentAdmin, post("/api/recurring"))
+                        .content(json("title", "Outside daily check", "frequency", "DAILY",
+                                "assigneeId", outsideTask.path("assignee").path("id").asLong())))
+                .andExpect(status().isForbidden());
+        JsonNode repeating = read(mvc.perform(as(departmentAdmin, get("/api/recurring"))).andExpect(status().isOk()).andReturn());
+        assertThat(repeating.findValuesAsText("title")).contains("Scoped daily check").doesNotContain("Outside daily check");
+        // ... and open FMS and tickets
+        mvc.perform(as(departmentAdmin, get("/api/workflows"))).andExpect(status().isOk());
+        mvc.perform(as(departmentAdmin, get("/api/tickets?scope=all"))).andExpect(status().isOk());
+        // holidays stay with full admins
+        mvc.perform(as(departmentAdmin, post("/api/holidays")).content(json("date", "2031-01-01", "name", "X")))
                 .andExpect(status().isForbidden());
         // department admins can edit tasks in their departments, but not move them to someone outside
         mvc.perform(as(departmentAdmin, put("/api/tasks/" + assignedTask.path("id").asText()))
@@ -188,9 +210,13 @@ class ApiIntegrationTest {
                         .content(json("title", "Out-of-scope reviewer", "assigneeId", allowedAssigneeId,
                                 "reviewerId", outsideTask.path("assignee").path("id").asLong())))
                 .andExpect(status().isForbidden());
+        // they cannot add, edit or delete employees
         mvc.perform(as(departmentAdmin, post("/api/employees"))
                         .content(json("fullName", "Should not be created", "email", "blocked@company.com",
                                 "password", "Start@1234", "role", "EMPLOYEE", "department", "Accounts")))
+                .andExpect(status().isForbidden());
+        mvc.perform(as(departmentAdmin, put("/api/employees/" + allowedAssigneeId))
+                        .content(json("fullName", "Renamed", "email", allowedAssigneeEmail, "role", "EMPLOYEE", "department", "Accounts")))
                 .andExpect(status().isForbidden());
     }
 

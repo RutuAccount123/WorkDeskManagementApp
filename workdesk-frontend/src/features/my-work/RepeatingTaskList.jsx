@@ -22,7 +22,7 @@ function scheduleLabel(task) {
  * To have one stopped, an employee raises a ticket to an admin (on the nearest open copy of it).
  */
 export default function RepeatingTaskList({ refreshKey, onChanged, employeeId }) {
-  const { user, isFullAdmin } = useAuth() || {};
+  const { user, isAdmin } = useAuth() || {};
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -62,7 +62,7 @@ export default function RepeatingTaskList({ refreshKey, onChanged, employeeId })
       <h2 className="section-title">My repeating tasks</h2>
       {error && <p className="error">{error}</p>}
       {message && <p className="success" role="status">{message}</p>}
-      {!isFullAdmin && list.length > 0 && <p className="muted small">Only an admin can stop or change a repeating task. Use “Ask admin to stop” to raise a ticket.</p>}
+      {!isAdmin && list.length > 0 && <p className="muted small">Only an admin can stop or change a repeating task. Use “Ask admin to stop” to raise a ticket.</p>}
       {list.length === 0 ? (
         <p className="muted">No repeating tasks yet.</p>
       ) : (
@@ -83,7 +83,7 @@ export default function RepeatingTaskList({ refreshKey, onChanged, employeeId })
                   {t.lastGeneratedOn && t.active && ` · next copies up to ${fmtDate(t.lastGeneratedOn)}`}
                 </small>
               </span>
-              {isFullAdmin && (
+              {isAdmin && (
                 <span className="row-actions">
                   <button className="link-btn" onClick={() => (t.active
                     ? window.confirm(`Stop repeating “${t.title}”? No new copies are made and upcoming copies nobody has started are removed. You can start it again later.`)
@@ -94,7 +94,7 @@ export default function RepeatingTaskList({ refreshKey, onChanged, employeeId })
                     && act(() => recurringService.remove(t.id))}>Delete</button>
                 </span>
               )}
-              {!isFullAdmin && t.active && (
+              {!isAdmin && t.active && (
                 <span className="row-actions">
                   <button className="link-btn" onClick={() => askToStop(t)}>Ask admin to stop</button>
                 </span>

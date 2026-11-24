@@ -77,7 +77,6 @@ public class WorkflowService {
     /** All FMS the person can see; with taskId only the ones linked to that task. */
     @Transactional(readOnly = true)
     public List<WorkflowResponse> list(CurrentUser user, Long taskId) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Long linkedToTask = null;
         if (taskId != null) {
@@ -95,14 +94,12 @@ public class WorkflowService {
 
     @Transactional(readOnly = true)
     public WorkflowResponse get(CurrentUser user, Long id) {
-        people.requireNotDepartmentAdmin(user);
         return mapper.toResponse(visible(id, people.me(user)));
     }
 
     /** Creates an FMS and starts either its scheduled run or the requested linked-task run for today. */
     @Transactional
     public WorkflowResponse create(CurrentUser user, WorkflowRequest req) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Workflow w = new Workflow();
         w.setCreatedBy(me);
@@ -125,7 +122,6 @@ public class WorkflowService {
     /** Edits apply from the next run (runs already started keep their copy). */
     @Transactional
     public WorkflowResponse update(CurrentUser user, Long id, WorkflowRequest req) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Workflow w = visible(id, me);
         apply(w, req, me);
@@ -134,7 +130,6 @@ public class WorkflowService {
 
     @Transactional
     public WorkflowResponse setActive(CurrentUser user, Long id, boolean active) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Workflow w = visible(id, me);
         access.requireOwner(w, me);
@@ -149,7 +144,6 @@ public class WorkflowService {
      */
     @Transactional
     public WorkflowResponse newFormLink(CurrentUser user, Long id) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Workflow w = visible(id, me);
         access.requireOwner(w, me);
@@ -160,7 +154,6 @@ public class WorkflowService {
     /** Turns the shareable form link off: the link stops accepting entries. */
     @Transactional
     public WorkflowResponse turnOffFormLink(CurrentUser user, Long id) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Workflow w = visible(id, me);
         access.requireOwner(w, me);
@@ -171,7 +164,6 @@ public class WorkflowService {
     /** Past runs and their tasks stay in the record. */
     @Transactional
     public void delete(CurrentUser user, Long id) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Workflow w = visible(id, me);
         access.requireOwner(w, me);
@@ -183,7 +175,6 @@ public class WorkflowService {
     /** "Start new": anyone who can see the FMS fills its form, and step 1 starts at once. */
     @Transactional
     public RunResponse startNow(CurrentUser user, Long id, StartRunRequest req) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Workflow w = visible(id, me);
         if (!w.isActive()) throw new BadRequestException("This workflow is paused");
@@ -204,7 +195,6 @@ public class WorkflowService {
     /** Runs on a day (default today), or the runs started for a task. */
     @Transactional(readOnly = true)
     public List<RunResponse> runs(CurrentUser user, LocalDate date, Long taskId) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         List<WorkflowRun> list = taskId != null ? runs.findBySourceTaskId(taskId) : runs.findByRunDate(date == null ? time.today() : date);
         List<WorkflowRun> visible = list.stream()
@@ -216,20 +206,18 @@ public class WorkflowService {
 
     @Transactional(readOnly = true)
     public RunResponse run(CurrentUser user, Long runId) {
-        people.requireNotDepartmentAdmin(user);
         return toRun(visibleRun(runId, people.me(user)));
     }
 
     /** Step 1's person (or the owner / an admin) fills a scheduled run's form; this starts step 1. */
     @Transactional
     public RunResponse fillForm(CurrentUser user, Long runId, Map<String, Object> formData) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         WorkflowRun run = visibleRun(runId, me);
         run = runs.findByIdForUpdate(run.getId()).orElseThrow(() -> NotFoundException.of("Workflow run"));
         if (!run.needsForm()) throw new BadRequestException("The form for this run is already filled");
         boolean stepOnePerson = me.getId().equals(run.getSteps().get(0).assigneeId());
-        if (!me.isAdmin() && !run.getCreatedBy().getId().equals(me.getId()) && !stepOnePerson) {
+        if (!access.manages(run.getWorkflow(), me) && !run.getCreatedBy().getId().equals(me.getId()) && !stepOnePerson) {
             throw new ForbiddenException("Only step 1’s person fills this form");
         }
         engine.saveForm(run, null, formData == null ? Map.of() : formData, me);
@@ -239,7 +227,6 @@ public class WorkflowService {
     /** Tracker: every run of one FMS between two dates, newest first (like the rows of the FMS sheet). */
     @Transactional(readOnly = true)
     public List<RunResponse> tracker(CurrentUser user, Long id, LocalDate from, LocalDate to) {
-        people.requireNotDepartmentAdmin(user);
         Workflow w = visible(id, people.me(user));
         List<WorkflowRun> list = runs.findByWorkflowIdAndRunDateBetween(w.getId(),
                 from == null ? LocalDate.of(1900, 1, 1) : from, to == null ? LocalDate.of(2999, 12, 31) : to);
@@ -291,6 +278,14 @@ public class WorkflowService {
         long unassigned = steps.stream().filter(step -> step.assigneeId() == null).count();
         if (unassigned > 0 && unassigned != steps.size()) {
             throw new BadRequestException("Assign a person to every step, or leave every step unassigned");
+        }
+        if (me.isDepartmentAdmin()) {
+            for (WorkflowStep step : steps) {
+                if (step.assigneeId() == null || step.assigneeId().equals(me.getId())) continue;
+                if (!me.canManage(people.get(step.assigneeId()))) {
+                    throw new ForbiddenException("Choose people in departments you can access for every FMS step");
+                }
+            }
         }
         List<FormField> fields = formFields(req.formFields());
         String department = Texts.trimToNull(req.department());

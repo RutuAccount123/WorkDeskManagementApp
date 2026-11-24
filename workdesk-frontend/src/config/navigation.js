@@ -55,6 +55,14 @@ export const DEPARTMENT_ADMIN_NAV = [
       { to: '/reports', label: 'Reports', icon: 'reports' },
     ],
   },
+  {
+    section: 'Manage',
+    items: [
+      { to: '/workflows', label: 'Workflows (FMS)', short: 'FMS', icon: 'flow' },
+      { to: '/recurring', label: 'Repeating tasks', short: 'Repeat', icon: 'repeat' },
+      { to: '/holidays', label: 'Holidays', icon: 'holiday' },
+    ],
+  },
 ];
 
 /** Titles for pages that are not in the side menu, matched in order. */

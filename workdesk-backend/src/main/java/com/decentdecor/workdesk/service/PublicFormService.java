@@ -126,7 +126,7 @@ public class PublicFormService {
      * Only tasks they can close themselves (no reviewer, nothing left to tick) are touched.
      */
     private void closeFillTasks(Employee member, CurrentUser user, String code) {
-        if (member.isDepartmentAdmin() || code == null) return;
+        if (code == null) return;
         List<Task> mine = tasks.findByAssigneeId(member.getId()).stream()
                 .filter(t -> !t.isWorkflowStep() && CAN_CLOSE.contains(t.getStatus()))
                 .filter(t -> t.effectiveReviewer() == null && t.getChecklist().stream().allMatch(c -> c.done()))

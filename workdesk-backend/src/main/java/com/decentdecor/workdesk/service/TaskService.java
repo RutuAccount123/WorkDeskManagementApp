@@ -146,7 +146,10 @@ public class TaskService {
             if (f.workFrom() != null) spec = spec.and(TaskSpecifications.workAtOrAfter(time.startOf(f.workFrom())));
             if (f.workTo() != null) spec = spec.and(TaskSpecifications.workBefore(time.startOf(f.workTo().plusDays(1))));
         }
-        if (departmentAdmin) spec = spec.and(TaskSpecifications.assignedToDepartments(me.getAccessibleDepartments()));
+        // department admins: work of their departments, plus their own work
+        if (departmentAdmin) spec = spec.and(Specification.anyOf(
+                TaskSpecifications.assignedToDepartments(me.getAccessibleDepartments()),
+                TaskSpecifications.involving(me.getId())));
 
         List<Task> found = new ArrayList<>(tasks.findAll(spec));
         if (Boolean.TRUE.equals(f.overdue())) found.removeIf(t -> !t.isOverdue(now));   // not while due on a leave day
@@ -244,23 +247,18 @@ public class TaskService {
 
     private void requireDepartmentTaskScope(Employee actor, Employee assignee, Employee reviewer) {
         if (!actor.isDepartmentAdmin()) return;
-        if (!people.canViewDepartment(actor, assignee.getDepartment())) {
+        // own work is always allowed; others must be in a department they were given
+        if (!assignee.getId().equals(actor.getId()) && !actor.canManage(assignee)) {
             throw new ForbiddenException("You can assign tasks only to people in departments you can access");
         }
-        if (reviewer != null) {
-            if (!people.canViewDepartment(actor, reviewer.getDepartment())) {
-                throw new ForbiddenException("Choose a reviewer in a department you can access");
-            }
-            if (reviewer.isDepartmentAdmin()) {
-                throw new BadRequestException("Choose a reviewer who can review tasks");
-            }
+        if (reviewer != null && !reviewer.getId().equals(actor.getId()) && !actor.canManage(reviewer)) {
+            throw new ForbiddenException("Choose a reviewer in a department you can access");
         }
     }
 
     /** Approves selected tasks atomically using the normal reviewer/admin status rules. */
     @Transactional
     public List<TaskResponse> approveBatch(CurrentUser user, TaskBatchApprovalRequest request) {
-        people.requireNotDepartmentAdmin(user);
         List<Long> taskIds = request.taskIds();
         if (new HashSet<>(taskIds).size() != taskIds.size()) {
             throw new BadRequestException("Choose each task only once");
@@ -350,7 +348,6 @@ public class TaskService {
     /** POST /api/tasks/{id}/status */
     @Transactional
     public TaskResponse changeStatus(CurrentUser user, Long id, String toValue, String comment) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Task t = visibleTask(id, me, true);
         TaskStatus to = Enums.parse(TaskStatus.class, toValue, null, "Choose a valid status");
@@ -405,7 +402,6 @@ public class TaskService {
     /** POST /api/tasks/{id}/comments — everyone involved is told, except the writer. */
     @Transactional
     public ActivityResponse comment(CurrentUser user, Long id, String comment) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Task t = visibleTask(id, me, false);
         String text = comment.trim();
@@ -420,10 +416,9 @@ public class TaskService {
     /** POST /api/tasks/{id}/checklist — tick or untick one How step of an FMS step. */
     @Transactional
     public TaskResponse tick(CurrentUser user, Long id, ChecklistTickRequest req) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Task t = visibleTask(id, me, true);
-        if (!t.getAssignee().getId().equals(me.getId()) && !me.isAdmin()) {
+        if (!t.getAssignee().getId().equals(me.getId()) && !me.canManage(t.getAssignee())) {
             throw new ForbiddenException("Only the person doing this step can tick its checklist");
         }
         if (!t.getStatus().isOpen()) throw new BadRequestException("This task is closed");
@@ -448,10 +443,9 @@ public class TaskService {
      */
     @Transactional
     public TaskResponse leaveDecision(CurrentUser user, Long id, LeaveDecisionRequest req) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         Task t = visibleTask(id, me, true);
-        if (!t.getAssignee().getId().equals(me.getId()) && !me.isAdmin()) {
+        if (!t.getAssignee().getId().equals(me.getId()) && !me.canManage(t.getAssignee())) {
             throw new ForbiddenException("Only the person doing this task can decide about it");
         }
         if (!t.isOnLeave()) throw new BadRequestException("This task is not due on a leave day");
@@ -504,9 +498,7 @@ public class TaskService {
     /** A task the person may open (admins: any). lock = lock the row for changing. Otherwise "Task not found". */
     Task visibleTask(Long id, Employee me, boolean lock) {
         Task t = (lock ? tasks.findByIdForUpdate(id) : tasks.findById(id)).orElseThrow(() -> NotFoundException.of("Task"));
-        if (me.isDepartmentAdmin()) {
-            if (!people.canViewDepartment(me, t.getAssignee().getDepartment())) throw NotFoundException.of("Task");
-        } else if (!TaskRules.canSee(t, me) && !tickets.involves(t.getId(), me.getId())) {
+        if (!TaskRules.canSee(t, me) && !tickets.involves(t.getId(), me.getId())) {
             throw NotFoundException.of("Task");
         }
         return t;
@@ -516,7 +508,7 @@ public class TaskService {
     private void checkWorkflowRules(Task t, Employee me, TaskStatus from, TaskStatus to) {
         WorkflowRun run = t.getWorkflowRun();
         if (run == null) return;
-        if (to == TaskStatus.CANCELLED && !me.isAdmin() && !t.getCreatedBy().getId().equals(me.getId())) {
+        if (to == TaskStatus.CANCELLED && !me.canManage(t.getAssignee()) && !t.getCreatedBy().getId().equals(me.getId())) {
             throw new ForbiddenException("Only the workflow owner can stop it");
         }
         if (run.getCurrentStep() == 1 && (to == TaskStatus.IN_PROGRESS || to == TaskStatus.COMPLETED) && run.needsForm()) {

@@ -71,13 +71,13 @@ public class TaskProofService {
     }
 
     private void attach(CurrentUser user, Long id, String toValue, List<AttachmentUpload> files) {
-        Employee me = people.requireNotDepartmentAdmin(user);
+        Employee me = people.me(user);
         Task t = taskService.visibleTask(id, me, true);
         String to = toValue == null ? "" : toValue.trim().toUpperCase(Locale.ROOT);
         if (!to.equals(TaskStatus.COMPLETED.name()) && !to.equals(TaskStatus.SUBMITTED.name())) {
             throw new BadRequestException("Attach proof only when marking the task done or submitting it");
         }
-        if (!t.getAssignee().getId().equals(me.getId()) && !me.isAdmin()) {
+        if (!t.getAssignee().getId().equals(me.getId()) && !me.canManage(t.getAssignee())) {
             throw new ForbiddenException("Only the person doing this task can attach proof of work");
         }
         if (attachments.countByTaskId(t.getId()) + files.size() > MAX_FILES_PER_TASK) {

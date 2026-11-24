@@ -67,7 +67,7 @@ public final class TaskRules {
                 || (mine && allowed(ASSIGNEE, from, to))
                 || (isReviewer && allowed(REVIEWER, from, to))
                 || (isCreator && allowed(CREATOR, from, to))
-                || (me.isAdmin() && allowed(ADMIN, from, to));
+                || (me.canManage(t.getAssignee()) && allowed(ADMIN, from, to));
     }
 
     private static boolean allowed(Map<TaskStatus, Set<TaskStatus>> rules, TaskStatus from, TaskStatus to) {
@@ -75,16 +75,16 @@ public final class TaskRules {
     }
 
     /**
-     * Who can edit or delete a task: admins only (department admins only for tasks in their departments,
-     * which the caller checks when it loads the task). The person who created it, the person doing it,
-     * and an employee a ticket was raised to cannot; that employee resolves the ticket or marks the task done instead.
+     * Who can edit or delete a task: admins only (department admins only for tasks of people in their departments).
+     * The person who created it, the person doing it, and an employee a ticket was raised to cannot;
+     * that employee resolves the ticket or marks the task done instead.
      */
     public static boolean canEdit(Task t, Employee me) {
-        return me.isAdmin();
+        return me.canManage(t.getAssignee());
     }
 
-    /** Admins see everything; others only tasks they are part of. */
+    /** Admins see everything (department admins: their departments); everyone sees tasks they are part of. */
     public static boolean canSee(Task t, Employee me) {
-        return me.isAdmin() || t.involves(me.getId());
+        return me.canManage(t.getAssignee()) || t.involves(me.getId());
     }
 }

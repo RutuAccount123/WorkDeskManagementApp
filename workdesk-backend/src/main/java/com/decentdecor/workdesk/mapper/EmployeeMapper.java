@@ -18,7 +18,8 @@ public class EmployeeMapper {
 
     public PersonResponse toPerson(Employee e) {
         return new PersonResponse(e.getId(), e.getFullName(), e.getDepartment(), e.getDesignation(), e.getRole().name(),
-                e.isActive(), e.isDepartmentAdmin());
+                e.isActive(), e.isDepartmentAdmin(),
+                e.isDepartmentAdmin() ? java.util.List.copyOf(e.getAccessibleDepartments()) : java.util.List.of());
     }
 
     /** Short reference, or null. */

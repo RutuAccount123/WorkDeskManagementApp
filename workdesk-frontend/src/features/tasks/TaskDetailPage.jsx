@@ -30,7 +30,7 @@ export default function TaskDetailPage() {
   const { id } = useParams();
   const taskId = Number(id);
   const navigate = useNavigate();
-  const { user, isAdmin, isDepartmentAdmin, isFullAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [task, setTask] = useState(null);
   const [history, setHistory] = useState([]);
   const [run, setRun] = useState(null);
@@ -52,11 +52,11 @@ export default function TaskDetailPage() {
       const [t, h] = await Promise.all([taskService.get(taskId), taskService.activity(taskId)]);
       setTask(t);
       setHistory(h);
-      setSchedule(t.recurringTemplateId && !isDepartmentAdmin
+      setSchedule(t.recurringTemplateId
         ? (await recurringService.list().catch(() => [])).find((r) => r.id === t.recurringTemplateId) || null
         : null);
-      setRun(t.workflow && !isDepartmentAdmin ? await workflowService.run(t.workflow.runId) : null);
-      if (!t.workflow && !isDepartmentAdmin) {
+      setRun(t.workflow ? await workflowService.run(t.workflow.runId) : null);
+      if (!t.workflow) {
         const [wfs, rs] = await Promise.all([workflowService.list(taskId), workflowService.runsForTask(taskId)]);
         setLinked(wfs);
         setLinkedRuns(rs);
@@ -64,7 +64,7 @@ export default function TaskDetailPage() {
     } catch (e) {
       setError(e.message);
     }
-  }, [taskId, isDepartmentAdmin]);
+  }, [taskId]);
 
   useEffect(() => { setTask(null); setRun(null); setError(''); load(); }, [load]);
 
@@ -95,7 +95,7 @@ export default function TaskDetailPage() {
   };
   const tick = (index, done) => guard(() => taskService.tick(taskId, index, done));
   const submitForm = (e) => { e.preventDefault(); guard(() => workflowService.fillForm(run.id, answers)); };
-  const canStopRepeat = schedule && isFullAdmin;   // employees only see the schedule; admins stop / start it
+  const canStopRepeat = schedule && isAdmin;   // employees only see the schedule; admins (department admins: their departments) stop / start it
   const toggleRepeat = async () => {
     if (schedule.active && !window.confirm(`Stop repeating “${schedule.title}”? No new copies are made and upcoming copies nobody has started are removed. This task stays. You can start it again later.`)) return;
     setBusy(true);
@@ -129,14 +129,14 @@ export default function TaskDetailPage() {
   // only admins and department admins edit or delete; a ticket gives an employee "resolve" or "mark done" instead
   const canEdit = isAdmin;
   const turn = yourTurn(task, user, run);
-  const actions = isDepartmentAdmin ? [] : actionsFor(task, user, isAdmin);
+  const actions = actionsFor(task, user, isAdmin);
   const isFlow = !!task.workflow;
   const formGate = isFlow && run?.needsForm && task.workflow.step === 1;
-  const canFillForm = !isDepartmentAdmin && formGate && (mine || isAdmin || task.createdBy?.id === user.id);
+  const canFillForm = formGate && (mine || isAdmin || task.createdBy?.id === user.id);
   const checks = task.checklist || [];
   const checksDone = checks.filter((c) => c.done).length;
   const open = ['TODO', 'IN_PROGRESS', 'SUBMITTED', 'REOPENED'].includes(task.status);
-  const canTick = !isDepartmentAdmin && (mine || isAdmin) && open && !formGate;
+  const canTick = (mine || isAdmin) && open && !formGate;
   const canAttachProof = mine && actions.some(isFinish);
 
   return (
@@ -175,10 +175,10 @@ export default function TaskDetailPage() {
       {task.pending && open && (
         <p className="hint big-hint pending-hint">Pending: a ticket on this task is waiting for an answer. It is not counted as overdue until every ticket is resolved.</p>
       )}
-      {!isDepartmentAdmin && turn && <p className="hint big-hint">{turn}</p>}
+      {turn && <p className="hint big-hint">{turn}</p>}
       {error && <p className="error" role="alert">{error}</p>}
 
-      {!isDepartmentAdmin && isFlow && run?.workflowId && <FmsTaskSheet run={run} showCurrentTask={false} />}
+      {isFlow && run?.workflowId && <FmsTaskSheet run={run} showCurrentTask={false} />}
 
       <div className={`task-layout ${isFlow ? 'workflow-task-layout' : ''}`}>
         {/* ---------------- main column ---------------- */}
@@ -240,10 +240,9 @@ export default function TaskDetailPage() {
           <section className={`panel ${isFlow ? 'workflow-action-card' : ''}`}>
             {isFlow && <h2 className="section-title">Update task</h2>}
             {!isFlow && <StatusSteps status={task.status} />}
-            {!isDepartmentAdmin && isFlow && actions.length === 0 && <p className="muted">This workflow step is already complete.</p>}
-            {isDepartmentAdmin && <p className="muted small">Department admin access is view-only.</p>}
+            {isFlow && actions.length === 0 && <p className="muted">This workflow step is already complete.</p>}
             {/* order: note → proof files → Mark done / Submit (sent together, no extra page) */}
-            {!isDepartmentAdmin && !isFlow && <form onSubmit={addComment} className="comment-box">
+            {!isFlow && <form onSubmit={addComment} className="comment-box">
               <label htmlFor="note" className="section-title note-label">Notes</label>
               <textarea id="note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} disabled={busy}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(e); } }}
@@ -262,7 +261,7 @@ export default function TaskDetailPage() {
 
           <TaskProofs taskId={task.id} refreshKey={task.updatedAt} />
 
-          <TaskTickets task={task} canRaise={!isDepartmentAdmin && open} onChanged={load} />
+          <TaskTickets task={task} canRaise={open} onChanged={load} />
 
           {!isFlow && (
             <section className="panel">
@@ -275,7 +274,7 @@ export default function TaskDetailPage() {
                     <p className="muted small">Open a linked FMS sheet or start a new run.</p>
                   )}
                 </div>
-                {!isDepartmentAdmin && linked.length === 0 && linkedRuns.length === 0 && (
+                {linked.length === 0 && linkedRuns.length === 0 && (
                   <button className="btn primary small" onClick={() => navigate(`/workflows/new?fromTask=${task.id}`)}>
                     + Create FMS
                   </button>
@@ -356,7 +355,7 @@ export default function TaskDetailPage() {
         </aside>}
       </div>
 
-      {starting && !isDepartmentAdmin && (
+      {starting && (
         <StartRunDialog workflow={starting} sourceTaskId={task.id} onClose={() => setStarting(null)}
           onStarted={() => { setStarting(null); load(); }} />
       )}

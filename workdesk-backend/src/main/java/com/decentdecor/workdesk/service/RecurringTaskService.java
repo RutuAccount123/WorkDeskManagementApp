@@ -60,9 +60,10 @@ public class RecurringTaskService {
 
     @Transactional(readOnly = true)
     public List<RecurringResponse> list(CurrentUser user) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
-        List<RecurringTemplate> list = me.isAdmin() ? templates.findAllByOrderByTitleAsc()
+        List<RecurringTemplate> list = me.isFullAdmin() ? templates.findAllByOrderByTitleAsc()
+                : me.isDepartmentAdmin()
+                ? templates.findAllByOrderByTitleAsc().stream().filter(tpl -> canSee(tpl, me)).toList()
                 : templates.findByAssigneeIdOrCreatedByIdOrderByTitleAsc(me.getId(), me.getId());
         return list.stream().map(mapper::toResponse).toList();
     }
@@ -70,7 +71,6 @@ public class RecurringTaskService {
     /** Creates it and makes the copies for the next 7 days straight away. */
     @Transactional
     public RecurringResponse create(CurrentUser user, RecurringRequest req) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         RecurringTemplate tpl = new RecurringTemplate();
         tpl.setCreatedBy(me);
@@ -84,7 +84,6 @@ public class RecurringTaskService {
 
     @Transactional
     public List<RecurringResponse> createBatch(CurrentUser user, RecurringBatchRequest request) {
-        people.requireNotDepartmentAdmin(user);
         List<Long> assigneeIds = request.assigneeIds();
         if (new HashSet<>(assigneeIds).size() != assigneeIds.size()) {
             throw new BadRequestException("Choose each employee only once");
@@ -102,7 +101,6 @@ public class RecurringTaskService {
     /** Edit: future untouched copies are removed and made again with the new details. */
     @Transactional
     public RecurringResponse update(CurrentUser user, Long id, RecurringRequest req) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         RecurringTemplate tpl = find(id, me, true);
         apply(tpl, req, me);
@@ -115,7 +113,6 @@ public class RecurringTaskService {
 
     @Transactional
     public RecurringResponse setActive(CurrentUser user, Long id, boolean active) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         RecurringTemplate tpl = find(id, me, true);
         tpl.setActive(active);
@@ -132,7 +129,6 @@ public class RecurringTaskService {
     /** Past copies stay in everyone's record. */
     @Transactional
     public void delete(CurrentUser user, Long id) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         find(id, me, true);
         generator.removeFutureCopies(id);
@@ -142,7 +138,6 @@ public class RecurringTaskService {
     /** "Create today's task" now. */
     @Transactional
     public void generateNow(CurrentUser user, Long id) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         RecurringTemplate tpl = find(id, me, true);
         if (generator.hasCopyOn(tpl, time.today())) throw new BadRequestException("Today’s task for this template has already been created");
@@ -159,7 +154,6 @@ public class RecurringTaskService {
      */
     @Transactional
     public RecurringCopyResponse copyFor(CurrentUser user, Long id, String date) {
-        people.requireNotDepartmentAdmin(user);
         Employee me = people.me(user);
         RecurringTemplate tpl = find(id, me, false);
         LocalDate day = OfficeTime.parseDate(date, "date");
@@ -178,10 +172,15 @@ public class RecurringTaskService {
     /** Admins: any. Employees: see the ones they do or set up, but only admins change, stop or delete them. */
     private RecurringTemplate find(Long id, Employee me, boolean forChange) {
         RecurringTemplate tpl = templates.findById(id).orElseThrow(() -> NotFoundException.of("Repeating task"));
-        if (!me.isAdmin() && !tpl.getAssignee().getId().equals(me.getId())
-                && !tpl.getCreatedBy().getId().equals(me.getId())) throw NotFoundException.of("Repeating task");
-        if (forChange && !me.isAdmin()) throw new ForbiddenException("Only an admin can change a repeating task");
+        if (!canSee(tpl, me)) throw NotFoundException.of("Repeating task");
+        if (forChange && !me.canManage(tpl.getAssignee())) throw new ForbiddenException("Only an admin can change a repeating task");
         return tpl;
+    }
+
+    /** Admins (department admins: their departments) and the people who do or set up the task. */
+    private static boolean canSee(RecurringTemplate tpl, Employee me) {
+        return me.canManage(tpl.getAssignee()) || tpl.getAssignee().getId().equals(me.getId())
+                || tpl.getCreatedBy().getId().equals(me.getId());
     }
 
     /** Checks the request and copies it onto the template. */
@@ -248,6 +247,9 @@ public class RecurringTaskService {
         tpl.setTitle(req.title().trim());
         tpl.setDescription(Texts.trimToEmpty(req.description()));
         Employee assignee = req.assigneeId() == null ? me : people.activeAssignee(req.assigneeId());
+        if (me.isDepartmentAdmin() && !assignee.getId().equals(me.getId()) && !me.canManage(assignee)) {
+            throw new ForbiddenException("You can set up repeating tasks only for people in departments you can access");
+        }
         tpl.setAssignee(assignee);
         tpl.setReviewer(Boolean.TRUE.equals(req.noReview()) ? null
                 : people.pickReviewer(req.reviewerId(), assignee, assignee.getId().equals(me.getId()) ? null : me));

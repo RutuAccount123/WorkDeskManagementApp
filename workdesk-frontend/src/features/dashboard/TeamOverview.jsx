@@ -4,6 +4,7 @@ import { reportService } from '@/services/index.js';
 import { fmtTime } from '@/utils/format.js';
 import StatusChip from '@/components/ui/StatusChip.jsx';
 import { personColor } from '@/utils/colors.js';
+import { matchesPerson } from '@/utils/personSearch.js';
 
 const SHOW = 5; // tasks listed per person before "+ more"
 
@@ -56,7 +57,7 @@ export default function TeamOverview({ refreshKey, onOpen, employees = [], depar
   const selectedDepartment = singleAllowedDepartment || department;
   const shown = allPeople.filter((m) =>
     (!selectedDepartment || m.employee.department?.trim() === selectedDepartment)
-      && (!q || `${m.employee.fullName} ${m.employee.department}`.toLowerCase().includes(q.toLowerCase())));
+      && matchesPerson(m.employee, q));
   const periodLabel = period === 'today' ? 'today' : period === 'week' ? 'this week' : 'this month';
 
   return (
@@ -76,10 +77,8 @@ export default function TeamOverview({ refreshKey, onOpen, employees = [], depar
             <option value="week">This week</option>
             <option value="month">This month</option>
           </select>
-          {allPeople.length > 4 && (
-            <input type="search" className="team-search" placeholder="Find a person" value={q}
-              onChange={(e) => setQ(e.target.value)} aria-label="Find a person" />
-          )}
+          <input type="search" className="team-search" placeholder="Search employee" value={q}
+            onChange={(e) => setQ(e.target.value)} aria-label="Search employee" />
         </div>
       </div>
 

@@ -65,8 +65,10 @@ describe('people & employees', () => {
 
     await signIn('accounts.admin@company.com', 'Start@1234');
     const people = await employeeService.directory();
-    expect(people.map((person) => person.department)).toEqual(expect.arrayContaining(['Accounts', 'Projects', 'Projects']));
-    expect(people).toHaveLength(3);
+    // the people they can assign to: their departments, plus themselves
+    expect(people.map((person) => person.department)).toEqual(expect.arrayContaining(['Accounts', 'Projects', 'Projects', 'Purchase']));
+    expect(people).toHaveLength(4);
+    expect(people.filter((person) => person.department === 'Purchase').map((person) => person.fullName)).toEqual(['Accounts Department Admin']);
     expect((await employeeService.list()).every((person) => ['Accounts', 'Projects'].includes(person.department))).toBe(true);
     await expect(employeeService.get(3)).rejects.toThrow('Employee not found');
     expect((await reportService.team()).every((member) => ['Accounts', 'Projects'].includes(member.employee.department))).toBe(true);
@@ -80,7 +82,8 @@ describe('people & employees', () => {
     });
     expect(['Accounts', 'Projects']).toContain(createdTask.assignee.department);
     expect(createdTask.reviewer).toBeNull();
-    await expect(taskService.changeStatus(createdTask.id, 'IN_PROGRESS')).rejects.toThrow('view-only');
+    // department admins act as admins on their departments' work
+    expect((await taskService.changeStatus(createdTask.id, 'IN_PROGRESS')).status).toBe('IN_PROGRESS');
     await expect(taskService.create({
       title: 'Out-of-scope assignment', assigneeId: 3, noReview: true,
     })).rejects.toThrow('departments you can access');
@@ -110,7 +113,7 @@ describe('people & employees', () => {
     expect(updated.accessibleDepartments).toEqual(['Tech']);
 
     await signIn('existing.admin@company.com', 'Start@1234');
-    expect((await employeeService.directory()).map((person) => person.department)).toEqual(['Tech']);
+    expect((await employeeService.directory()).filter((person) => person.email !== 'existing.admin@company.com' && person.fullName !== 'Existing Admin').map((person) => person.department)).toEqual(['Tech']);
     expect((await employeeService.list()).map((person) => person.department)).toEqual(['Tech']);
   });
   it('admin can add and manage a photo on an employee profile', async () => {

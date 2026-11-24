@@ -36,12 +36,6 @@ public class People {
         return me;
     }
 
-    public Employee requireNotDepartmentAdmin(CurrentUser user) {
-        Employee me = me(user);
-        if (me.isDepartmentAdmin()) throw new ForbiddenException("Department admins have view-only access");
-        return me;
-    }
-
     public Employee get(Long id) {
         if (id == null) throw NotFoundException.of("Employee");
         return employees.findById(id).orElseThrow(() -> NotFoundException.of("Employee"));
@@ -49,7 +43,7 @@ public class People {
 
     public Employee visibleToAdmin(Employee admin, Long id) {
         Employee target = get(id);
-        if (!canViewDepartment(admin, target.getDepartment())) {
+        if (!target.getId().equals(admin.getId()) && !canViewDepartment(admin, target.getDepartment())) {
             throw NotFoundException.of("Employee");
         }
         return target;

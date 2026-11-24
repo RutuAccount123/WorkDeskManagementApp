@@ -76,7 +76,7 @@ public class LeaveService {
             found = leaves.findTouchingFor(people.visibleToAdmin(me, employeeId).getId(), a, b);
         } else {
             found = leaves.findTouching(a, b).stream()
-                    .filter(l -> people.canViewDepartment(me, l.getEmployee().getDepartment())).toList();
+                    .filter(l -> l.getEmployee().getId().equals(me.getId()) || people.canViewDepartment(me, l.getEmployee().getDepartment())).toList();
         }
         return found.stream().map(this::toResponse).toList();
     }

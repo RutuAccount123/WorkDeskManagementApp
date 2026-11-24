@@ -17,7 +17,7 @@ const STATUSES = [
 
 /** Every ticket I need to answer, every ticket I raised, and (admins) every ticket. */
 export default function TicketsPage() {
-  const { isFullAdmin } = useAuth();
+  const { isAdmin } = useAuth();
   const [params, setParams] = useSearchParams();
   const scope = params.get('scope') || 'assigned';
   const status = params.has('status') ? params.get('status') : 'OPEN';
@@ -46,7 +46,7 @@ export default function TicketsPage() {
       </header>
 
       <div className="scope-tabs" role="tablist" aria-label="Whose tickets">
-        {SCOPES.filter((s) => isFullAdmin || !s.adminOnly).map((s) => (
+        {SCOPES.filter((s) => isAdmin || !s.adminOnly).map((s) => (
           <button key={s.key} role="tab" aria-selected={scope === s.key} className={scope === s.key ? 'on' : ''}
             onClick={() => setParam('scope', s.key, 'assigned')}>
             {s.label}

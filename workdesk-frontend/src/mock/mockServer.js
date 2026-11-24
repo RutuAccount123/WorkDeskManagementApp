@@ -81,6 +81,8 @@ const empRef = (id) => { const e = empById(id); return e ? { id: e.id, fullName:
 const empOut = ({ password, profilePhoto, ...e }) => e; // never send credentials or photo data
 const canViewDepartment = (admin, department) => !admin.departmentAdmin
   || (admin.accessibleDepartments?.length ? admin.accessibleDepartments.includes(department) : admin.department === department);
+/** Admin powers over this person's work (same as the server's Employee.canManage). */
+const canManage = (admin, person) => !!admin && !!person && admin.role === 'ADMIN' && canViewDepartment(admin, person.department);
 
 /**
  * Who reviews a task. The reviewer chosen when it was assigned; if none was chosen,
@@ -134,7 +136,7 @@ function attachmentOut(a) {
 /** Proof of work sent with "Mark done" / "Submit": checked first, then saved (same rules as the server). */
 function saveProofs(t, me, to, files) {
   if (!['COMPLETED', 'SUBMITTED'].includes(to)) throw bad('Attach proof only when marking the task done or submitting it');
-  if (t.assigneeId !== me.id && me.role !== 'ADMIN') throw forbidden('Only the person doing this task can attach proof of work');
+  if (t.assigneeId !== me.id && !canManage(me, empById(t.assigneeId))) throw forbidden('Only the person doing this task can attach proof of work');
   if (files.length > 5) throw bad('Attach up to 5 files at a time');
   db.attachments ||= [];
   if (db.attachments.filter((a) => a.taskId === t.id).length + files.length > 20) throw bad('A task can have up to 20 proof files');
@@ -203,8 +205,9 @@ const newestFirst = (a, b) => new Date(b.createdAt) - new Date(a.createdAt) || b
 function getTask(id, me) {
   const t = db.tasks.find((x) => x.id === id);
   const department = empById(t?.assigneeId)?.department;
-  if (!t || (me.role !== 'ADMIN' && !involved(t, me) && !inTicket(t, me))
-      || !canViewDepartment(me, department)) throw notFound('Task');
+  // admins (department admins: their departments) see any task; everyone sees the tasks they are part of
+  const manages = me.role === 'ADMIN' && canViewDepartment(me, department);
+  if (!t || (!manages && !involved(t, me) && !inTicket(t, me))) throw notFound('Task');
   return t;
 }
 /** Validates the chosen reviewer. Empty → fallback. A person cannot review their own task. */
@@ -759,7 +762,11 @@ function route(method, path, query, body, me) {
   const isFullAdmin = isAdmin && !isDepartmentAdmin;
   const needAdmin = () => { if (!isFullAdmin) throw forbidden(); };
   const needAdminRole = () => { if (!isAdmin) throw forbidden(); };
-  const needWrite = () => { if (isDepartmentAdmin) throw forbidden('Department admins have view-only access'); };
+  // admin powers over a ticket: over the person whose task or leave it is about
+  const managesTicket = (k) => {
+    const aboutId = k.taskId ? db.tasks.find((x) => x.id === k.taskId)?.assigneeId : (db.leaves || []).find((l) => l.id === k.leaveId)?.employeeId;
+    return isFullAdmin || canManage(me, empById(aboutId));
+  };
   const linkedWorkflowId = (value) => {
     if (!value) return null;
     const workflowId = Number(value);
@@ -879,24 +886,14 @@ function route(method, path, query, body, me) {
       throw bad('Choose each employee only once');
     }
     if (!body.task || typeof body.task !== 'object') throw bad('Choose a task to assign');
+    // all or nothing: check everyone first (department admins: own work or their departments)
     if (isDepartmentAdmin) {
       body.assigneeIds.forEach((assigneeId) => {
         const assignee = activeAssignee(assigneeId);
-        if (!canViewDepartment(me, assignee.department)) {
+        if (assignee.id !== me.id && !canViewDepartment(me, assignee.department)) {
           throw forbidden('You can assign tasks only to people in departments you can access');
         }
-        const reviewerId = body.task.noReview ? null
-          : pickReviewer(body.task.reviewerId, assignee.id, me.id);
-        if (reviewerId) {
-          const reviewer = empById(reviewerId);
-          if (!canViewDepartment(me, reviewer.department)) {
-            throw forbidden('Choose a reviewer in a department you can access');
-          }
-          if (reviewer.departmentAdmin) throw bad('Choose a reviewer who can review tasks');
-        }
       });
-    } else {
-      needWrite();
     }
     return body.assigneeIds.map((assigneeId) =>
       route('POST', '/api/tasks', query, { ...body.task, assigneeId }, me));
@@ -904,8 +901,9 @@ function route(method, path, query, body, me) {
 
   // ----- people directory: everyone can see who they can assign work to
   if (seg[0] === 'people' && method === 'GET') {
-    return db.employees.filter((e) => e.active && (!isDepartmentAdmin || canViewDepartment(me, e.department))).sort((a, b) => a.fullName.localeCompare(b.fullName))
-      .map((e) => ({ id: e.id, fullName: e.fullName, department: e.department, designation: e.designation, role: e.role, active: true, departmentAdmin: e.departmentAdmin === true }));
+    return db.employees.filter((e) => e.active && (e.id === me.id || !isDepartmentAdmin || canViewDepartment(me, e.department))).sort((a, b) => a.fullName.localeCompare(b.fullName))
+      .map((e) => ({ id: e.id, fullName: e.fullName, department: e.department, designation: e.designation, role: e.role, active: true,
+        departmentAdmin: e.departmentAdmin === true, accessibleDepartments: e.departmentAdmin ? (e.accessibleDepartments || []) : [] }));
   }
 
   // ----- employees (admin)
@@ -964,9 +962,6 @@ function route(method, path, query, body, me) {
 
   // ----- tasks
   if (seg[0] === 'tasks') {
-    // department admins may assign (POST /tasks), and edit or delete tasks in their departments (PUT / DELETE /tasks/{id})
-    const departmentAdminEdit = id && !seg[2] && (method === 'PUT' || method === 'DELETE');
-    if (method !== 'GET' && !(isDepartmentAdmin && method === 'POST' && !id) && !departmentAdminEdit) needWrite();
     if (seg[1] === 'batch' && seg[2] === 'approve' && method === 'POST') {
       if (!Array.isArray(body.taskIds) || body.taskIds.length < 1 || body.taskIds.length > 500) {
         throw bad('Choose between 1 and 500 tasks to approve');
@@ -991,7 +986,8 @@ function route(method, path, query, body, me) {
       const workTo = query.get('workTo') ? addDays(dayStart(query.get('workTo')), 1) : null;
       return db.tasks
         .filter(inScope)
-        .filter((t) => !isDepartmentAdmin || canViewDepartment(me, empById(t.assigneeId)?.department))
+        // department admins: their departments' work, plus their own
+        .filter((t) => !isDepartmentAdmin || involved(t, me) || canViewDepartment(me, empById(t.assigneeId)?.department))
         .filter((t) => {
           const inRange = (iso) => (!workFrom || new Date(iso) >= workFrom) && (!workTo || new Date(iso) < workTo);
           // withPlanned: also work scheduled in the range but started / finished on another day
@@ -1011,15 +1007,12 @@ function route(method, path, query, body, me) {
       const a = body.assigneeId ? activeAssignee(body.assigneeId) : me;
       const self = a.id === me.id;
       const reviewerId = body.noReview ? null : pickReviewer(body.reviewerId, a.id, self ? null : me.id);
-      if (isDepartmentAdmin && !canViewDepartment(me, a.department)) {
+      // department admins: own work, or people in their departments
+      if (isDepartmentAdmin && !self && !canViewDepartment(me, a.department)) {
         throw forbidden('You can assign tasks only to people in departments you can access');
       }
-      if (isDepartmentAdmin && reviewerId) {
-        const reviewer = empById(reviewerId);
-        if (!canViewDepartment(me, reviewer.department)) {
-          throw forbidden('Choose a reviewer in a department you can access');
-        }
-        if (reviewer.departmentAdmin) throw bad('Choose a reviewer who can review tasks');
+      if (isDepartmentAdmin && reviewerId && reviewerId !== me.id && !canViewDepartment(me, empById(reviewerId).department)) {
+        throw forbidden('Choose a reviewer in a department you can access');
       }
       const allowed = reviewerId ? ['TODO', 'IN_PROGRESS'] : ['TODO', 'IN_PROGRESS', 'COMPLETED'];
       const status = self && allowed.includes(body.status) ? body.status : 'TODO';
@@ -1048,7 +1041,6 @@ function route(method, path, query, body, me) {
     const t = getTask(id, me);
     if (seg[2] === 'tickets') {
       if (method === 'GET') return db.tickets.filter((k) => k.taskId === id).sort(newestFirst).map(ticketOut);
-      needWrite();
       if (!OPEN.includes(t.status)) throw bad('This task is closed, so a ticket cannot be raised on it');
       if (body.assignedToId == null || body.assignedToId === '') throw bad('assignedToId: choose a person');
       const note = (body.note || '').trim();
@@ -1075,7 +1067,7 @@ function route(method, path, query, body, me) {
     if (seg[2] === 'activity') return db.activity.filter((a) => a.taskId === id).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).map(activityOut);
 
     if (seg[2] === 'leave-decision' && method === 'POST') {
-      if (t.assigneeId !== me.id && !isAdmin) throw forbidden('Only the person doing this task can decide about it');
+      if (t.assigneeId !== me.id && !canManage(me, empById(t.assigneeId))) throw forbidden('Only the person doing this task can decide about it');
       if (!isOnLeave(t)) throw bad('This task is not due on a leave day');
       const decision = String(body.decision || '').toUpperCase();
       const note = (body.note || '').trim();
@@ -1104,7 +1096,7 @@ function route(method, path, query, body, me) {
     }
 
     if (seg[2] === 'checklist' && method === 'POST') {
-      if (t.assigneeId !== me.id && !isAdmin) throw forbidden('Only the person doing this step can tick its checklist');
+      if (t.assigneeId !== me.id && !canManage(me, empById(t.assigneeId))) throw forbidden('Only the person doing this step can tick its checklist');
       if (!OPEN.includes(t.status)) throw bad('This task is closed');
       const item = (t.checklist || [])[Number(body.index)];
       if (!item) throw notFound('Checklist item');
@@ -1133,9 +1125,9 @@ function route(method, path, query, body, me) {
         || (mine && ASSIGNEE_MOVES[from]?.includes(to))
         || (reviewer === me.id && REVIEWER_MOVES[from]?.includes(to))
         || (t.createdById === me.id && CREATOR_MOVES[from]?.includes(to))
-        || (isAdmin && ADMIN_MOVES[from]?.includes(to));
+        || (canManage(me, empById(t.assigneeId)) && ADMIN_MOVES[from]?.includes(to));
       if (!allowed) throw forbidden(`You cannot move this task from ${from} to ${to}`);
-      if (t.workflowRunId && to === 'CANCELLED' && !isAdmin && t.createdById !== me.id) throw forbidden('Only the workflow owner can stop it');
+      if (t.workflowRunId && to === 'CANCELLED' && !canManage(me, empById(t.assigneeId)) && t.createdById !== me.id) throw forbidden('Only the workflow owner can stop it');
       if (t.workflowRunId && t.workflowStep === 1 && ['IN_PROGRESS', 'COMPLETED'].includes(to)) {
         const run = db.workflowRuns.find((r) => r.id === t.workflowRunId);
         if (run && needsForm(run)) throw bad('Fill the workflow form first. The work starts after the form is filled.');
@@ -1239,7 +1231,6 @@ function route(method, path, query, body, me) {
 
   // ----- recurring tasks
   if (seg[0] === 'recurring') {
-    if (isDepartmentAdmin) needWrite();
     if (path === '/api/recurring/batch' && method === 'POST') {
       if (!Array.isArray(body.assigneeIds) || body.assigneeIds.length < 2 || body.assigneeIds.length > 50) {
         throw bad('Choose between 2 and 50 people for a multi-assignee repeating task');
@@ -1248,7 +1239,8 @@ function route(method, path, query, body, me) {
       return body.assigneeIds.map((assigneeId) =>
         route('POST', '/api/recurring', query, { ...body.task, assigneeId }, me));
     }
-    const visible = isAdmin ? db.recurring : db.recurring.filter((r) => r.assigneeId === me.id || r.createdById === me.id);
+    // admins: all (department admins: their departments); others: the ones they do or set up
+    const visible = db.recurring.filter((r) => isFullAdmin || r.assigneeId === me.id || r.createdById === me.id || canManage(me, empById(r.assigneeId)));
     if (!id && method === 'GET') return [...visible].sort((a, b) => a.title.localeCompare(b.title)).map(templateOut);
     const apply = (tpl) => {
       if (!body.title?.trim()) throw bad('title: must not be blank');
@@ -1257,6 +1249,7 @@ function route(method, path, query, body, me) {
       if (body.frequency === 'WEEKLY' && body.dayOfWeek === 'SUNDAY') throw bad('Sunday is the weekly off. Choose Monday to Saturday.');
       const estimatedHours = parseEstimatedHours(body.estimatedHours);
       const a = body.assigneeId ? activeAssignee(body.assigneeId) : me;
+      if (isDepartmentAdmin && a.id !== me.id && !canManage(me, a)) throw forbidden('You can set up repeating tasks only for people in departments you can access');
       const reviewerId = body.noReview ? null : pickReviewer(body.reviewerId, a.id, a.id === me.id ? null : me.id);
       if (body.frequency === 'WEEKLY' && body.dayOfWeek === 'SUNDAY') throw bad('Sunday is the weekly off. Choose Monday to Saturday.');
       if (['MONTHLY', 'YEARLY'].includes(body.frequency) && !body.startDate) throw bad('Choose the date this task should repeat on');
@@ -1316,7 +1309,7 @@ function route(method, path, query, body, me) {
       return { taskId: createFromTemplate(tpl, day).id };
     }
     // employees can see their repeating tasks, but only admins change, stop or delete them
-    if (!isAdmin && method !== 'GET') throw forbidden('Only an admin can change a repeating task');
+    if (!canManage(me, empById(tpl.assigneeId)) && method !== 'GET') throw forbidden('Only an admin can change a repeating task');
     if (seg[2] === 'active') {
       tpl.active = query.get('value') === 'true';
       if (!tpl.active) removeFutureCopies(tpl.id); else runRecurring();
@@ -1347,13 +1340,13 @@ function route(method, path, query, body, me) {
 
   // ----- workflows (FMS): admins see all; others see the ones they set up or have a step in
   if (seg[0] === 'workflows') {
-    if (isDepartmentAdmin) needWrite();
     db.workflows ||= []; db.workflowRuns ||= [];
     const onTask = (taskId) => { const t = taskId && db.tasks.find((x) => x.id === taskId); return !!t && (isAdmin || involved(t, me)); };
-    const mineWf = (wf) => isAdmin || wf.createdById === me.id || wf.steps.some((st) => st.assigneeId === me.id)
+    const managesWf = (wf) => !!wf && (isFullAdmin || (isDepartmentAdmin && ((wf.department && canViewDepartment(me, wf.department)) || canManage(me, empById(wf.createdById)))));
+    const mineWf = (wf) => managesWf(wf) || wf.createdById === me.id || wf.steps.some((st) => st.assigneeId === me.id)
       || onTask(wf.sourceTaskId) || db.tasks.some((t) => t.workflowId === wf.id && involved(t, me));
-    const mineRun = (r) => isAdmin || r.createdById === me.id || r.steps.some((st) => st.assigneeId === me.id) || onTask(r.sourceTaskId);
-    const canChange = (wf) => isAdmin || wf.createdById === me.id;
+    const mineRun = (r) => managesWf(db.workflows.find((w) => w.id === r.workflowId)) || canManage(me, empById(r.createdById)) || r.createdById === me.id || r.steps.some((st) => st.assigneeId === me.id) || onTask(r.sourceTaskId);
+    const canChange = (wf) => managesWf(wf) || wf.createdById === me.id;
 
     if (seg[1] === 'runs') {
       if (seg[2]) {
@@ -1362,7 +1355,7 @@ function route(method, path, query, body, me) {
         if (!mineRun(run)) throw notFound('Workflow run');
         if (seg[3] === 'form' && method === 'POST') {
           if (!needsForm(run)) throw bad('The form for this run is already filled');
-          if (!isAdmin && run.createdById !== me.id && run.steps[0].assigneeId !== me.id) throw forbidden('Only step 1’s person fills this form');
+          if (!managesWf(db.workflows.find((w) => w.id === run.workflowId)) && run.createdById !== me.id && run.steps[0].assigneeId !== me.id) throw forbidden('Only step 1’s person fills this form');
           saveRunForm(run, body.formData || {}, me.id);
         }
         return runOut(run);
@@ -1559,7 +1552,7 @@ function route(method, path, query, body, me) {
       const l = db.leaves.find((x) => x.id === id);
       if (!l || l.employeeId !== me.id) throw notFound('Leave');
       const to = activeAssignee(body.assignedToId);
-      if (to.role !== 'ADMIN' || to.departmentAdmin) throw bad('Choose an admin: only admins can change leave');
+      if (!canManage(to, me)) throw bad('Choose an admin who can change your leave');
       const note = (body.note || '').trim();
       if (!note) throw bad('note: must not be blank');
       const subject = `Leave ${leaveRange(l)}`;
@@ -1621,7 +1614,7 @@ function route(method, path, query, body, me) {
   if (seg[0] === 'tickets') {
     if (seg[2] === 'resolve' && method === 'POST') {
       const k = db.tickets.find((x) => x.id === id);
-      if (!k || (k.assignedToId !== me.id && k.raisedById !== me.id && !isFullAdmin)) throw notFound('Ticket');
+      if (!k || (k.assignedToId !== me.id && k.raisedById !== me.id && !managesTicket(k))) throw notFound('Ticket');
       if (k.status !== 'OPEN') throw bad('This ticket is already resolved');
       const reply = (body.reply || '').trim();
       if (!reply) throw bad('reply: must not be blank');
@@ -1668,7 +1661,10 @@ function route(method, path, query, body, me) {
     let list;
     if (scope === 'assigned') list = db.tickets.filter((k) => k.assignedToId === me.id);
     else if (scope === 'raised') list = db.tickets.filter((k) => k.raisedById === me.id);
-    else if (scope === 'all') { if (!isFullAdmin) throw forbidden('Only admins can see every ticket'); list = [...db.tickets]; }
+    else if (scope === 'all') {
+      if (!isAdmin) throw forbidden('Only admins can see every ticket');
+      list = db.tickets.filter((k) => managesTicket(k) || k.raisedById === me.id || k.assignedToId === me.id);
+    }
     else throw bad(`Unknown scope: ${scope}`);
     if (status && !['OPEN', 'RESOLVED'].includes(status)) throw bad('Choose a valid ticket status');
     return list.filter((k) => !status || k.status === status)

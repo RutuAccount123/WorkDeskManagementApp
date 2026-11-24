@@ -17,14 +17,14 @@ const OPEN_TASK = ['TODO', 'IN_PROGRESS', 'SUBMITTED', 'REOPENED'];
  * showTask: also link to the task (on the Tickets page).
  */
 export default function TicketCard({ ticket, showTask = false, onChanged }) {
-  const { user, isFullAdmin, isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [reply, setReply] = useState('');
   const [replying, setReplying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const open = ticket.status === 'OPEN';
   const mine = ticket.assignedTo?.id === user.id;
-  const canResolve = open && (mine || ticket.raisedBy?.id === user.id || isFullAdmin);
+  const canResolve = open && (mine || ticket.raisedBy?.id === user.id || isAdmin);   // the server checks the department
   const aboutLeave = !ticket.task && !!ticket.subject;
   const canFinish = open && mine && !aboutLeave && (!ticket.taskStatus || OPEN_TASK.includes(ticket.taskStatus));
 

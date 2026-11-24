@@ -15,7 +15,7 @@ const NO_REVIEW = 'none';
  * Used by admins and employees alike.
  */
 export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) {
-  const { user, isDepartmentAdmin } = useAuth();
+  const { user } = useAuth();
   const [people, setPeople] = useState([]);
   const [workflows, setWorkflows] = useState([]);
   const [workflowError, setWorkflowError] = useState('');
@@ -30,7 +30,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
     description: task?.description || '',
     // default reviewer: the person assigning
     reviewerId: task ? String(task.reviewer?.id || NO_REVIEW)
-      : isDepartmentAdmin || String(defaultAssigneeId || user.id) === String(user.id) ? NO_REVIEW : String(user.id),
+      : String(defaultAssigneeId || user.id) === String(user.id) ? NO_REVIEW : String(user.id),
     priority: task?.priority || 'MEDIUM',
     dueDate: toLocalInput(task?.dueAt).slice(0, 10),
     dueTime: toLocalInput(task?.dueAt).slice(11, 16) || '18:00',
@@ -47,8 +47,8 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
 
   useEffect(() => { employeeService.directory().then(setPeople).catch(() => {}); }, []);
   useEffect(() => {
-    if (!task && !isDepartmentAdmin) workflowService.list().then(setWorkflows).catch((err) => setWorkflowError(err.message));
-  }, [task, isDepartmentAdmin]);
+    if (!task) workflowService.list().then(setWorkflows).catch((err) => setWorkflowError(err.message));
+  }, [task]);
 
   const set = (k) => (e) => {
     const value = e.target.value;
@@ -57,16 +57,14 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
 
   const updateAssignees = (next) => {
     setAssigneeIds(next);
-    const defaultReviewer = isDepartmentAdmin
-      ? null
-      : next.includes(String(user.id))
-        ? people.find((person) => !next.includes(String(person.id)))?.id
-        : user.id;
+    const defaultReviewer = next.includes(String(user.id))
+      ? people.find((person) => !next.includes(String(person.id)))?.id
+      : user.id;
     setForm((current) => ({
       ...current,
       reviewerId: next.length === 1 && next[0] === String(user.id)
         ? NO_REVIEW
-        : isDepartmentAdmin ? NO_REVIEW : String(defaultReviewer ?? NO_REVIEW),
+        : String(defaultReviewer ?? NO_REVIEW),
     }));
   };
 
@@ -87,9 +85,8 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
   };
 
   const forMe = assigneeIds.length === 1 && assigneeIds[0] === String(user.id);
-  const canRepeat = !task && !isDepartmentAdmin;
-  const reviewers = people.filter((p) => !assigneeIds.includes(String(p.id))
-    && (!isDepartmentAdmin || (String(p.id) !== String(user.id) && !p.departmentAdmin)));
+  const canRepeat = !task;
+  const reviewers = people.filter((p) => !assigneeIds.includes(String(p.id)));
   const assigneeName = people.find((p) => String(p.id) === assigneeIds[0])?.fullName;
 
   const repeatStart = firstStartDay(form.repeat, form.dayOfWeek, form.scheduleDate);
@@ -177,7 +174,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
           onToggle={(id) => toggleAssignee(String(id))}
           currentUserId={user.id}
           multiple={!task}
-          selectAll={!task && !isDepartmentAdmin ? {
+          selectAll={!task ? {
             label: 'Select all employees except me',
             checked: allOtherAssigneesSelected,
             onChange: toggleAllOtherAssignees,

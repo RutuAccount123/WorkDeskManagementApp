@@ -358,7 +358,7 @@ export function scoreTone(score) {
  */
 export default function WorkCalendar({ employeeId, employeeName, onOpen, refreshKey, initialView = 'week' }) {
   const navigate = useNavigate();
-  const { user, isAdmin, isDepartmentAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [view, setView] = useState(initialView);
   const [anchor, setAnchor] = useState(() => new Date());
   const [tasks, setTasks] = useState(null);
@@ -423,25 +423,20 @@ export default function WorkCalendar({ employeeId, employeeName, onOpen, refresh
 
   useEffect(() => {
     if (view !== 'week') return undefined;
-    if (isDepartmentAdmin) {
-      setWorkflows([]);
-      return undefined;
-    }
     let alive = true;
     workflowService.list()
       .then((list) => alive && setWorkflows(list))
       .catch((e) => alive && setError(e.message));
     return () => { alive = false; };
-  }, [view, employeeId, isDepartmentAdmin, refreshKey]);
+  }, [view, employeeId, refreshKey]);
 
   useEffect(() => {
-    if (isDepartmentAdmin) { setTemplates([]); return undefined; }
     let alive = true;
     recurringService.list()
       .then((list) => alive && setTemplates(list))
       .catch(() => alive && setTemplates([]));
     return () => { alive = false; };
-  }, [isDepartmentAdmin, refreshKey]);
+  }, [refreshKey]);
 
   const pickDay = (d) => { setAnchor(d); setView('day'); };
   const pickMonth = (d) => { setAnchor(d); setView('month'); };

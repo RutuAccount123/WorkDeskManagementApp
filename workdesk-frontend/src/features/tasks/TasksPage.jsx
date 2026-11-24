@@ -27,7 +27,7 @@ const SCOPES = [
 ];
 
 export default function Tasks() {
-  const { isAdmin, isDepartmentAdmin, user } = useAuth();
+  const { isAdmin, user } = useAuth();
   const [params, setParams] = useSearchParams();
   const [tasks, setTasks] = useState(null);
   const [employees, setEmployees] = useState([]);
@@ -168,7 +168,7 @@ export default function Tasks() {
       </div>
 
       {error && <p className="error">{error}</p>}
-      {!isDepartmentAdmin && reviewableTasks.length > 0 && (
+      {reviewableTasks.length > 0 && (
         <div className="row task-bulk-actions">
           <label className="check">
             <input type="checkbox" checked={allReviewableSelected} onChange={toggleReviewableSelection} />
@@ -182,14 +182,14 @@ export default function Tasks() {
       {tasks === null ? <p className="muted">Loading…</p> : (
         <TaskBoard tasks={tasks} onOpen={(id) => setParam('open', String(id))} showAssignee={scope !== 'assigned'}
           cardLayout columns={!singleGroup}
-          selectableTaskIds={isDepartmentAdmin ? [] : reviewableIds} selectedTaskIds={selectedTaskIds} onToggleTask={toggleTaskSelection}
+          selectableTaskIds={reviewableIds} selectedTaskIds={selectedTaskIds} onToggleTask={toggleTaskSelection}
           emptyText={scope === 'review' ? 'Nothing waiting for your review.'
             : scope === 'created' ? 'You haven’t assigned any matching tasks to others.'
               : view === 'open' ? 'No open tasks match these filters.' : `No ${STATUS_LABEL[view]?.toLowerCase() || ''} tasks match these filters.`} />
       )}
 
       <TaskPanel openId={openId} onClose={() => { const next = new URLSearchParams(params); next.delete('open'); setParams(next, { replace: true }); }} />
-      {editing && (editing.own && !isDepartmentAdmin
+      {editing && (editing.own
         ? <AddWorkForm onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
         : !editing.own && <TaskForm task={null} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />)}
     </div>

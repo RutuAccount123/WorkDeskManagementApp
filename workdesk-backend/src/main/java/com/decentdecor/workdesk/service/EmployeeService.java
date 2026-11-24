@@ -55,7 +55,7 @@ public class EmployeeService {
     public List<PersonResponse> people(CurrentUser user) {
         Employee me = people.me(user);
         return employees.findByActiveTrue().stream()
-                .filter(e -> people.canViewDepartment(me, e.getDepartment()))
+                .filter(e -> e.getId().equals(me.getId()) || people.canViewDepartment(me, e.getDepartment()))
                 .sorted(BY_NAME).map(mapper::toPerson).toList();
     }
 

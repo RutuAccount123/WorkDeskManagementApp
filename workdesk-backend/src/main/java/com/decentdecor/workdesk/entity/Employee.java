@@ -86,6 +86,16 @@ public class Employee {
         return isAdmin() && !departmentAdmin;
     }
 
+    /**
+     * Admin powers over this person's work: full admins over everyone,
+     * department admins over people in the departments they were given.
+     */
+    public boolean canManage(Employee other) {
+        if (isFullAdmin()) return true;
+        return isDepartmentAdmin() && other != null && other.getDepartment() != null
+                && accessibleDepartments.contains(other.getDepartment());
+    }
+
     /** Ends every sign-in of this person (their tokens no longer match). */
     public void signOutEverywhere() {
         tokenVersion++;

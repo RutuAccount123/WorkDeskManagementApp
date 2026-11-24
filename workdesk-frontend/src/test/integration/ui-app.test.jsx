@@ -267,7 +267,10 @@ describe('permissions in the screens', () => {
     expect(within(departmentFilter).queryByRole('option', { name: 'Management' })).not.toBeInTheDocument();
     const sidebar = document.querySelector('.sidebar');
     expect(within(sidebar).getByRole('link', { name: 'Employees' })).toBeInTheDocument();
-    expect(within(sidebar).queryByRole('link', { name: /Workflows|Repeating tasks/ })).not.toBeInTheDocument();
+    // department admins also get FMS, repeating tasks and holidays (holidays view only)
+    expect(within(sidebar).getByRole('link', { name: 'Workflows (FMS)' })).toBeInTheDocument();
+    expect(within(sidebar).getByRole('link', { name: 'Repeating tasks' })).toBeInTheDocument();
+    expect(within(sidebar).getByRole('link', { name: 'Holidays' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Assign a task' }));
     const dashboardTaskDialog = await screen.findByRole('dialog', { name: 'Assign a task' });
     const dashboardAssigneeGroup = within(dashboardTaskDialog).getByRole('group', { name: 'Assign to' });
@@ -293,12 +296,40 @@ describe('permissions in the screens', () => {
     expect(within(assign).getByRole('checkbox', { name: new RegExp(assignee.fullName) })).toBeInTheDocument();
     expect(within(assign).queryByRole('checkbox', { name: /Rahul Patil/ })).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText('Reviewed by')).toHaveValue('none');
-    expect(within(dialog).queryByLabelText('Repeat')).not.toBeInTheDocument();
+    // department admins can set up repeating tasks too, like admins
+    expect(within(dialog).getByLabelText('Repeat')).toBeInTheDocument();
     await user.type(within(dialog).getByLabelText('Title'), 'Scoped department task');
     await user.click(within(assign).getByRole('checkbox', { name: new RegExp(assignee.fullName) }));
     await user.click(within(dialog).getByRole('button', { name: 'Assign task' }));
     expect(await screen.findByText('Scoped department task')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add my work' })).not.toBeInTheDocument();
+  });
+
+  it('admins can search employees on the Employees page and the dashboard', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-1');   // admin
+    start('/employees');
+    const search = await screen.findByRole('searchbox', { name: 'Search employees' });
+    const table = screen.getByRole('table');
+    await user.type(search, 'rahul');
+    expect(within(table).getByRole('link', { name: 'Rahul Patil' })).toBeInTheDocument();
+    expect(within(table).queryByRole('link', { name: 'Priya Sharma' })).not.toBeInTheDocument();
+    // by employee code or department too
+    await user.clear(search);
+    await user.type(search, 'EMP-101');
+    expect(within(table).getByRole('link', { name: 'Priya Sharma' })).toBeInTheDocument();
+    expect(within(table).queryByRole('link', { name: 'Rahul Patil' })).not.toBeInTheDocument();
+    await user.clear(search);
+    await user.type(search, 'nobody like this');
+    expect(screen.getByText(/No employee matches/)).toBeInTheDocument();
+
+    // the dashboard team list has the same search
+    await user.click(screen.getByRole('link', { name: 'Dashboard' }));
+    const teamSearch = await screen.findByRole('searchbox', { name: 'Search employee' });
+    await user.type(teamSearch, 'sneha');
+    const team = teamSearch.closest('section');
+    expect(await within(team).findByText('Sneha Kulkarni')).toBeInTheDocument();
+    expect(within(team).queryByText('Rahul Patil')).not.toBeInTheDocument();
   });
 
   it('full admins can set an admin home department separately from multiple access departments', async () => {
@@ -321,7 +352,7 @@ describe('permissions in the screens', () => {
     await user.type(screen.getByRole('textbox', { name: 'Work email' }), 'purchase.admin@company.com');
     await user.type(screen.getByRole('textbox', { name: 'First password' }), 'Start@1234');
     await user.click(within(screen.getByRole('dialog', { name: 'Add employee' })).getByRole('button', { name: 'Add employee' }));
-    expect(await screen.findByText('Department admin (view-only: Accounts, Projects)')).toBeInTheDocument();
+    expect(await screen.findByText('Department admin (manages: Accounts, Projects)')).toBeInTheDocument();
   });
 
   it('saving an existing admin as a Tech department admin keeps the Tech-only scope', async () => {
@@ -344,10 +375,10 @@ describe('permissions in the screens', () => {
     await user.click(within(dialog).getByRole('checkbox', { name: 'Tech' }));
     await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
 
-    expect(await screen.findByText('Department admin (view-only: Tech)')).toBeInTheDocument();
+    expect(await screen.findByText('Department admin (manages: Tech)')).toBeInTheDocument();
     const login = await authService.login('existing.admin@company.com', 'Start@1234');
     tokenStore.set(login.token);
-    expect((await employeeService.directory()).map((person) => person.department)).toEqual(['Tech']);
+    expect((await employeeService.directory()).filter((person) => person.email !== 'existing.admin@company.com' && person.fullName !== 'Existing Admin').map((person) => person.department)).toEqual(['Tech']);
     expect((await employeeService.list()).map((person) => person.department)).toEqual(['Tech']);
     start('/');
     await screen.findByRole('heading', { level: 1, name: /Good/ });

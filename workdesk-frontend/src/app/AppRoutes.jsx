@@ -20,7 +20,7 @@ import MyRepeatingPage from '@/features/recurring/MyRepeatingPage.jsx';
 
 /** Every screen in the app, and who can open it. */
 export default function AppRoutes() {
-  const { user, isAdmin, isDepartmentAdmin, loading } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
   if (loading) return <div className="boot">Loading…</div>;
   if (!user) return <LoginPage />;
 
@@ -35,17 +35,17 @@ export default function AppRoutes() {
         <Route path="tickets" element={<TicketsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="holidays" element={<HolidaysPage />} />
-        {!isDepartmentAdmin && <Route path="workflows" element={<WorkflowsPage />} />}
-        {!isDepartmentAdmin && <Route path="workflows/new" element={<WorkflowEditorPage />} />}
-        {!isDepartmentAdmin && <Route path="workflows/:id/sheet" element={<WorkflowSheetPage />} />}
-        {!isDepartmentAdmin && <Route path="workflows/:id" element={<WorkflowSheetPage />} />}
-        {!isDepartmentAdmin && <Route path="workflows/:id/edit" element={<WorkflowEditorPage />} />}
+        <Route path="workflows" element={<WorkflowsPage />} />
+        <Route path="workflows/new" element={<WorkflowEditorPage />} />
+        <Route path="workflows/:id/sheet" element={<WorkflowSheetPage />} />
+        <Route path="workflows/:id" element={<WorkflowSheetPage />} />
+        <Route path="workflows/:id/edit" element={<WorkflowEditorPage />} />
         <Route path="account" element={<AccountPage />} />
 
         {/* admin only */}
         {isAdmin && <Route path="employees" element={<EmployeesPage />} />}
         {isAdmin && <Route path="employees/:id" element={<EmployeeDetailPage />} />}
-        {isAdmin && !isDepartmentAdmin && <Route path="recurring" element={<RecurringPage />} />}
+        {isAdmin && <Route path="recurring" element={<RecurringPage />} />}
         {/* employees: see their repeating tasks; stopping one is asked for with a ticket */}
         {!isAdmin && <Route path="recurring" element={<MyRepeatingPage />} />}
 

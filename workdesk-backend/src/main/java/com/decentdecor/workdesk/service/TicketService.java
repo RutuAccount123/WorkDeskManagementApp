@@ -89,8 +89,10 @@ public class TicketService {
             case "assigned" -> tickets.findByAssignedToIdOrderByCreatedAtDescIdDesc(me.getId());
             case "raised" -> tickets.findByRaisedByIdOrderByCreatedAtDescIdDesc(me.getId());
             case "all" -> {
-                if (!me.isAdmin() || me.isDepartmentAdmin()) throw new ForbiddenException("Only admins can see every ticket");
-                yield tickets.findAllByOrderByCreatedAtDescIdDesc();
+                if (!me.isAdmin()) throw new ForbiddenException("Only admins can see every ticket");
+                // department admins: tickets about people in their departments, and their own
+                yield tickets.findAllByOrderByCreatedAtDescIdDesc().stream().filter(t -> manages(me, t)
+                        || t.getRaisedBy().getId().equals(me.getId()) || t.getAssignedTo().getId().equals(me.getId())).toList();
             }
             default -> throw new BadRequestException("Unknown scope: " + s);
         };
@@ -105,7 +107,7 @@ public class TicketService {
     /** POST /api/tasks/{id}/tickets */
     @Transactional
     public TicketResponse raise(CurrentUser user, Long taskId, TicketRequest req) {
-        Employee me = people.requireNotDepartmentAdmin(user);
+        Employee me = people.me(user);
         Task task = taskService.visibleTask(taskId, me, true);
         if (!task.getStatus().isOpen()) throw new BadRequestException("This task is closed, so a ticket cannot be raised on it");
         Employee to = people.activeAssignee(req.assignedToId());
@@ -140,7 +142,7 @@ public class TicketService {
         EmployeeLeave leave = leaves.findById(leaveId).orElseThrow(() -> NotFoundException.of("Leave"));
         if (!leave.getEmployee().getId().equals(me.getId())) throw NotFoundException.of("Leave");
         Employee to = people.activeAssignee(req.assignedToId());
-        if (!to.isAdmin() || to.isDepartmentAdmin()) throw new BadRequestException("Choose an admin: only admins can change leave");
+        if (!to.canManage(me)) throw new BadRequestException("Choose an admin who can change your leave");
         if (to.getId().equals(me.getId())) throw new BadRequestException("Choose someone else to raise the ticket to");
 
         String note = req.note().trim();
@@ -159,6 +161,13 @@ public class TicketService {
         return toResponse(ticket);
     }
 
+    /** Admin powers over a ticket: over the person whose task or leave it is about. */
+    private static boolean manages(Employee me, TaskTicket t) {
+        Employee about = t.getTask() != null ? t.getTask().getAssignee()
+                : t.getLeave() != null ? t.getLeave().getEmployee() : null;
+        return me.isFullAdmin() || (about != null && me.canManage(about));
+    }
+
     /** POST /api/tickets/{id}/resolve */
     @Transactional
     public TicketResponse resolve(CurrentUser user, Long ticketId, String replyText) {
@@ -166,8 +175,7 @@ public class TicketService {
         TaskTicket ticket = tickets.findById(ticketId).orElseThrow(() -> NotFoundException.of("Ticket"));
         boolean assigned = ticket.getAssignedTo().getId().equals(me.getId());
         boolean raiser = ticket.getRaisedBy().getId().equals(me.getId());
-        boolean fullAdmin = me.isAdmin() && !me.isDepartmentAdmin();
-        if (!assigned && !raiser && !fullAdmin) throw NotFoundException.of("Ticket");
+        if (!assigned && !raiser && !manages(me, ticket)) throw NotFoundException.of("Ticket");
         if (!ticket.isOpen()) throw new BadRequestException("This ticket is already resolved");
 
         String reply = replyText.trim();

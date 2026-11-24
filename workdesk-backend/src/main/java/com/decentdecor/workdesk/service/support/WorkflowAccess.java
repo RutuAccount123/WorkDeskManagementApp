@@ -11,8 +11,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Who can see / change an FMS.
- * See: admins, its owner, anyone with a step in it, and people on the task it is linked to.
- * Change (edit, pause, delete): admins and its owner.
+ * See: admins (department admins: FMS of their departments, or set up by someone in them), its owner,
+ * anyone with a step in it, and people on the task it is linked to.
+ * Change (edit, pause, delete): those admins and its owner.
  */
 @Component
 public class WorkflowAccess {
@@ -22,8 +23,16 @@ public class WorkflowAccess {
         this.tasks = tasks;
     }
 
+    /** Admin powers over this FMS: full admins, or department admins for FMS of their departments. */
+    public boolean manages(Workflow w, Employee me) {
+        if (me.isFullAdmin()) return true;
+        if (!me.isDepartmentAdmin() || w == null) return false;
+        return (w.getDepartment() != null && me.getAccessibleDepartments().contains(w.getDepartment()))
+                || me.canManage(w.getCreatedBy());
+    }
+
     public boolean canSee(Workflow w, Employee me) {
-        return me.isAdmin()
+        return manages(w, me)
                 || w.getCreatedBy().getId().equals(me.getId())
                 || hasStep(w.getSteps(), me)
                 || (w.getSourceTask() != null && w.getSourceTask().involves(me.getId()))
@@ -31,14 +40,14 @@ public class WorkflowAccess {
     }
 
     public boolean canSee(WorkflowRun r, Employee me) {
-        return me.isAdmin()
+        return manages(r.getWorkflow(), me) || me.canManage(r.getCreatedBy())
                 || r.getCreatedBy().getId().equals(me.getId())
                 || hasStep(r.getSteps(), me)
                 || (r.getSourceTask() != null && r.getSourceTask().involves(me.getId()));
     }
 
     public void requireOwner(Workflow w, Employee me) {
-        if (!me.isAdmin() && !w.getCreatedBy().getId().equals(me.getId())) {
+        if (!manages(w, me) && !w.getCreatedBy().getId().equals(me.getId())) {
             throw new ForbiddenException("Only the person who set up this workflow (or an admin) can change it");
         }
     }
