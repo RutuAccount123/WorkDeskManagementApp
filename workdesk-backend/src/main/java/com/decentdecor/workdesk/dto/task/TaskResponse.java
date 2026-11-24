@@ -12,6 +12,7 @@ import java.util.List;
  * onLeave: open and due on one of the assignee's leave days (not overdue; they choose: do it later or skip).
  * recurringTemplateId: the daily / weekly schedule this task is a copy of (null if not repeating). repeat: recurrence frequency for copies of a repeating task.
  * reviewer: null = no review needed. workflow: set for an FMS run task.
+ * fromTicket: set when this task is a ticket raised to the assignee (their work on that ticket).
  */
 public record TaskResponse(
         Long id,
@@ -40,5 +41,6 @@ public record TaskResponse(
         Instant startedAt,
         Instant submittedAt,
         Instant completedAt,
-        String image) {
+        String image,
+        TicketSource fromTicket) {
 }

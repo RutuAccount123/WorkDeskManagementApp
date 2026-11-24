@@ -609,6 +609,35 @@ describe('assign a task form', () => {
       expect(tasks.find((task) => task.title === 'Prepare an unreviewed task')?.reviewer).toBeNull();
     });
   });
+  it('picks people department-wise when assigning to several people', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-1');   // admin
+    start('/tasks?scope=created');
+    await user.click(await screen.findByRole('button', { name: 'Assign a task' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Assign a task' });
+    const assign = within(dialog).getByRole('group', { name: 'Assign to' });
+    // the list is grouped under department headings
+    expect(await within(assign).findByRole('group', { name: 'Projects' })).toBeInTheDocument();
+
+    await user.selectOptions(within(assign).getByRole('combobox', { name: 'Department' }), 'Projects (2)');
+    expect(within(assign).getByRole('checkbox', { name: /Sneha Kulkarni/ })).toBeInTheDocument();
+    expect(within(assign).getByRole('checkbox', { name: /Amit Deshmukh/ })).toBeInTheDocument();
+    expect(within(assign).queryByRole('checkbox', { name: /Priya Sharma/ })).not.toBeInTheDocument();
+
+    await user.click(within(assign).getByRole('checkbox', { name: 'Select everyone in Projects (2)' }));
+    expect(within(assign).getByRole('checkbox', { name: /Sneha Kulkarni/ })).toBeChecked();
+    expect(within(assign).getByRole('checkbox', { name: /Amit Deshmukh/ })).toBeChecked();
+    expect(within(assign).getByText('2 selected')).toBeInTheDocument();
+
+    // choices stay when switching department; untick the whole department again
+    await user.selectOptions(within(assign).getByRole('combobox', { name: 'Department' }), 'Accounts (1)');
+    await user.click(within(assign).getByRole('checkbox', { name: /Priya Sharma/ }));
+    expect(within(assign).getByText('3 selected')).toBeInTheDocument();
+    await user.selectOptions(within(assign).getByRole('combobox', { name: 'Department' }), 'Projects (2)');
+    await user.click(within(assign).getByRole('checkbox', { name: 'Select everyone in Projects (2)' }));
+    expect(within(assign).getByText('1 selected')).toBeInTheDocument();
+  });
+
   it('creates independent task copies for multiple selected people', async () => {
     const user = userEvent.setup();
     tokenStore.set('mock-3');

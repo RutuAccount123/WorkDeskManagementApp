@@ -20,6 +20,7 @@ import com.decentdecor.workdesk.repository.TaskTicketRepository;
 import com.decentdecor.workdesk.security.CurrentUser;
 import com.decentdecor.workdesk.service.support.ActivityLogger;
 import com.decentdecor.workdesk.service.support.People;
+import com.decentdecor.workdesk.service.support.TicketWork;
 import com.decentdecor.workdesk.util.Enums;
 import com.decentdecor.workdesk.util.OfficeTime;
 import com.decentdecor.workdesk.util.Texts;
@@ -58,10 +59,11 @@ public class TicketService {
     private final EmployeeMapper employeeMapper;
     private final OfficeTime time;
     private final EmployeeLeaveRepository leaves;
+    private final TicketWork ticketWork;
 
     public TicketService(TaskTicketRepository tickets, TaskService taskService, People people, ActivityLogger activity,
                          NotificationService notifications, TaskMapper taskMapper, EmployeeMapper employeeMapper,
-                         OfficeTime time, EmployeeLeaveRepository leaves) {
+                         OfficeTime time, EmployeeLeaveRepository leaves, TicketWork ticketWork) {
         this.tickets = tickets;
         this.taskService = taskService;
         this.people = people;
@@ -71,6 +73,7 @@ public class TicketService {
         this.employeeMapper = employeeMapper;
         this.time = time;
         this.leaves = leaves;
+        this.ticketWork = ticketWork;
     }
 
     /** GET /api/tasks/{id}/tickets — newest first. */
@@ -125,6 +128,8 @@ public class TicketService {
         ticket.setStatus(TicketStatus.OPEN);
         ticket.setCreatedAt(now);
         ticket = tickets.save(ticket);
+        // the ticket is work for them: it goes in their own task list, calendar and record
+        ticketWork.create(ticket, task.getTitle(), task.getPriority(), task.getDueAt());
 
         activity.note(task, me, ActivityAction.TICKET_RAISED, "Ticket to " + to.getFullName() + ": " + note);
         notifications.send(to, task, NotificationType.TICKET_RAISED,
@@ -156,6 +161,7 @@ public class TicketService {
         ticket.setStatus(TicketStatus.OPEN);
         ticket.setCreatedAt(time.now());
         ticket = tickets.save(ticket);
+        ticketWork.create(ticket, subject + " (" + me.getFullName() + ")", null, null);
         notifications.send(to, null, NotificationType.TICKET_RAISED,
                 me.getFullName() + " raised a ticket to you about their " + subject.toLowerCase(java.util.Locale.ROOT) + ": " + note);
         return toResponse(ticket);
@@ -184,6 +190,7 @@ public class TicketService {
         ticket.setReply(reply);
         ticket.setResolvedBy(me);
         ticket.setResolvedAt(now);
+        ticketWork.onResolved(ticket, me, reply);
 
         Task task = ticket.getTask();
         if (task != null) {
@@ -237,6 +244,8 @@ public class TicketService {
         task.setUpdatedAt(now);
         activity.log(task, me, ActivityAction.STATUS_CHANGED, from, TaskStatus.COMPLETED, "Marked done through a ticket: " + reply);
 
+        // the original task is now theirs and done, so it records the work; no separate ticket task
+        ticketWork.removeFor(ticket);
         ticket.setStatus(TicketStatus.RESOLVED);
         ticket.setTaskDone(true);
         ticket.setReply(reply);

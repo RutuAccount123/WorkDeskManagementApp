@@ -101,6 +101,19 @@ public class Task {
     @JoinColumn(name = "workflow_id")
     private Workflow linkedWorkflow;
 
+    /** Set when this task is a ticket's work for the person it was raised to. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "from_ticket_id")
+    private TaskTicket fromTicket;
+
+    public TaskTicket getFromTicket() {
+        return fromTicket;
+    }
+
+    public void setFromTicket(TaskTicket fromTicket) {
+        this.fromTicket = fromTicket;
+    }
+
     /** Set when this task is a step of an FMS run. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "workflow_run_id")

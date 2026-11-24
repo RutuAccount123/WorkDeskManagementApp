@@ -56,6 +56,9 @@ export default function TaskBoard({
                       {t.repeat && <span className={`repeat-badge ${t.repeat === 'DAILY' ? 'rb-daily' : 'rb-weekly'}`}>
                         {t.repeat === 'DAILY' ? 'Daily' : t.repeat === 'WEEKLY' ? 'Weekly' : t.repeat === 'MONTHLY' ? 'Monthly' : 'Yearly'}
                       </span>}
+                      {t.fromTicket && <span className="repeat-badge rb-ticket" title={`Ticket from ${t.fromTicket.raisedBy?.fullName || 'a colleague'}`}>
+                        Ticket from {t.fromTicket.raisedBy?.fullName?.split(' ')[0] || 'colleague'}
+                      </span>}
                       {t.priority === 'URGENT' && <span className="tag">Urgent</span>}
                     </span>
                   </span>

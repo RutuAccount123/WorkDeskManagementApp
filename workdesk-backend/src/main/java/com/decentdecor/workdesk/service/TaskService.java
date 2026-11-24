@@ -34,6 +34,7 @@ import com.decentdecor.workdesk.security.CurrentUser;
 import com.decentdecor.workdesk.service.support.ActivityLogger;
 import com.decentdecor.workdesk.service.support.People;
 import com.decentdecor.workdesk.service.support.TaskRules;
+import com.decentdecor.workdesk.service.support.TicketWork;
 import com.decentdecor.workdesk.service.support.WorkSchedule;
 import com.decentdecor.workdesk.service.support.WorkflowAccess;
 import com.decentdecor.workdesk.util.Enums;
@@ -83,12 +84,14 @@ public class TaskService {
     private final TaskImageProcessor taskImages;
     private final TaskTicketRepository tickets;
     private final EmployeeLeaveRepository leaves;
+    private final TicketWork ticketWork;
 
     public TaskService(TaskRepository tasks, TaskActivityRepository activities, WorkflowRepository workflows,
                        EmployeeRepository employees, People people, ActivityLogger activity,
                        NotificationService notifications, WorkflowEngine engine, WorkflowAccess workflowAccess,
                        TaskMapper mapper, OfficeTime time, WorkSchedule workSchedule, TaskImageProcessor taskImages,
-                       TaskTicketRepository tickets, EmployeeLeaveRepository leaves) {
+                       TaskTicketRepository tickets, EmployeeLeaveRepository leaves, TicketWork ticketWork) {
+        this.ticketWork = ticketWork;
         this.tasks = tasks;
         this.activities = activities;
         this.workflows = workflows;
@@ -393,6 +396,8 @@ public class TaskService {
         activity.log(t, me, ActivityAction.STATUS_CHANGED, from, to, note);
 
         if (t.isWorkflowStep()) engine.onStepStatusChanged(t, to);
+        // a ticket's task marked done answers the ticket
+        if (to == TaskStatus.COMPLETED && t.getFromTicket() != null) ticketWork.onTaskDone(t, me, note);
         notifyStatusChange(t, me, to, mine, reviewer, note);
         return mapper.toResponse(t, now);
     }

@@ -175,6 +175,17 @@ export default function TaskDetailPage() {
       {task.pending && open && (
         <p className="hint big-hint pending-hint">Pending: a ticket on this task is waiting for an answer. It is not counted as overdue until every ticket is resolved.</p>
       )}
+      {task.fromTicket && (
+        <p className="hint big-hint ticket-source">
+          🎫 Ticket from <strong>{task.fromTicket.raisedBy?.fullName}</strong>
+          {task.fromTicket.task
+            ? <> on <Link to={`/tasks/${task.fromTicket.task.id}`}>{task.fromTicket.task.title}</Link></>
+            : task.fromTicket.subject && <> about {task.fromTicket.subject.toLowerCase()}</>}
+          {task.fromTicket.status === 'OPEN'
+            ? '. Marking this task done answers the ticket (your note is sent as the answer).'
+            : '. The ticket is resolved.'}
+        </p>
+      )}
       {turn && <p className="hint big-hint">{turn}</p>}
       {error && <p className="error" role="alert">{error}</p>}
 

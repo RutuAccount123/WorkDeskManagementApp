@@ -195,6 +195,49 @@ class BusinessRulesIntegrationTest {
     }
 
     @Test
+    void aTicketIsAlsoATaskForThePersonItIsRaisedTo() throws Exception {
+        Person boss = person("Ticket Task Boss");
+        Person worker = person("Ticket Task Worker");
+        Person expert = person("Ticket Task Expert");
+        long id = ok(boss.token(), post("/api/tasks"), map("title", "Check vendor bills", "assigneeId", worker.id(),
+                "priority", "HIGH", "dueAt", localDue(2))).get("id").asLong();
+
+        // raising the ticket puts a task in the expert's own list, due with the task and as urgent
+        long ticketId = ok(worker.token(), post("/api/tasks/" + id + "/tickets"),
+                map("assignedToId", expert.id(), "note", "Please check the GST on these")).get("id").asLong();
+        JsonNode mine = ok(expert.token(), get("/api/tasks?scope=assigned"), null);
+        JsonNode ticketTask = null;
+        for (JsonNode t : mine) if (t.path("fromTicket").path("ticketId").asLong() == ticketId) ticketTask = t;
+        assertThat(ticketTask).isNotNull();
+        assertThat(ticketTask.get("title").asText()).isEqualTo("Ticket: Check vendor bills");
+        assertThat(ticketTask.get("priority").asText()).isEqualTo("HIGH");
+        assertThat(ticketTask.get("status").asText()).isEqualTo("TODO");
+        assertThat(ticketTask.at("/fromTicket/task/id").asLong()).isEqualTo(id);
+        assertThat(ticketTask.at("/createdBy/id").asLong()).isEqualTo(worker.id());
+
+        // resolving the ticket marks that task done, at the time it was resolved
+        ok(expert.token(), post("/api/tickets/" + ticketId + "/resolve"), map("reply", "GST is correct"));
+        JsonNode done = ok(expert.token(), get("/api/tasks/" + ticketTask.get("id").asLong()), null);
+        assertThat(done.get("status").asText()).isEqualTo("COMPLETED");
+        assertThat(done.get("completedAt").isNull()).isFalse();
+        assertThat(done.at("/fromTicket/status").asText()).isEqualTo("RESOLVED");
+
+        // the other way round: marking the ticket task done resolves the ticket with the note
+        long second = ok(worker.token(), post("/api/tasks/" + id + "/tickets"),
+                map("assignedToId", expert.id(), "note", "One more bill")).get("id").asLong();
+        long secondTask = -1;
+        for (JsonNode t : ok(expert.token(), get("/api/tasks?scope=assigned"), null)) {
+            if (t.path("fromTicket").path("ticketId").asLong() == second) secondTask = t.get("id").asLong();
+        }
+        ok(expert.token(), post("/api/tasks/" + secondTask + "/status"), map("status", "COMPLETED", "comment", "Checked it"));
+        JsonNode tickets = ok(worker.token(), get("/api/tasks/" + id + "/tickets"), null);
+        JsonNode resolved = null;
+        for (JsonNode k : tickets) if (k.get("id").asLong() == second) resolved = k;
+        assertThat(resolved.get("status").asText()).isEqualTo("RESOLVED");
+        assertThat(resolved.get("reply").asText()).isEqualTo("Checked it");
+    }
+
+    @Test
     void ticketRaisedToSomeoneElseLetsThemOpenTheTaskAndResolveIt() throws Exception {
         Person boss = person("Ticket Boss");
         Person worker = person("Ticket Worker");

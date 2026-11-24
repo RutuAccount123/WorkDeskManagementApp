@@ -42,6 +42,9 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
 
     Optional<Task> findByWorkflowRunIdAndWorkflowStep(Long workflowRunId, Integer workflowStep);
 
+    /** The task a ticket became for the person it was raised to. */
+    Optional<Task> findFirstByFromTicketId(Long ticketId);
+
     boolean existsByWorkflowRunIdAndWorkflowStep(Long workflowRunId, Integer workflowStep);
 
     /** Is this person on any task linked to the FMS? (used for "can see this FMS") */

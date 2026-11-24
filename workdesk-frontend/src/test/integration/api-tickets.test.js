@@ -8,6 +8,37 @@ const asUser = async (email) => { tokenStore.clear(); return signIn(email); };
 const lastNote = async () => (await notificationService.list()).find((n) => n.type !== 'DAILY_DIGEST');
 
 describe('tickets on a task', () => {
+  it('a ticket is also a task in the list of the person it is raised to', async () => {
+    await asUser(RAHUL);
+    const t = await taskService.create({ title: 'Check vendor bills', assigneeId: 2, priority: 'HIGH' });
+
+    await asUser(PRIYA);
+    const k = await ticketService.raise(t.id, 5, 'Please check the GST on these');
+
+    // Amit now has it as a task of his own
+    await asUser(AMIT);
+    const ticketTask = (await taskService.list({ scope: 'assigned' })).find((x) => x.fromTicket?.ticketId === k.id);
+    expect(ticketTask).toMatchObject({ title: 'Ticket: Check vendor bills', priority: 'HIGH', status: 'TODO' });
+    expect(ticketTask.fromTicket.task.id).toBe(t.id);
+    expect(ticketTask.createdBy.fullName).toBe('Priya Sharma');
+
+    // resolving the ticket marks it done, at the real time
+    await ticketService.resolve(k.id, 'GST is correct');
+    const done = await taskService.get(ticketTask.id);
+    expect(done.status).toBe('COMPLETED');
+    expect(done.completedAt).toBeTruthy();
+    expect(done.fromTicket.status).toBe('RESOLVED');
+
+    // and the other way round: marking the ticket task done resolves the ticket with the note
+    await asUser(PRIYA);
+    const k2 = await ticketService.raise(t.id, 5, 'One more bill');
+    await asUser(AMIT);
+    const second = (await taskService.list({ scope: 'assigned' })).find((x) => x.fromTicket?.ticketId === k2.id);
+    await taskService.changeStatus(second.id, 'COMPLETED', 'Checked it');
+    const answered = (await ticketService.forTask(t.id)).find((x) => x.id === k2.id);
+    expect(answered).toMatchObject({ status: 'RESOLVED', reply: 'Checked it' });
+  });
+
   it('raise → the other person is notified, can open the task, and resolves it with a reply', async () => {
     await asUser(RAHUL);
     const t = await taskService.create({ title: 'Fix vendor GST mismatch', assigneeId: 2, priority: 'HIGH' });

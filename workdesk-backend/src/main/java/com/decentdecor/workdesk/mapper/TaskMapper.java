@@ -3,9 +3,11 @@ package com.decentdecor.workdesk.mapper;
 import com.decentdecor.workdesk.dto.common.TaskRef;
 import com.decentdecor.workdesk.dto.task.ActivityResponse;
 import com.decentdecor.workdesk.dto.task.TaskResponse;
+import com.decentdecor.workdesk.dto.task.TicketSource;
 import com.decentdecor.workdesk.dto.task.WorkflowInfo;
 import com.decentdecor.workdesk.entity.Task;
 import com.decentdecor.workdesk.entity.TaskActivity;
+import com.decentdecor.workdesk.entity.TaskTicket;
 import com.decentdecor.workdesk.entity.WorkflowRun;
 import com.decentdecor.workdesk.util.Enums;
 import java.time.Instant;
@@ -54,7 +56,8 @@ public class TaskMapper {
                 t.getStartedAt(),
                 t.getSubmittedAt(),
                 t.getCompletedAt(),
-                includeImage ? image(t) : null);
+                includeImage ? image(t) : null,
+                ticketSource(t));
     }
 
     private String image(Task task) {
@@ -79,6 +82,12 @@ public class TaskMapper {
     public ActivityResponse toActivity(TaskActivity a) {
         return new ActivityResponse(a.getId(), a.getAction().name(), a.getActor() == null ? "System" : a.getActor().getFullName(),
                 Enums.name(a.getFromStatus()), Enums.name(a.getToStatus()), a.getComment(), a.getCreatedAt());
+    }
+
+    private TicketSource ticketSource(Task t) {
+        TaskTicket k = t.getFromTicket();
+        if (k == null) return null;
+        return new TicketSource(k.getId(), toRef(k.getTask()), k.getSubject(), employees.toRef(k.getRaisedBy()), k.getStatus().name());
     }
 
     public TaskRef toRef(Task t) {

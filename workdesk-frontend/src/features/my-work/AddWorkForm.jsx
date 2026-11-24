@@ -4,6 +4,7 @@ import { useAuth } from '@/features/auth/AuthContext.jsx';
 import { DAYS, PRIORITIES, PRIORITY_LABEL, dayLabel, isoDay, toLocalInput } from '@/utils/format.js';
 import Modal from '@/components/ui/Modal.jsx';
 import RepeatDueFields from '@/components/form/RepeatDueFields.jsx';
+import FmsPicker from '@/components/form/FmsPicker.jsx';
 import { addDays, dueError, firstStartDay } from '@/utils/repeatDue.js';
 
 const REPEATS = [
@@ -111,16 +112,7 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
           </fieldset>
         )}
         {!task && (
-          <label>Save form data in existing FMS
-            <select value={workflowId} onChange={(e) => setWorkflowId(e.target.value)}>
-              <option value="">No FMS — regular task</option>
-              {workflows.map((workflow) => (
-                <option key={workflow.id} value={workflow.id}>
-                  {workflow.name}{workflow.active ? '' : ' (Paused)'}
-                </option>
-              ))}
-            </select>
-          </label>
+          <FmsPicker workflows={workflows} value={workflowId} onChange={setWorkflowId} />
         )}
         {!task && workflowId && (
           <p className="hint">Starting this FMS from the task will save its form as a new dated entry. Completed entries stay unchanged.</p>

@@ -653,6 +653,7 @@ display: flex; flex-direction: column; gap: 8px; margin-top: 2px; padding: 14px 
 
 /* ================= workflows (FMS) ================= */
 .rb-flow { background: var(--primary-soft); color: var(--primary-text); }
+.rb-ticket { background: var(--progress-bg); color: var(--progress); }
 .wi-flow { color: var(--primary); font-weight: 800; font-size: var(--fs-xs); }
 .runs { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; }
 .run { display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
@@ -1051,6 +1052,10 @@ textarea.gform-input { resize: vertical; min-height: 36px; }
 .assignee-picker .emp-option input:checked { border-color: var(--primary); background: var(--primary); box-shadow: inset 0 0 0 4px var(--surface); }
 .emp-option input:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .assignee-picker .emp-option-all { font-weight: 600; }
+.emp-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.emp-filters .emp-search { flex: 1 1 180px; width: auto; }
+.emp-department { flex: 0 1 220px; min-width: 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); font: inherit; }
+.emp-group-title { margin: 8px 4px 2px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .emp-empty { padding: 6px 4px; }
 .proof-chosen { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .proof-chosen li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); font-size: var(--fs-sm); }

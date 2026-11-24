@@ -117,7 +117,59 @@ function taskOut(t, includeImage = false) {
     image: includeImage ? (t.image || null) : null,
     createdAt: t.createdAt, updatedAt: t.updatedAt, startedAt: t.startedAt,
     submittedAt: t.submittedAt, completedAt: t.completedAt,
+    fromTicket: ticketSource(t),
   };
+}
+
+// ----- a ticket is also a task for the person it is raised to (same as the server's TicketWork)
+function ticketSource(t) {
+  const k = t.fromTicketId && (db.tickets || []).find((x) => x.id === t.fromTicketId);
+  if (!k) return null;
+  const about = k.taskId ? db.tasks.find((x) => x.id === k.taskId) : null;
+  return { ticketId: k.id, task: about ? { id: about.id, title: about.title } : null, subject: k.subject || '',
+    raisedBy: empRef(k.raisedById), status: k.status };
+}
+function createTicketTask(k, about, priority, aboutDue) {
+  const now = new Date();
+  const endOfDay = new Date(); endOfDay.setHours(18, 0, 0, 0);
+  const due = aboutDue && new Date(aboutDue) > now ? aboutDue
+    : (endOfDay > now ? endOfDay : new Date(now.getTime() + 3600000)).toISOString();
+  const t = {
+    id: nextId(db.tasks), title: `Ticket: ${about}`.slice(0, 200),
+    description: `${empById(k.raisedById)?.fullName} raised a ticket to you: ${k.note}`,
+    assigneeId: k.assignedToId, createdById: k.raisedById, reviewerId: null, noReview: true, priority: priority || 'MEDIUM',
+    status: 'TODO', dueAt: due, createdAt: nowIso(), updatedAt: nowIso(), startedAt: null, submittedAt: null, completedAt: null,
+    fromTicketId: k.id, dueSoonReminded: true, overdueReminded: false,   // the "ticket raised" notice already tells them
+  };
+  db.tasks.push(t);
+  log(t.id, k.raisedById, 'CREATED', null, 'TODO', `Ticket from ${empById(k.raisedById)?.fullName}`);
+  return t;
+}
+/** The ticket was resolved: its task is done when its own person resolved it, cancelled when someone else closed it. */
+function closeTicketTask(k, byId, reply) {
+  const t = db.tasks.find((x) => x.fromTicketId === k.id);
+  if (!t || !OPEN.includes(t.status)) return;
+  const theirs = byId === t.assigneeId;
+  const from = t.status;
+  const now = nowIso();
+  Object.assign(t, theirs
+    ? { status: 'COMPLETED', startedAt: t.startedAt || now, submittedAt: now, completedAt: now, updatedAt: now }
+    : { status: 'CANCELLED', updatedAt: now });
+  log(t.id, byId, 'STATUS_CHANGED', from, t.status,
+    theirs ? `Ticket resolved: ${reply}` : `Ticket closed by ${empById(byId)?.fullName}: ${reply}`);
+}
+/** The ticket's task was marked done: the ticket is resolved, with the note as the answer. */
+function resolveFromTicketTask(t, me, note) {
+  const k = t.fromTicketId && (db.tickets || []).find((x) => x.id === t.fromTicketId);
+  if (!k || k.status !== 'OPEN') return;
+  const reply = (note || '').trim() || 'Done';
+  Object.assign(k, { status: 'RESOLVED', reply, resolvedById: me.id, resolvedAt: nowIso() });
+  const about = k.taskId ? db.tasks.find((x) => x.id === k.taskId) : null;
+  if (about) log(about.id, me.id, 'TICKET_RESOLVED', null, null, `Ticket from ${empById(k.raisedById)?.fullName} resolved: ${reply}`);
+  if (k.raisedById !== me.id) {
+    notify(k.raisedById, k.taskId, 'TICKET_RESOLVED',
+      `${me.fullName} resolved the ticket ${about ? `on "${about.title}"` : `about ${(k.subject || 'leave').toLowerCase()}`}: ${reply}`);
+  }
 }
 const PROOF_TYPES = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic',
@@ -1051,6 +1103,7 @@ function route(method, path, query, body, me) {
       const k = { id: nextId(db.tickets), taskId: id, raisedById: me.id, assignedToId: to.id, note, status: 'OPEN',
         reply: null, resolvedById: null, createdAt: nowIso(), resolvedAt: null };
       db.tickets.push(k);
+      createTicketTask(k, t.title, t.priority, t.dueAt);
       log(id, me.id, 'TICKET_RAISED', null, null, `Ticket to ${to.fullName}: ${note}`);
       notify(to.id, id, 'TICKET_RAISED', `${me.fullName} raised a ticket to you on "${t.title}": ${note}`);
       return ticketOut(k);
@@ -1161,6 +1214,8 @@ function route(method, path, query, body, me) {
       if (to === 'REOPENED' || to === 'TODO') { t.completedAt = null; t.submittedAt = null; }
       log(id, me.id, 'STATUS_CHANGED', from, to, body.comment?.trim());
       onWorkflowTaskStatus(t, to);
+      // a ticket's task marked done answers the ticket
+      if (to === 'COMPLETED' && t.fromTicketId) resolveFromTicketTask(t, me, body.comment);
       if (to === 'SUBMITTED' && reviewer) {
         const rv = empById(reviewer);
         const msg = `${me.fullName} submitted "${t.title}" for your review`;
@@ -1560,6 +1615,7 @@ function route(method, path, query, body, me) {
       const k = { id: nextId(db.tickets), taskId: null, leaveId: l.id, subject, raisedById: me.id, assignedToId: to.id, note,
         status: 'OPEN', reply: null, resolvedById: null, createdAt: nowIso(), resolvedAt: null };
       db.tickets.push(k);
+      createTicketTask(k, `${subject} (${me.fullName})`, null, null);
       notify(to.id, null, 'TICKET_RAISED', `${me.fullName} raised a ticket to you about their ${subject.toLowerCase()}: ${note}`);
       return ticketOut(k);
     }
@@ -1620,6 +1676,7 @@ function route(method, path, query, body, me) {
       if (!reply) throw bad('reply: must not be blank');
       if (reply.length > 4000) throw bad('reply: must be 4000 characters or fewer');
       Object.assign(k, { status: 'RESOLVED', reply, resolvedById: me.id, resolvedAt: nowIso() });
+      closeTicketTask(k, me.id, reply);
       const t = k.taskId ? db.tasks.find((x) => x.id === k.taskId) : null;
       if (t) log(k.taskId, me.id, 'TICKET_RESOLVED', null, null, `Ticket from ${empById(k.raisedById)?.fullName} resolved: ${reply}`);
       const msg = `${me.fullName} resolved the ticket ${t ? `on "${t.title}"` : `about ${(k.subject || 'leave').toLowerCase()}`}: ${reply}`;
@@ -1649,6 +1706,8 @@ function route(method, path, query, body, me) {
       }
       Object.assign(t, { status: 'COMPLETED', startedAt: t.startedAt || now, submittedAt: t.submittedAt || now, completedAt: now, updatedAt: now });
       log(t.id, me.id, 'STATUS_CHANGED', from, 'COMPLETED', `Marked done through a ticket: ${reply}`);
+      // the original task is now theirs and done, so no separate ticket task
+      db.tasks = db.tasks.filter((x) => x.fromTicketId !== k.id);
       Object.assign(k, { status: 'RESOLVED', taskDone: true, reply, resolvedById: me.id, resolvedAt: now });
       log(t.id, me.id, 'TICKET_RESOLVED', null, null, `Ticket from ${empById(k.raisedById)?.fullName} closed: ${me.fullName} finished the task`);
       const msg = `${me.fullName} finished "${t.title}" through the ticket: ${reply}`;
