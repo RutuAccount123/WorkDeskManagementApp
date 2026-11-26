@@ -17,6 +17,7 @@ export const ADMIN_NAV = [
       { to: '/workflows', label: 'Workflows (FMS)', short: 'FMS', icon: 'flow' },
       { to: '/recurring', label: 'Repeating tasks', short: 'Repeat', icon: 'repeat' },
       { to: '/holidays', label: 'Holidays', icon: 'holiday' },
+      { to: '/instruments', label: 'Instruments', short: 'Tools', icon: 'instrument' },
     ],
   },
   {
@@ -39,7 +40,10 @@ export const EMPLOYEE_NAV = [
   },
   {
     section: 'Office',
-    items: [{ to: '/holidays', label: 'Holidays', icon: 'holiday' }],
+    items: [
+      { to: '/holidays', label: 'Holidays', icon: 'holiday' },
+      { to: '/instruments', label: 'Instruments', short: 'Tools', icon: 'instrument' },
+    ],
   },
 ];
 
@@ -61,6 +65,7 @@ export const DEPARTMENT_ADMIN_NAV = [
       { to: '/workflows', label: 'Workflows (FMS)', short: 'FMS', icon: 'flow' },
       { to: '/recurring', label: 'Repeating tasks', short: 'Repeat', icon: 'repeat' },
       { to: '/holidays', label: 'Holidays', icon: 'holiday' },
+      { to: '/instruments', label: 'Instruments', short: 'Tools', icon: 'instrument' },
     ],
   },
 ];

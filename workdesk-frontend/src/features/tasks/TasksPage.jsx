@@ -181,7 +181,7 @@ export default function Tasks() {
       )}
       {tasks === null ? <p className="muted">Loading…</p> : (
         <TaskBoard tasks={tasks} onOpen={(id) => setParam('open', String(id))} showAssignee={scope !== 'assigned'}
-          cardLayout columns={!singleGroup}
+          cardLayout columns={!singleGroup} pageSize={5}
           selectableTaskIds={reviewableIds} selectedTaskIds={selectedTaskIds} onToggleTask={toggleTaskSelection}
           emptyText={scope === 'review' ? 'Nothing waiting for your review.'
             : scope === 'created' ? 'You haven’t assigned any matching tasks to others.'

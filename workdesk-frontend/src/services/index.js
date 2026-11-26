@@ -12,3 +12,4 @@ export { profilePhotoService } from './profilePhotoService.js';
 export { publicFormService, formLinkUrl } from './publicFormService.js';
 export { ticketService } from './ticketService.js';
 export { leaveService } from './leaveService.js';
+export { instrumentService } from './instrumentService.js';

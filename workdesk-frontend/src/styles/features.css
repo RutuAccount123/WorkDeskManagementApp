@@ -1068,3 +1068,61 @@ textarea.gform-input { resize: vertical; min-height: 36px; }
 .proof-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .proof-picker { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 .proof-picker-label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: var(--fs-sm); color: var(--text-2); }
+
+/* ---------- Instruments tab ---------- */
+/* fixed columns: long text never stretches the table; it is cut and shown in full on hover / "More" */
+.inst-table { table-layout: fixed; width: 100%; min-width: 820px; font-size: var(--fs-sm); }
+.inst-table th, .inst-table td { padding: 9px 10px; }
+.inst-table th { white-space: normal; line-height: 1.25; }
+.inst-table td { vertical-align: top; overflow: hidden; }
+.inst-table .c-sr { width: 46px; }
+.inst-table .c-name { width: 14%; }
+.inst-table .c-info { width: 21%; }
+.inst-table .c-status { width: 96px; }
+.inst-table .c-loc { width: 15%; }
+.inst-table .c-owner { width: 17%; }
+.inst-table .c-hist { width: 76px; }
+/* the History button never grows past its column (it used to run into the Submit button) */
+.inst-table .btn.small.inst-hist-btn { width: 100%; max-width: 100%; min-width: 0; justify-content: center; padding-left: 4px; padding-right: 4px;
+  white-space: normal; line-height: 1.2; }
+.inst-table .c-act { width: 128px; }
+.inst-table .chip { white-space: normal; text-align: center; }
+.inst-table .avatar.small { width: 26px; height: 26px; font-size: 0.7rem; }
+.inst-owner { gap: 8px; }
+/* Action column stays in view at the right edge, even when the table scrolls sideways on a small screen */
+.inst-table th:last-child, .inst-table td:last-child {
+  position: sticky; right: 0; z-index: 2; background: var(--surface); box-shadow: -6px 0 8px -6px rgba(15, 30, 40, 0.18);
+  border-left: 1px solid var(--border); overflow: visible;
+}
+.inst-table th:last-child { background: var(--surface-2); }
+.inst-table tbody tr:hover td:last-child { background: #FAFBFD; }
+/* buttons one under the other, same width, so they fit the narrow column */
+.inst-action-grid { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
+.inst-action-grid .btn.small { width: 100%; justify-content: center; padding-left: 6px; padding-right: 6px; white-space: nowrap; }
+.inst-removed { display: block; white-space: normal; }
+.inst-history-title { font-size: var(--fs-sm); margin: 14px 0 4px; color: var(--text-2); }
+.inst-sr { font-variant-numeric: tabular-nums; color: var(--muted); }
+.inst-clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inst-clip2, .inst-info-text {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere; white-space: pre-line;
+}
+.inst-info { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font-size: var(--fs-sm); min-width: 0; }
+.inst-info-text.is-open { display: block; -webkit-line-clamp: unset; line-clamp: none; }
+.inst-info .link-btn { padding: 0; font-size: var(--fs-sm); }
+.inst-owner { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.inst-owner-text { min-width: 0; flex: 1; }
+.inst-owner-text small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+.pager-buttons { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.pager-buttons .btn { min-width: 34px; }
+.pager-gap { padding: 0 4px; }
+.pager-compact { justify-content: center; gap: 8px; margin: 8px 0 0; }
+.avatar.small { width: 30px; height: 30px; font-size: 0.75rem; flex: 0 0 auto; }
+.employee-search select { width: auto; }
+.inst-history { list-style: none; margin: 8px 0 0; padding: 0 0 0 16px; border-left: 2px solid var(--border); display: grid; gap: 14px; }
+.inst-history li { position: relative; }
+.inst-history li::before { content: ""; position: absolute; left: -22px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
+.inst-history li.is-now::before { background: var(--primary); }
+.inst-history p { margin: 2px 0 0; }
+.inst-history-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

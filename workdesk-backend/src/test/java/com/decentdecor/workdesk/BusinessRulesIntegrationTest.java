@@ -939,4 +939,144 @@ class BusinessRulesIntegrationTest {
         for (JsonNode n : ok(p.token(), get("/api/notifications"), null)) if ("OVERDUE".equals(n.get("type").asText())) overdueNotes++;
         assertThat(overdueNotes).isEqualTo(1);
     }
+
+    @Test
+    void instrumentsAreGivenShiftedSubmittedAndKeepTheirHistory() throws Exception {
+        // the tab starts with the default instruments: some at sites with a person, the rest free in the office store
+        JsonNode defaults = ok(admin, get("/api/instruments"), null);
+        assertThat(defaults.findValuesAsText("name")).contains("Moisture meter", "PU injection pump", "Coating thickness gauge (DFT)");
+        long pumpId = 0;
+        int atSites = 0;
+        for (JsonNode d : defaults) {
+            String name = d.get("name").asText();
+            if ("IN_USE".equals(d.get("status").asText())) {
+                atSites++;
+                assertThat(d.get("holder").isNull()).isFalse();
+            }
+            if ("Aluminium ladder (8 ft)".equals(name)) {
+                assertThat(d.get("status").asText()).isEqualTo("FREE");
+                assertThat(d.get("location").asText()).isEqualTo("Office store");
+            }
+            if ("PU injection pump".equals(name)) {
+                pumpId = d.get("id").asLong();
+                assertThat(d.get("status").asText()).isEqualTo("IN_USE");
+                assertThat(d.get("location").asText()).isEqualTo("Wakad");
+                assertThat(d.get("project").asText()).isEqualTo("Villa 12 terrace waterproofing");
+            }
+        }
+        assertThat(atSites).isEqualTo(6);
+        // a default instrument at a site can be submitted back to the office store
+        JsonNode pump = ok(admin, post("/api/instruments/" + pumpId + "/submit"), map("note", "back from Wakad"));
+        assertThat(pump.get("status").asText()).isEqualTo("FREE");
+        assertThat(pump.get("location").asText()).isEqualTo("Office store");
+
+        Person site = person("Instrument Site Engineer");
+        Person other = person("Instrument Other Engineer");
+
+        // anyone can add one; given straight to a person
+        JsonNode meter = ok(site.token(), post("/api/instruments"), map("name", "Moisture meter", "weightKg", 0.4,
+                "info", "Pin + pinless", "holderId", site.id(), "location", "Kharadi", "project", "AIGP"));
+        long id = meter.get("id").asLong();
+        assertThat(meter.get("status").asText()).isEqualTo("IN_USE");
+        assertThat(meter.at("/holder/id").asLong()).isEqualTo(site.id());
+        assertThat(meter.get("location").asText()).isEqualTo("Kharadi");
+        assertThat(meter.get("historyCount").asInt()).isEqualTo(1);
+        call(site.token(), post("/api/instruments"), map("name", "Laser", "holderId", site.id()))
+                .andExpect(status().isBadRequest());   // a person needs a site location
+
+        // shift to another person: they become the holder
+        JsonNode shifted = ok(site.token(), post("/api/instruments/" + id + "/give"),
+                map("holderId", other.id(), "location", "Pirangut", "project", "Coca-Cola", "note", "for slab test"));
+        assertThat(shifted.at("/holder/id").asLong()).isEqualTo(other.id());
+        assertThat(shifted.get("project").asText()).isEqualTo("Coca-Cola");
+        call(other.token(), post("/api/instruments/" + id + "/give"),
+                map("holderId", other.id(), "location", "Pirangut", "project", "Coca-Cola")).andExpect(status().isBadRequest());
+
+        // submit: free in the office store; submitting again is refused
+        JsonNode free = ok(other.token(), post("/api/instruments/" + id + "/submit"), map("note", "working fine"));
+        assertThat(free.get("status").asText()).isEqualTo("FREE");
+        assertThat(free.get("holder").isNull()).isTrue();
+        assertThat(free.get("location").asText()).isEqualTo("Office store");
+        call(other.token(), post("/api/instruments/" + id + "/submit"), map()).andExpect(status().isBadRequest());
+
+        // history: who had it, from when to when, and how it ended
+        JsonNode history = ok(admin, get("/api/instruments/" + id + "/history"), null);
+        assertThat(history).hasSize(2);
+        assertThat(history.get(0).at("/holder/id").asLong()).isEqualTo(site.id());
+        assertThat(history.get(0).get("endAction").asText()).isEqualTo("SHIFTED");
+        assertThat(history.get(1).at("/holder/id").asLong()).isEqualTo(other.id());
+        assertThat(history.get(1).get("endAction").asText()).isEqualTo("SUBMITTED");
+        assertThat(history.get(1).get("endNote").asText()).isEqualTo("working fine");
+        assertThat(history.get(1).get("endedAt").isNull()).isFalse();
+
+        // everyone sees the same list, with Sr No
+        JsonNode list = ok(other.token(), get("/api/instruments"), null);
+        JsonNode row = null;
+        for (JsonNode r : list) if (r.get("id").asLong() == id) row = r;
+        assertThat(row).isNotNull();
+        assertThat(row.get("srNo").asLong()).isPositive();
+        assertThat(row.get("historyCount").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    void instrumentsGoForRepairComeBackAndCanBeRemovedWithAReason() throws Exception {
+        Person site = person("Repair Site Engineer");
+        Person next = person("Repair Next Engineer");
+        JsonNode drill = ok(site.token(), post("/api/instruments"), map("name", "Core cutter", "holderId", site.id(),
+                "location", "Wakad", "project", "Villa 12"));
+        long id = drill.get("id").asLong();
+
+        // repair form needs the problem and the shop
+        call(site.token(), post("/api/instruments/" + id + "/repair"), map("repairShop", "Bosch service"))
+                .andExpect(status().isBadRequest());
+        JsonNode inRepair = ok(site.token(), post("/api/instruments/" + id + "/repair"), map("problem", "Motor sparking",
+                "repairShop", "Bosch service, Pimpri", "expectedBack", "2030-01-10", "estimatedCost", 1500, "note", "bill needed"));
+        assertThat(inRepair.get("status").asText()).isEqualTo("REPAIR");
+        assertThat(inRepair.get("holder").isNull()).isTrue();
+        assertThat(inRepair.get("location").asText()).isEqualTo("Bosch service, Pimpri");
+        assertThat(inRepair.at("/repair/problem").asText()).isEqualTo("Motor sparking");
+        assertThat(inRepair.at("/repair/expectedBack").asText()).isEqualTo("2030-01-10");
+        assertThat(inRepair.get("repairCount").asInt()).isEqualTo(1);
+        // the site use ended because of the repair
+        JsonNode uses = ok(admin, get("/api/instruments/" + id + "/history"), null);
+        assertThat(uses.get(0).get("endAction").asText()).isEqualTo("REPAIR");
+
+        // under repair: cannot be given, submitted or sent again
+        call(next.token(), post("/api/instruments/" + id + "/give"), map("holderId", next.id(), "location", "Baner"))
+                .andExpect(status().isBadRequest());
+        call(next.token(), post("/api/instruments/" + id + "/submit"), map()).andExpect(status().isBadRequest());
+        call(next.token(), post("/api/instruments/" + id + "/repair"), map("problem", "x", "repairShop", "y"))
+                .andExpect(status().isBadRequest());
+
+        // back from repair: free in the office store, the repair keeps its cost and note
+        JsonNode back = ok(next.token(), post("/api/instruments/" + id + "/repair/done"), map("repairCost", 1200, "note", "brushes changed"));
+        assertThat(back.get("status").asText()).isEqualTo("FREE");
+        assertThat(back.get("location").asText()).isEqualTo("Office store");
+        call(next.token(), post("/api/instruments/" + id + "/repair/done"), map()).andExpect(status().isBadRequest());
+        JsonNode repairs = ok(admin, get("/api/instruments/" + id + "/repairs"), null);
+        assertThat(repairs).hasSize(1);
+        assertThat(repairs.get(0).get("repairCost").decimalValue()).isEqualByComparingTo("1200");
+        assertThat(repairs.get(0).get("returnNote").asText()).isEqualTo("brushes changed");
+        assertThat(repairs.get(0).at("/returnedBy/id").asLong()).isEqualTo(next.id());
+
+        // remove: needs a reason; it leaves the list, keeps who removed it and why
+        ok(next.token(), post("/api/instruments/" + id + "/give"), map("holderId", next.id(), "location", "Baner"));
+        call(next.token(), post("/api/instruments/" + id + "/remove"), map("reason", " ")).andExpect(status().isBadRequest());
+        JsonNode removed = ok(next.token(), post("/api/instruments/" + id + "/remove"), map("reason", "Damaged beyond repair"));
+        assertThat(removed.get("status").asText()).isEqualTo("REMOVED");
+        assertThat(removed.at("/removedBy/id").asLong()).isEqualTo(next.id());
+        assertThat(removed.get("removedReason").asText()).isEqualTo("Damaged beyond repair");
+        assertThat(ok(admin, get("/api/instruments"), null).findValuesAsText("name")).doesNotContain("Core cutter");
+        assertThat(ok(admin, get("/api/instruments?removed=true"), null).findValuesAsText("name")).contains("Core cutter");
+        uses = ok(admin, get("/api/instruments/" + id + "/history"), null);
+        assertThat(uses.get(uses.size() - 1).get("endAction").asText()).isEqualTo("REMOVED");
+        // nothing more can be done with a removed one
+        call(next.token(), post("/api/instruments/" + id + "/give"), map("holderId", next.id(), "location", "Baner"))
+                .andExpect(status().isBadRequest());
+        call(next.token(), post("/api/instruments/" + id + "/remove"), map("reason", "again")).andExpect(status().isBadRequest());
+
+        // the list's Sr No still counts 1, 2, 3 ... without gaps
+        JsonNode list = ok(admin, get("/api/instruments"), null);
+        for (int i = 0; i < list.size(); i++) assertThat(list.get(i).get("srNo").asLong()).isEqualTo(i + 1);
+    }
 }

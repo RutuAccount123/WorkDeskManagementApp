@@ -246,8 +246,55 @@ export function buildSeed() {
     steps: w.steps.map((st) => ({ priority: 'MEDIUM', ...st })),
   }));
 
+  // Instruments tab: sample site instruments and who has them (Sneha = 4, Amit = 5, Priya = 2)
+  const instruments = [
+    { id: 1, name: 'Moisture meter', weightKg: 0.4, info: 'Pin + pinless, for wall / slab dampness before waterproofing' },
+    { id: 2, name: 'Laser distance meter', weightKg: 0.2, info: 'Range 60 m, for site measurement' },
+    { id: 3, name: 'Airless paint sprayer', weightKg: 14, info: 'For interior painting, with 2 spare tips' },
+    { id: 4, name: 'Auto level machine', weightKg: 2.5, info: 'With tripod and staff, for POP / floor levels' },
+    { id: 5, name: 'Hammer drill machine', weightKg: 2.8, info: '800 W, with drill bit set' },
+    // the rest of the default set the server adds on first start (InstrumentDefaults); 6, 8 and 11 start at sites
+    { id: 6, name: 'Cross line laser level', weightKg: 0.6, info: 'For POP false ceiling, tile and wall lines' },
+    { id: 7, name: 'Paint and putty mixer', weightKg: 3.5, info: 'Drill stirrer for paint, putty and waterproofing compounds' },
+    { id: 8, name: 'PU injection pump', weightKg: 9, info: 'For crack injection waterproofing' },
+    { id: 9, name: 'Gas torch for membrane', weightKg: 1.2, info: 'For torch-applied APP waterproofing membrane' },
+    { id: 10, name: 'Coating thickness gauge (DFT)', weightKg: 0.3, info: 'Checks paint / coating thickness' },
+    { id: 11, name: 'Angle grinder', weightKg: 2, info: '100 mm, for surface preparation and cutting' },
+    { id: 12, name: 'Wet and dry vacuum cleaner', weightKg: 6, info: 'Cleans the surface before coating' },
+    { id: 13, name: 'Aluminium ladder (8 ft)', weightKg: 7, info: 'Folding, for painting and POP work' },
+  ].map((i) => ({ ...i, createdById: 1, createdAt: iso(now - 40 * D), updatedAt: iso(now - 40 * D) }));
+  const use = (id, instrumentId, holderId, location, project, startDays, endDays, endAction) => ({
+    id, instrumentId, holderId, location, project, givenById: 1, startedAt: iso(now - startDays * D), note: '',
+    endedAt: endDays == null ? null : iso(now - endDays * D), endedById: endDays == null ? null : holderId,
+    endAction: endDays == null ? null : endAction, endNote: '',
+  });
+  const instrumentUses = [
+    use(1, 1, 5, 'Hinjewadi', 'Infosys Phase-II', 30, 12, 'SHIFTED'),
+    use(2, 1, 4, 'Kharadi', 'AIGP Washroom – Block 2', 12, null),
+    use(3, 2, 4, 'Pirangut', 'Coca-Cola Pirangut', 6, null),
+    use(4, 3, 2, 'Baner', 'Office repaint', 25, 18, 'SUBMITTED'),
+    use(5, 4, 5, 'Hinjewadi', 'Infosys Phase-II SDB 7', 9, null),
+    use(6, 6, 2, 'Baner', 'Office POP false ceiling', 4, null),
+    use(7, 8, 5, 'Wakad', 'Villa 12 terrace waterproofing', 3, null),
+    use(8, 11, 5, 'Wakad', 'Villa 12 terrace waterproofing', 3, null),
+  ];
+  // the vacuum cleaner is at the service centre now; the paint sprayer was repaired once before
+  const instrumentRepairs = [
+    {
+      id: 1, instrumentId: 3, problem: 'Pressure dropping, tip clogging', repairShop: 'Graco service, Bhosari',
+      expectedBack: null, estimatedCost: 2500, note: '', sentById: 2, sentAt: iso(now - 18 * D),
+      returnedAt: iso(now - 14 * D), returnedById: 2, repairCost: 1800, returnNote: 'Filter and seals changed',
+    },
+    {
+      id: 2, instrumentId: 12, problem: 'Motor not starting', repairShop: 'Karcher service centre, Pimpri',
+      expectedBack: iso(now + 5 * D).slice(0, 10), estimatedCost: 1200, note: 'Ask for bill', sentById: 1, sentAt: iso(now - 2 * D),
+      returnedAt: null, returnedById: null, repairCost: null, returnNote: '',
+    },
+  ];
+
   return {
     employees, tasks, activity, recurring, notifications, holidays, digests: {}, tickets: [], leaves: [],
+    instruments, instrumentUses, instrumentRepairs,
     workflows, workflowRuns: [], demoWorkflowProgress: true, demoWorkflowHistory: true,
     // answers used for today's sample run of "Daily purchase cycle"
     demoFormData: { f1: 'Coca-Cola Pirangut', f2: '18 mm BWP plywood', f3: 120, f4: '', f5: true },

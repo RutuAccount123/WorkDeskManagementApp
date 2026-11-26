@@ -10,6 +10,7 @@ import EmployeesPage from '@/features/employees/EmployeesPage.jsx';
 import EmployeeDetailPage from '@/features/employees/EmployeeDetailPage.jsx';
 import RecurringPage from '@/features/recurring/RecurringPage.jsx';
 import HolidaysPage from '@/features/holidays/HolidaysPage.jsx';
+import InstrumentsPage from '@/features/instruments/InstrumentsPage.jsx';
 import WorkflowsPage from '@/features/workflows/WorkflowsPage.jsx';
 import WorkflowEditorPage from '@/features/workflows/WorkflowEditorPage.jsx';
 import WorkflowSheetPage from '@/features/workflows/WorkflowSheetPage.jsx';
@@ -35,6 +36,7 @@ export default function AppRoutes() {
         <Route path="tickets" element={<TicketsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="holidays" element={<HolidaysPage />} />
+        <Route path="instruments" element={<InstrumentsPage />} />
         <Route path="workflows" element={<WorkflowsPage />} />
         <Route path="workflows/new" element={<WorkflowEditorPage />} />
         <Route path="workflows/:id/sheet" element={<WorkflowSheetPage />} />

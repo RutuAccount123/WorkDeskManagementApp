@@ -1,16 +1,21 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LANES, PRIORITY_LABEL, fmtDateTime, laneOf, relativeDue } from '@/utils/format.js';
 import StatusChip from '@/components/ui/StatusChip.jsx';
+import Pagination, { pageCount, pageSlice } from '@/components/ui/Pagination.jsx';
 import { groupFmsTasks } from './taskGroups.js';
 
 /**
  * Tasks grouped into deadline lanes: Pending, Overdue, Due today, Next 7 days, Later, No date, Done.
  * columns: show the lanes side by side as board columns (scrolls sideways when they don't fit).
+ * pageSize: each lane shows that many cards, with its own ‹ › pages.
  */
 export default function TaskBoard({
   tasks, onOpen, showAssignee, hideClosed = false, emptyText, lanes: onlyLanes,
   maxPerLane, moreLink, cardLayout = false, columns = false, selectableTaskIds = [], selectedTaskIds = [], onToggleTask,
+  pageSize,
 }) {
+  const [lanePages, setLanePages] = useState({});   // lane key -> page
   const groups = {};
   const groupedTasks = groupFmsTasks(tasks);
   const selectable = new Set(selectableTaskIds);
@@ -20,6 +25,11 @@ export default function TaskBoard({
 
   if (!lanes.length) return <p className="empty">{emptyText || 'No tasks match.'}</p>;
 
+  // the page of a lane stays valid when its list shrinks (a task done, a filter changed)
+  const pageOf = (key) => Math.min(lanePages[key] || 1, pageCount(groups[key].length, pageSize || 1));
+  const cardsOf = (key) => (pageSize ? pageSlice(groups[key], pageOf(key), pageSize)
+    : groups[key].slice(0, maxPerLane || undefined));
+
   return (
     <div className={`lanes ${columns ? 'lanes-columns' : ''}`}>
       {lanes.map((lane) => (
@@ -28,7 +38,7 @@ export default function TaskBoard({
             {lane.title} <span className="count">{groups[lane.key].length}</span>
           </h3>
           <ul className={`task-list ${cardLayout ? 'task-list-cards' : ''} ${selectableTaskIds.length ? 'task-list-selectable' : ''}`}>
-            {groups[lane.key].slice(0, maxPerLane || undefined).map((t) => (
+            {cardsOf(lane.key).map((t) => (
               <li key={t.id} className={selectable.has(t.id) ? 'task-list-item-selectable' : undefined}>
                   {selectable.has(t.id) && (
                     <label className="task-select">
@@ -69,7 +79,11 @@ export default function TaskBoard({
               </li>
             ))}
           </ul>
-          {maxPerLane && groups[lane.key].length > maxPerLane && moreLink && (
+          {pageSize && (
+            <Pagination compact page={pageOf(lane.key)} pageSize={pageSize} total={groups[lane.key].length}
+              label={`${lane.title} pages`} onPage={(p) => setLanePages((all) => ({ ...all, [lane.key]: p }))} />
+          )}
+          {!pageSize && maxPerLane && groups[lane.key].length > maxPerLane && moreLink && (
             <Link className="more-link" to={moreLink(lane.key)}>Show all {groups[lane.key].length}</Link>
           )}
         </section>

@@ -305,6 +305,145 @@ describe('permissions in the screens', () => {
     expect(screen.queryByRole('button', { name: 'Add my work' })).not.toBeInTheDocument();
   });
 
+  it('instruments tab: an employee shifts, submits, gives and adds instruments and sees the history', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');   // Rahul, an employee: the tab is open to everyone
+    start('/');
+    await user.click(await screen.findByRole('link', { name: 'Instruments' }));
+    await screen.findByRole('heading', { level: 1, name: 'Instruments' });
+    const rowOf = async (name) => (await screen.findByText(name, { selector: 'td strong' })).closest('tr');
+
+    // shift the moisture meter from Sneha to Priya
+    let row = await rowOf('Moisture meter');
+    expect(within(row).getByText('Sneha Kulkarni')).toBeInTheDocument();
+    await user.click(within(row).getByRole('button', { name: 'Shift' }));
+    let dialog = await screen.findByRole('dialog', { name: 'Shift Moisture meter' });
+    await user.selectOptions(within(dialog).getByLabelText('Shift to'), 'Priya Sharma');
+    await user.clear(within(dialog).getByLabelText('Site location'));
+    await user.type(within(dialog).getByLabelText('Site location'), 'Baner');
+    await user.click(within(dialog).getByRole('button', { name: 'Shift instrument' }));
+    expect(await screen.findByText('“Moisture meter” shifted to Priya Sharma.')).toBeInTheDocument();
+    row = await rowOf('Moisture meter');
+    expect(within(row).getByText('Priya Sharma')).toBeInTheDocument();
+    expect(within(row).getByText('Baner')).toBeInTheDocument();
+
+    // history: Amit → Sneha → Priya (now)
+    await user.click(within(row).getByRole('button', { name: 'History of Moisture meter' }));
+    dialog = await screen.findByRole('dialog', { name: 'Moisture meter — history' });
+    expect(await within(dialog).findByText('Has it now')).toBeInTheDocument();
+    ['Priya Sharma', 'Sneha Kulkarni', 'Amit Deshmukh'].forEach((name) => expect(within(dialog).getByText(name)).toBeInTheDocument());
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+
+    // submit it: free in the office store
+    await user.click(within(await rowOf('Moisture meter')).getByRole('button', { name: 'Submit' }));
+    dialog = await screen.findByRole('dialog', { name: 'Submit Moisture meter' });
+    await user.click(within(dialog).getByRole('button', { name: 'Submit to office store' }));
+    row = await rowOf('Moisture meter');
+    expect(await within(row).findByText('Free')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Give to person' })).toBeInTheDocument();
+
+    // add a new one straight to a person
+    await user.click(screen.getByRole('button', { name: '+ Add instrument' }));
+    dialog = await screen.findByRole('dialog', { name: 'Add instrument' });
+    await user.type(within(dialog).getByLabelText('Instrument name'), 'Grout pump');
+    await user.type(within(dialog).getByLabelText('Weight (kg)'), '9');
+    const longInfo = 'Hand pump for grouting cracks and joints, with 2 hoses, pressure gauge, spare seals and a cleaning kit';
+    await user.type(within(dialog).getByLabelText(/Instrument info/), longInfo);
+    await user.selectOptions(within(dialog).getByLabelText('Give it to'), 'Amit Deshmukh');
+    await user.type(within(dialog).getByLabelText('Site location'), 'Talegaon');
+    await user.click(within(dialog).getByRole('button', { name: 'Add instrument' }));
+
+    // 14 instruments now: 5 per page, the new one is on page 3
+    const pager = await screen.findByRole('navigation', { name: 'Instrument pages' });
+    expect(within(pager).getByText('Showing 1–5 of 14')).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(6);   // header + 5
+    expect(screen.queryByText('Grout pump', { selector: 'td strong' })).not.toBeInTheDocument();
+    await user.click(within(pager).getByRole('button', { name: 'Page 3' }));
+    expect(within(pager).getByText('Showing 11–14 of 14')).toBeInTheDocument();
+    row = await rowOf('Grout pump');
+    expect(within(row).getByText('Amit Deshmukh')).toBeInTheDocument();
+    expect(within(row).getByText('9 kg')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'History of Grout pump' })).toHaveTextContent(/^View$/);
+    // long info is cut to 2 lines; More / Less opens and closes it
+    const more = within(row).getByRole('button', { name: 'More' });
+    expect(within(row).getByText(longInfo)).not.toHaveClass('is-open');
+    await user.click(more);
+    expect(within(row).getByText(longInfo)).toHaveClass('is-open');
+    expect(within(row).getByRole('button', { name: 'Less' })).toHaveAttribute('aria-expanded', 'true');
+
+    // a search goes back to page 1 (3 pumps fit on one page, so no page buttons)
+    await user.type(screen.getByRole('searchbox', { name: 'Search instruments' }), 'pump');
+    expect(screen.queryByRole('navigation', { name: 'Instrument pages' })).not.toBeInTheDocument();
+    expect(await rowOf('Grout pump')).toBeInTheDocument();
+  });
+
+  it('instruments tab: repair form, back from repair, and remove with a reason', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');   // Rahul
+    start('/instruments');
+    await screen.findByRole('heading', { level: 1, name: 'Instruments' });
+    const rowOf = async (name) => (await screen.findByText(name, { selector: 'td strong' })).closest('tr');
+
+    // repair the laser distance meter (Sneha has it at Pirangut)
+    let row = await rowOf('Laser distance meter');
+    await user.click(within(row).getByRole('button', { name: 'Repair Laser distance meter' }));
+    let dialog = await screen.findByRole('dialog', { name: 'Repair Laser distance meter' });
+    expect(within(dialog).getByText(/takes it back from them/)).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText('What is wrong'), 'Display not working');
+    await user.type(within(dialog).getByLabelText('Repair shop / service centre'), 'Leica service, Camp');
+    await user.type(within(dialog).getByLabelText('Estimated cost (₹)'), '900');
+    await user.click(within(dialog).getByRole('button', { name: 'Send for repair' }));
+    expect(await screen.findByText('“Laser distance meter” sent for repair to Leica service, Camp.')).toBeInTheDocument();
+    row = await rowOf('Laser distance meter');
+    expect(within(row).getByText('Under repair')).toBeInTheDocument();
+    expect(within(row).getByText('Leica service, Camp')).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'Shift' })).not.toBeInTheDocument();
+
+    // back from repair: free in the office store
+    await user.click(within(row).getByRole('button', { name: 'Back from repair' }));
+    dialog = await screen.findByRole('dialog', { name: 'Laser distance meter back from repair' });
+    await user.type(within(dialog).getByLabelText('Repair cost (₹)'), '750');
+    await user.type(within(dialog).getByLabelText('What was done'), 'Display replaced');
+    await user.click(within(dialog).getByRole('button', { name: 'Back in office store' }));
+    row = await rowOf('Laser distance meter');
+    expect(await within(row).findByText('Free')).toBeInTheDocument();
+    expect(within(row).getByText('Office store')).toBeInTheDocument();
+
+    // the history shows the repair with its cost
+    await user.click(within(row).getByRole('button', { name: 'History of Laser distance meter' }));
+    dialog = await screen.findByRole('dialog', { name: 'Laser distance meter — history' });
+    expect(await within(dialog).findByText('Leica service, Camp')).toBeInTheDocument();
+    expect(within(dialog).getByText(/cost ₹750: Display replaced/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+
+    // remove: needs a reason; it leaves the list and shows under "Removed" with who removed it
+    await user.click(within(await rowOf('Laser distance meter')).getByRole('button', { name: 'Remove Laser distance meter' }));
+    dialog = await screen.findByRole('dialog', { name: 'Remove Laser distance meter' });
+    const removeBtn = within(dialog).getByRole('button', { name: 'Remove instrument' });
+    expect(removeBtn).toBeDisabled();
+    await user.type(within(dialog).getByLabelText('Why is it removed'), 'Dropped from scaffolding');
+    await user.click(removeBtn);
+    expect(await screen.findByText('“Laser distance meter” removed from the list.')).toBeInTheDocument();
+    expect(screen.queryByText('Laser distance meter', { selector: 'td strong' })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'Removed');
+    row = await rowOf('Laser distance meter');
+    expect(within(row).getByText('Rahul Patil')).toBeInTheDocument();
+    expect(within(row).getByText('Dropped from scaffolding')).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: /Remove|Repair|Shift|Give/ })).not.toBeInTheDocument();
+  });
+
+  it('the Tasks page shows at most 5 cards in each lane', async () => {
+    tokenStore.set('mock-1');   // admin: sees everyone's tasks
+    start('/tasks?status=all');
+    await screen.findByRole('heading', { level: 1, name: 'Tasks' });
+    await waitFor(() => expect(document.querySelectorAll('.lane').length).toBeGreaterThan(0));
+    document.querySelectorAll('.lane').forEach((lane) => {
+      const total = Number(lane.querySelector('.count').textContent);
+      expect(lane.querySelectorAll('.task-list > li').length).toBe(Math.min(5, total));
+      expect(!!lane.querySelector('.pager-compact')).toBe(total > 5);
+    });
+  });
+
   it('admins can search employees on the Employees page and the dashboard', async () => {
     const user = userEvent.setup();
     tokenStore.set('mock-1');   // admin

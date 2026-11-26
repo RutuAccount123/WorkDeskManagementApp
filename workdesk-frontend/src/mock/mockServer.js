@@ -1522,6 +1522,150 @@ function route(method, path, query, body, me) {
     return workflowOut(wf);
   }
 
+  // ----- instruments tab: site instruments, who has them, history. Open to everyone signed in (same as the server).
+  if (seg[0] === 'instruments') {
+    db.instruments ||= []; db.instrumentUses ||= []; db.instrumentRepairs ||= [];
+    const usesOf = (instrumentId) => db.instrumentUses.filter((u) => u.instrumentId === instrumentId)
+      .sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt) || a.id - b.id);
+    const repairsOf = (instrumentId) => db.instrumentRepairs.filter((r) => r.instrumentId === instrumentId)
+      .sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt) || a.id - b.id);
+    const currentOf = (instrumentId) => db.instrumentUses.find((u) => u.instrumentId === instrumentId && !u.endedAt) || null;
+    const openRepairOf = (instrumentId) => db.instrumentRepairs.find((r) => r.instrumentId === instrumentId && !r.returnedAt) || null;
+    const ordered = (removed = false) => db.instruments.filter((x) => !!x.removedAt === removed).sort((a, b) => a.id - b.id);
+    const repairOut = (r) => ({
+      id: r.id, problem: r.problem, repairShop: r.repairShop, expectedBack: r.expectedBack || null,
+      estimatedCost: r.estimatedCost ?? null, note: r.note || '', sentBy: empRef(r.sentById), sentAt: r.sentAt,
+      returnedAt: r.returnedAt || null, returnedBy: r.returnedById ? empRef(r.returnedById) : null,
+      repairCost: r.repairCost ?? null, returnNote: r.returnNote || '',
+    });
+    const out = (i) => {
+      const now = currentOf(i.id);
+      const repair = openRepairOf(i.id);
+      const removed = !!i.removedAt;
+      return {
+        id: i.id, srNo: ordered(removed).findIndex((x) => x.id === i.id) + 1, name: i.name, weightKg: i.weightKg ?? null, info: i.info || '',
+        status: removed ? 'REMOVED' : repair ? 'REPAIR' : now ? 'IN_USE' : 'FREE', holder: now ? empRef(now.holderId) : null,
+        location: removed ? 'Removed' : repair ? repair.repairShop : now ? now.location : 'Office store',
+        project: now ? now.project : '', heldSince: now ? now.startedAt : null,
+        historyCount: usesOf(i.id).length, createdBy: empRef(i.createdById), createdAt: i.createdAt,
+        repair: repair ? repairOut(repair) : null, repairCount: repairsOf(i.id).length,
+        removedAt: i.removedAt || null, removedBy: i.removedById ? empRef(i.removedById) : null, removedReason: i.removedReason || '',
+      };
+    };
+    const cost = (v) => {
+      if (v === '' || v == null) return null;
+      const n = Number(v);
+      if (!(n >= 0)) throw bad('Cost cannot be below 0');
+      return n;
+    };
+    const useOut = (u) => ({
+      id: u.id, holder: empRef(u.holderId), location: u.location, project: u.project, givenBy: empRef(u.givenById),
+      startedAt: u.startedAt, note: u.note || '', endedAt: u.endedAt, endedBy: u.endedById ? empRef(u.endedById) : null,
+      endAction: u.endAction, endNote: u.endNote || '',
+    });
+    const text = (v, max, label) => {
+      const s = (v ?? '').toString().trim();
+      if (s.length > max) throw bad(`${label}: must be ${max} characters or fewer`);
+      return s;
+    };
+    const details = (i) => {
+      const name = text(body.name, 120, 'name');
+      if (!name) throw bad('Write the instrument name');
+      const weightKg = body.weightKg === '' || body.weightKg == null ? null : Number(body.weightKg);
+      if (weightKg != null && !(weightKg > 0)) throw bad('Weight must be more than 0 kg');
+      Object.assign(i, { name, weightKg, info: text(body.info, 1000, 'info'), updatedAt: nowIso() });
+    };
+    const start = (i, holderId, location, project, note) => {
+      const holder = activeAssignee(holderId);
+      db.instrumentUses.push({
+        id: nextId(db.instrumentUses), instrumentId: i.id, holderId: holder.id, location, project: project || '',
+        givenById: me.id, startedAt: nowIso(), note: note || '', endedAt: null, endedById: null, endAction: null, endNote: '',
+      });
+    };
+    if (!id && method === 'GET') return ordered(query.get('removed') === 'true').map(out);
+    if (!id && method === 'POST') {
+      const i = { id: nextId(db.instruments), createdById: me.id, createdAt: nowIso() };
+      details(i);
+      let location = '';
+      if (body.holderId) {
+        location = text(body.location, 160, 'location');
+        if (!location) throw bad('Write the site location for the person who gets it');
+        activeAssignee(body.holderId);
+      }
+      db.instruments.push(i);
+      if (body.holderId) start(i, body.holderId, location, text(body.project, 160, 'project'), text(body.note, 500, 'note'));
+      return out(i);
+    }
+    const i = db.instruments.find((x) => x.id === id);
+    if (!i) throw notFound('Instrument');
+    if (seg[2] === 'history' && method === 'GET') return usesOf(i.id).map(useOut);
+    if (seg[2] === 'repairs' && method === 'GET') return repairsOf(i.id).map(repairOut);
+    if (i.removedAt) throw bad('This instrument was removed from the list');
+    const notUnderRepair = () => { if (openRepairOf(i.id)) throw bad('This instrument is under repair. Mark it back from repair first'); };
+    if (!seg[2] && method === 'PUT') { details(i); return out(i); }
+    if (seg[2] === 'repair' && !seg[3] && method === 'POST') {
+      const problem = text(body.problem, 500, 'problem');
+      if (!problem) throw bad('Write what is wrong with it');
+      const repairShop = text(body.repairShop, 160, 'repairShop');
+      if (!repairShop) throw bad('Write the repair shop or service centre');
+      if (openRepairOf(i.id)) throw bad('This instrument is already under repair');
+      const estimatedCost = cost(body.estimatedCost);
+      const current = currentOf(i.id);
+      if (current) Object.assign(current, { endedAt: nowIso(), endedById: me.id, endAction: 'REPAIR', endNote: problem });
+      db.instrumentRepairs.push({
+        id: nextId(db.instrumentRepairs), instrumentId: i.id, problem, repairShop, expectedBack: body.expectedBack || null,
+        estimatedCost, note: text(body.note, 500, 'note'), sentById: me.id, sentAt: nowIso(),
+        returnedAt: null, returnedById: null, repairCost: null, returnNote: '',
+      });
+      i.updatedAt = nowIso();
+      return out(i);
+    }
+    if (seg[2] === 'repair' && seg[3] === 'done' && method === 'POST') {
+      const open = openRepairOf(i.id);
+      if (!open) throw bad('This instrument is not under repair');
+      Object.assign(open, { returnedAt: nowIso(), returnedById: me.id, repairCost: cost(body?.repairCost), returnNote: text(body?.note, 500, 'note') });
+      i.updatedAt = nowIso();
+      return out(i);
+    }
+    if (seg[2] === 'remove' && method === 'POST') {
+      const reason = text(body?.reason, 500, 'reason');
+      if (!reason) throw bad('Write why it is removed');
+      const current = currentOf(i.id);
+      if (current) Object.assign(current, { endedAt: nowIso(), endedById: me.id, endAction: 'REMOVED', endNote: reason });
+      const open = openRepairOf(i.id);
+      if (open) Object.assign(open, { returnedAt: nowIso(), returnedById: me.id, returnNote: `Removed: ${reason}` });
+      Object.assign(i, { removedAt: nowIso(), removedById: me.id, removedReason: reason, updatedAt: nowIso() });
+      return out(i);
+    }
+    if (seg[2] === 'give' && method === 'POST') {
+      notUnderRepair();
+      if (!body.holderId) throw bad('Choose the person');
+      const location = text(body.location, 160, 'location');
+      if (!location) throw bad('Write the site location');
+      const project = text(body.project, 160, 'project');
+      const note = text(body.note, 500, 'note');
+      const to = activeAssignee(body.holderId);
+      const current = currentOf(i.id);
+      if (current) {
+        if (current.holderId === to.id && current.location.toLowerCase() === location.toLowerCase()
+          && current.project.toLowerCase() === project.toLowerCase()) throw bad(`${to.fullName} already has this instrument at ${location}`);
+        Object.assign(current, { endedAt: nowIso(), endedById: me.id, endAction: 'SHIFTED', endNote: note });
+      }
+      start(i, to.id, location, project, note);
+      i.updatedAt = nowIso();
+      return out(i);
+    }
+    if (seg[2] === 'submit' && method === 'POST') {
+      notUnderRepair();
+      const current = currentOf(i.id);
+      if (!current) throw bad('This instrument is already in the office store');
+      Object.assign(current, { endedAt: nowIso(), endedById: me.id, endAction: 'SUBMITTED', endNote: text(body?.note, 500, 'note') });
+      i.updatedAt = nowIso();
+      return out(i);
+    }
+    throw new HttpError(404, 'Not found');
+  }
+
   // ----- office holidays: everyone can see, admin can change
   if (seg[0] === 'holidays') {
     db.holidays ||= [];
