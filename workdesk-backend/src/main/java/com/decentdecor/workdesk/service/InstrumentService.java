@@ -99,7 +99,7 @@ public class InstrumentService {
         return toResponse(inst);
     }
 
-    /** PUT /api/instruments/{id} — name, weight and info only; who has it changes with give / shift / submit. */
+    /** PUT /api/instruments/{id} — name, make and info only; who has it changes with give / shift / submit. */
     @Transactional
     public InstrumentResponse update(CurrentUser user, Long id, InstrumentRequest req) {
         people.me(user);
@@ -237,7 +237,7 @@ public class InstrumentService {
 
     private void details(Instrument inst, InstrumentRequest req, Instant now) {
         inst.setName(req.name().trim());
-        inst.setWeightKg(req.weightKg());
+        inst.setMake(Texts.trimToEmpty(req.make()));
         inst.setInfo(Texts.trimToEmpty(req.info()));
         inst.setUpdatedAt(now);
     }
@@ -266,7 +266,7 @@ public class InstrumentService {
         String status = inst.isRemoved() ? REMOVED : repair != null ? REPAIR : now != null ? IN_USE : FREE;
         String location = inst.isRemoved() ? "Removed" : repair != null ? repair.getRepairShop()
                 : now != null ? now.getLocation() : OFFICE_STORE;
-        return new InstrumentResponse(inst.getId(), srNo, inst.getName(), inst.getWeightKg(), inst.getInfo(),
+        return new InstrumentResponse(inst.getId(), srNo, inst.getName(), inst.getMake(), inst.getInfo(),
                 status,
                 now == null ? null : employees.toRef(now.getHolder()),
                 location,

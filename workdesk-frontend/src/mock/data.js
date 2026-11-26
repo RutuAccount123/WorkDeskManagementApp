@@ -248,20 +248,20 @@ export function buildSeed() {
 
   // Instruments tab: sample site instruments and who has them (Sneha = 4, Amit = 5, Priya = 2)
   const instruments = [
-    { id: 1, name: 'Moisture meter', weightKg: 0.4, info: 'Pin + pinless, for wall / slab dampness before waterproofing' },
-    { id: 2, name: 'Laser distance meter', weightKg: 0.2, info: 'Range 60 m, for site measurement' },
-    { id: 3, name: 'Airless paint sprayer', weightKg: 14, info: 'For interior painting, with 2 spare tips' },
-    { id: 4, name: 'Auto level machine', weightKg: 2.5, info: 'With tripod and staff, for POP / floor levels' },
-    { id: 5, name: 'Hammer drill machine', weightKg: 2.8, info: '800 W, with drill bit set' },
+    { id: 1, name: 'Moisture meter', make: 'Protimeter', info: 'Pin + pinless, for wall / slab dampness before waterproofing' },
+    { id: 2, name: 'Laser distance meter', make: 'Bosch', info: 'Range 60 m, for site measurement' },
+    { id: 3, name: 'Airless paint sprayer', make: 'Graco', info: 'For interior painting, with 2 spare tips' },
+    { id: 4, name: 'Auto level machine', make: 'Sokkia', info: 'With tripod and staff, for POP / floor levels' },
+    { id: 5, name: 'Hammer drill machine', make: 'Bosch', info: '800 W, with drill bit set' },
     // the rest of the default set the server adds on first start (InstrumentDefaults); 6, 8 and 11 start at sites
-    { id: 6, name: 'Cross line laser level', weightKg: 0.6, info: 'For POP false ceiling, tile and wall lines' },
-    { id: 7, name: 'Paint and putty mixer', weightKg: 3.5, info: 'Drill stirrer for paint, putty and waterproofing compounds' },
-    { id: 8, name: 'PU injection pump', weightKg: 9, info: 'For crack injection waterproofing' },
-    { id: 9, name: 'Gas torch for membrane', weightKg: 1.2, info: 'For torch-applied APP waterproofing membrane' },
-    { id: 10, name: 'Coating thickness gauge (DFT)', weightKg: 0.3, info: 'Checks paint / coating thickness' },
-    { id: 11, name: 'Angle grinder', weightKg: 2, info: '100 mm, for surface preparation and cutting' },
-    { id: 12, name: 'Wet and dry vacuum cleaner', weightKg: 6, info: 'Cleans the surface before coating' },
-    { id: 13, name: 'Aluminium ladder (8 ft)', weightKg: 7, info: 'Folding, for painting and POP work' },
+    { id: 6, name: 'Cross line laser level', make: 'Bosch', info: 'For POP false ceiling, tile and wall lines' },
+    { id: 7, name: 'Paint and putty mixer', make: 'Bosch', info: 'Drill stirrer for paint, putty and waterproofing compounds' },
+    { id: 8, name: 'PU injection pump', make: 'Sika', info: 'For crack injection waterproofing' },
+    { id: 9, name: 'Gas torch for membrane', make: 'Sievert', info: 'For torch-applied APP waterproofing membrane' },
+    { id: 10, name: 'Coating thickness gauge (DFT)', make: 'Elcometer', info: 'Checks paint / coating thickness' },
+    { id: 11, name: 'Angle grinder', make: 'Makita', info: '100 mm, for surface preparation and cutting' },
+    { id: 12, name: 'Wet and dry vacuum cleaner', make: 'Karcher', info: 'Cleans the surface before coating' },
+    { id: 13, name: 'Aluminium ladder (8 ft)', make: 'Youngman', info: 'Folding, for painting and POP work' },
   ].map((i) => ({ ...i, createdById: 1, createdAt: iso(now - 40 * D), updatedAt: iso(now - 40 * D) }));
   const use = (id, instrumentId, holderId, location, project, startDays, endDays, endAction) => ({
     id, instrumentId, holderId, location, project, givenById: 1, startedAt: iso(now - startDays * D), note: '',

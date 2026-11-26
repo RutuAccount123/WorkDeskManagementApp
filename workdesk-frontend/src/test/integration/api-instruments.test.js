@@ -22,8 +22,10 @@ describe('instruments tab', () => {
     await expect(instrumentService.add({ name: '  ' })).rejects.toThrow('instrument name');
     await expect(instrumentService.add({ name: 'Tile cutter', holderId: 5 })).rejects.toThrow('site location');
 
-    const added = await instrumentService.add({ name: 'Tile cutter', weightKg: 3.2, info: '600 mm' });
-    expect(added).toMatchObject({ status: 'FREE', location: 'Office store', historyCount: 0, weightKg: 3.2 });
+    const added = await instrumentService.add({ name: 'Tile cutter', make: ' Rubi ', info: '600 mm' });
+    expect(added).toMatchObject({ status: 'FREE', location: 'Office store', historyCount: 0, make: 'Rubi' });
+    const edited = await instrumentService.update(added.id, { name: 'Tile cutter', make: 'Bosch', info: '600 mm' });
+    expect(edited).toMatchObject({ make: 'Bosch', status: 'FREE' });
     await expect(instrumentService.submit(added.id)).rejects.toThrow('already in the office store');
 
     const given = await instrumentService.give(added.id, { holderId: 5, location: 'Wakad', project: 'Villa 12' });

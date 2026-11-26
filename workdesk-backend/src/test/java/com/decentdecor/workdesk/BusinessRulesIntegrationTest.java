@@ -974,13 +974,19 @@ class BusinessRulesIntegrationTest {
         Person other = person("Instrument Other Engineer");
 
         // anyone can add one; given straight to a person
-        JsonNode meter = ok(site.token(), post("/api/instruments"), map("name", "Moisture meter", "weightKg", 0.4,
+        JsonNode meter = ok(site.token(), post("/api/instruments"), map("name", "Moisture meter", "make", "Protimeter",
                 "info", "Pin + pinless", "holderId", site.id(), "location", "Kharadi", "project", "AIGP"));
         long id = meter.get("id").asLong();
         assertThat(meter.get("status").asText()).isEqualTo("IN_USE");
         assertThat(meter.at("/holder/id").asLong()).isEqualTo(site.id());
         assertThat(meter.get("location").asText()).isEqualTo("Kharadi");
         assertThat(meter.get("historyCount").asInt()).isEqualTo(1);
+        assertThat(meter.get("make").asText()).isEqualTo("Protimeter");
+        // its details (name, make, info) can be edited; who has it does not change
+        JsonNode edited = ok(site.token(), put("/api/instruments/" + id), map("name", "Moisture meter", "make", " Tramex ",
+                "info", "Pin + pinless"));
+        assertThat(edited.get("make").asText()).isEqualTo("Tramex");
+        assertThat(edited.at("/holder/id").asLong()).isEqualTo(site.id());
         call(site.token(), post("/api/instruments"), map("name", "Laser", "holderId", site.id()))
                 .andExpect(status().isBadRequest());   // a person needs a site location
 

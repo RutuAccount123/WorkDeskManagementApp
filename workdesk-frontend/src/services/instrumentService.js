@@ -2,7 +2,7 @@ import { http } from './http.js';
 
 /**
  * Instruments tab: site instruments, who has them now, and their history. Open to everyone.
- * add: { name, weightKg, info, holderId?, location?, project?, note? } (with holderId it is given to them at once)
+ * add: { name, make, info, holderId?, location?, project?, note? } (with holderId it is given to them at once)
  * give: { holderId, location, project, note } gives a free one to a person, or shifts it to another person.
  */
 export const instrumentService = {

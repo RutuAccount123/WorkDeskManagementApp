@@ -7,24 +7,23 @@ import { personColor } from '@/utils/colors.js';
 import { matchesPerson } from '@/utils/personSearch.js';
 
 const initials = (name = '') => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-const weightText = (kg) => (kg == null || kg === '' ? null : `${Number(kg)} kg`);
 /** Instruments shown on each page. */
 export const PAGE_SIZE = 5;
 
-/** Info cell: weight, then the info cut to 2 lines; "More" opens the full text in the row. */
-function InfoCell({ weightKg, info }) {
+/** Info cell: make (company), then the info cut to 2 lines; "More" opens the full text in the row. */
+function InfoCell({ make, info }) {
   const [open, setOpen] = useState(false);
   const long = !!info && (info.length > 70 || info.includes('\n'));
   return (
     <div className="inst-info">
-      {weightText(weightKg) && <span>Weight: <strong>{weightText(weightKg)}</strong></span>}
+      {make && <span className="inst-clip" title={make}>Make: <strong>{make}</strong></span>}
       {info && <span className={`muted inst-info-text${open ? ' is-open' : ''}`} title={open ? undefined : info}>{info}</span>}
       {long && (
         <button type="button" className="link-btn small" onClick={() => setOpen(!open)} aria-expanded={open}>
           {open ? 'Less' : 'More'}
         </button>
       )}
-      {!weightText(weightKg) && !info && <span className="muted">—</span>}
+      {!make && !info && <span className="muted">—</span>}
     </div>
   );
 }
@@ -73,7 +72,7 @@ function PersonSelect({ people, value, onChange, label, emptyLabel, required = f
 
 /** Add instrument: its details, and optionally the person who takes it now. */
 function AddInstrumentForm({ people, onClose, onSaved }) {
-  const [form, setForm] = useState({ name: '', weightKg: '', info: '', holderId: '', location: '', project: '', note: '' });
+  const [form, setForm] = useState({ name: '', make: '', info: '', holderId: '', location: '', project: '', note: '' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -84,7 +83,7 @@ function AddInstrumentForm({ people, onClose, onSaved }) {
     setSaving(true);
     try {
       await instrumentService.add({
-        name: form.name.trim(), weightKg: form.weightKg === '' ? null : Number(form.weightKg), info: form.info.trim(),
+        name: form.name.trim(), make: form.make.trim(), info: form.info.trim(),
         holderId: form.holderId ? Number(form.holderId) : null,
         location: form.holderId ? form.location.trim() : null, project: form.holderId ? form.project.trim() : null,
         note: form.holderId ? form.note.trim() : null,
@@ -103,8 +102,8 @@ function AddInstrumentForm({ people, onClose, onSaved }) {
         <label>Instrument name<input value={form.name} onChange={set('name')} required autoFocus maxLength={120}
           placeholder="e.g. Moisture meter" /></label>
         <div className="grid-2">
-          <label>Weight (kg)<input type="number" min="0.01" step="0.01" value={form.weightKg} onChange={set('weightKg')}
-            placeholder="e.g. 0.4" /></label>
+          <label>Make (company)<input value={form.make} onChange={set('make')} maxLength={120}
+            placeholder="e.g. Bosch" /></label>
           <PersonSelect people={people} value={form.holderId} onChange={(v) => setForm((f) => ({ ...f, holderId: v }))}
             label="Give it to" emptyLabel="Nobody yet — keep in office store" />
         </div>
@@ -123,6 +122,41 @@ function AddInstrumentForm({ people, onClose, onSaved }) {
         <div className="form-actions">
           <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
           <button className="btn primary" disabled={saving}>Add instrument</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Edit details: name, make (company) and info. Who has it does not change here. */
+function EditInstrumentForm({ instrument, onClose, onSaved }) {
+  const [form, setForm] = useState({ name: instrument.name, make: instrument.make || '', info: instrument.info || '' });
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const submit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSaving(true);
+    try {
+      await instrumentService.update(instrument.id, { name: form.name.trim(), make: form.make.trim(), info: form.info.trim() });
+      onSaved(`“${form.name.trim()}” saved.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal title={`Edit ${instrument.name}`} onClose={onClose}>
+      <form className="form" onSubmit={submit}>
+        <label>Instrument name<input value={form.name} onChange={set('name')} required maxLength={120} /></label>
+        <label>Make (company)<input value={form.make} onChange={set('make')} maxLength={120} autoFocus placeholder="e.g. Bosch" /></label>
+        <label>Instrument info<textarea rows={3} value={form.info} onChange={set('info')} maxLength={1000} /></label>
+        {error && <p className="error" role="alert">{error}</p>}
+        <div className="form-actions">
+          <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={saving}>Save</button>
         </div>
       </form>
     </Modal>
@@ -429,7 +463,7 @@ export default function InstrumentsPage() {
   const source = removedView ? removed : list;
   const needle = q.trim().toLowerCase();
   const shown = (source || []).filter((i) => (removedView || !status || i.status === status)
-    && (!needle || [i.name, i.info, i.location, i.project, i.removedReason, i.repair?.repairShop]
+    && (!needle || [i.name, i.make, i.info, i.location, i.project, i.removedReason, i.repair?.repairShop]
       .some((v) => v?.toLowerCase().includes(needle))
       || (i.holder && matchesPerson(i.holder, q)) || (i.removedBy && matchesPerson(i.removedBy, q))));
   const count = (s) => (list || []).filter((i) => i.status === s).length;
@@ -454,7 +488,7 @@ export default function InstrumentsPage() {
       {list && (list.length > 0 || removedView) && (
         <div className="employee-search">
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search instruments"
-            placeholder="Search instrument, person, location or project" />
+            placeholder="Search instrument, make, person, location or project" />
           <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
             <option value="">All</option>
             <option value="FREE">Free</option>
@@ -462,6 +496,11 @@ export default function InstrumentsPage() {
             <option value="REPAIR">Under repair</option>
             <option value="REMOVED">Removed</option>
           </select>
+          {/* arrows at the top too, so the next page is one click away without scrolling down */}
+          <div className="inst-top-pager">
+            <Pagination compact page={current} pageSize={PAGE_SIZE} total={shown.length} onPage={setPage}
+              label="Instrument pages (top)" />
+          </div>
         </div>
       )}
 
@@ -488,8 +527,13 @@ export default function InstrumentsPage() {
               {pageRows.map((i) => (
                 <tr key={i.id}>
                   <td className="inst-sr">{i.srNo}</td>
-                  <td><strong className="inst-clip" title={i.name}>{i.name}</strong></td>
-                  <td><InfoCell weightKg={i.weightKg} info={i.info} /></td>
+                  <td>
+                    <strong className="inst-clip" title={i.name}>{i.name}</strong>
+                    {i.status !== 'REMOVED' && (
+                      <button type="button" className="link-btn small" onClick={open('edit', i)} aria-label={`Edit ${i.name}`}>Edit</button>
+                    )}
+                  </td>
+                  <td><InfoCell make={i.make} info={i.info} /></td>
                   <td><InstrumentStatus status={i.status} /></td>
                   <td>
                     {i.status === 'REPAIR' && <span className="muted small block">At repair</span>}
@@ -556,6 +600,7 @@ export default function InstrumentsPage() {
         (your name is saved; see it under “Removed”). History shows everyone who had it and every repair.</p>
 
       {dialog?.kind === 'add' && <AddInstrumentForm people={people} onClose={() => setDialog(null)} onSaved={saved} />}
+      {dialog?.kind === 'edit' && <EditInstrumentForm instrument={dialog.instrument} onClose={() => setDialog(null)} onSaved={saved} />}
       {dialog?.kind === 'give' && <GiveForm instrument={dialog.instrument} people={people} onClose={() => setDialog(null)} onSaved={saved} />}
       {dialog?.kind === 'submit' && <SubmitForm instrument={dialog.instrument} onClose={() => setDialog(null)} onSaved={saved} />}
       {dialog?.kind === 'repair' && <RepairForm instrument={dialog.instrument} onClose={() => setDialog(null)} onSaved={saved} />}

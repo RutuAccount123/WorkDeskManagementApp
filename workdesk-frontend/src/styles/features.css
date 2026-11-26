@@ -1118,6 +1118,9 @@ textarea.gform-input { resize: vertical; min-height: 36px; }
 .pager-buttons .btn { min-width: 34px; }
 .pager-gap { padding: 0 4px; }
 .pager-compact { justify-content: center; gap: 8px; margin: 8px 0 0; }
+.inst-top-pager { margin-left: auto; }
+.inst-top-pager .pager-compact { margin: 0; flex-wrap: nowrap; }
+.inst-top-pager .btn.small { min-width: 36px; font-size: 1.05rem; padding: 4px 10px; }
 .avatar.small { width: 30px; height: 30px; font-size: 0.75rem; flex: 0 0 auto; }
 .employee-search select { width: auto; }
 .inst-history { list-style: none; margin: 8px 0 0; padding: 0 0 0 16px; border-left: 2px solid var(--border); display: grid; gap: 14px; }

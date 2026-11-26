@@ -1,7 +1,6 @@
 package com.decentdecor.workdesk.dto.instrument;
 
 import com.decentdecor.workdesk.dto.common.PersonRef;
-import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -16,7 +15,7 @@ public record InstrumentResponse(
         Long id,
         long srNo,
         String name,
-        BigDecimal weightKg,
+        String make,
         String info,
         String status,
         PersonRef holder,

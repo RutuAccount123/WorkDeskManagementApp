@@ -12,7 +12,6 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,8 +31,9 @@ public class Instrument {
     @Column(name = "name", nullable = false, length = 120)
     private String name;
 
-    @Column(name = "weight_kg", precision = 8, scale = 2)
-    private BigDecimal weightKg;
+    /** The company / brand, e.g. Bosch. Empty when not known. */
+    @Column(name = "make", nullable = false, length = 120)
+    private String make = "";
 
     @Column(name = "info", nullable = false, length = 1000)
     private String info = "";
@@ -119,12 +119,12 @@ public class Instrument {
         this.name = name;
     }
 
-    public BigDecimal getWeightKg() {
-        return weightKg;
+    public String getMake() {
+        return make;
     }
 
-    public void setWeightKg(BigDecimal weightKg) {
-        this.weightKg = weightKg;
+    public void setMake(String make) {
+        this.make = make == null ? "" : make;
     }
 
     public String getInfo() {

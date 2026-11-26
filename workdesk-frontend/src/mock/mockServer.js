@@ -1543,7 +1543,7 @@ function route(method, path, query, body, me) {
       const repair = openRepairOf(i.id);
       const removed = !!i.removedAt;
       return {
-        id: i.id, srNo: ordered(removed).findIndex((x) => x.id === i.id) + 1, name: i.name, weightKg: i.weightKg ?? null, info: i.info || '',
+        id: i.id, srNo: ordered(removed).findIndex((x) => x.id === i.id) + 1, name: i.name, make: i.make || '', info: i.info || '',
         status: removed ? 'REMOVED' : repair ? 'REPAIR' : now ? 'IN_USE' : 'FREE', holder: now ? empRef(now.holderId) : null,
         location: removed ? 'Removed' : repair ? repair.repairShop : now ? now.location : 'Office store',
         project: now ? now.project : '', heldSince: now ? now.startedAt : null,
@@ -1571,9 +1571,7 @@ function route(method, path, query, body, me) {
     const details = (i) => {
       const name = text(body.name, 120, 'name');
       if (!name) throw bad('Write the instrument name');
-      const weightKg = body.weightKg === '' || body.weightKg == null ? null : Number(body.weightKg);
-      if (weightKg != null && !(weightKg > 0)) throw bad('Weight must be more than 0 kg');
-      Object.assign(i, { name, weightKg, info: text(body.info, 1000, 'info'), updatedAt: nowIso() });
+      Object.assign(i, { name, make: text(body.make, 120, 'make'), info: text(body.info, 1000, 'info'), updatedAt: nowIso() });
     };
     const start = (i, holderId, location, project, note) => {
       const holder = activeAssignee(holderId);

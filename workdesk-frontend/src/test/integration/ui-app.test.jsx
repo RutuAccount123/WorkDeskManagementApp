@@ -346,7 +346,7 @@ describe('permissions in the screens', () => {
     await user.click(screen.getByRole('button', { name: '+ Add instrument' }));
     dialog = await screen.findByRole('dialog', { name: 'Add instrument' });
     await user.type(within(dialog).getByLabelText('Instrument name'), 'Grout pump');
-    await user.type(within(dialog).getByLabelText('Weight (kg)'), '9');
+    await user.type(within(dialog).getByLabelText('Make (company)'), 'Ajay Tools');
     const longInfo = 'Hand pump for grouting cracks and joints, with 2 hoses, pressure gauge, spare seals and a cleaning kit';
     await user.type(within(dialog).getByLabelText(/Instrument info/), longInfo);
     await user.selectOptions(within(dialog).getByLabelText('Give it to'), 'Amit Deshmukh');
@@ -358,11 +358,20 @@ describe('permissions in the screens', () => {
     expect(within(pager).getByText('Showing 1–5 of 14')).toBeInTheDocument();
     expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(6);   // header + 5
     expect(screen.queryByText('Grout pump', { selector: 'td strong' })).not.toBeInTheDocument();
+    // the arrows at the top move the page too, and stay in step with the bottom pager
+    const top = screen.getByRole('navigation', { name: 'Instrument pages (top)' });
+    expect(within(top).getByText('1–5 of 14')).toBeInTheDocument();
+    await user.click(within(top).getByRole('button', { name: 'Next page' }));
+    expect(within(top).getByText('6–10 of 14')).toBeInTheDocument();
+    expect(within(pager).getByText('Showing 6–10 of 14')).toBeInTheDocument();
+    await user.click(within(top).getByRole('button', { name: 'Previous page' }));
+    expect(within(pager).getByText('Showing 1–5 of 14')).toBeInTheDocument();
     await user.click(within(pager).getByRole('button', { name: 'Page 3' }));
     expect(within(pager).getByText('Showing 11–14 of 14')).toBeInTheDocument();
+    expect(within(top).getByText('11–14 of 14')).toBeInTheDocument();
     row = await rowOf('Grout pump');
     expect(within(row).getByText('Amit Deshmukh')).toBeInTheDocument();
-    expect(within(row).getByText('9 kg')).toBeInTheDocument();
+    expect(within(row).getByText('Ajay Tools')).toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'History of Grout pump' })).toHaveTextContent(/^View$/);
     // long info is cut to 2 lines; More / Less opens and closes it
     const more = within(row).getByRole('button', { name: 'More' });
@@ -375,6 +384,26 @@ describe('permissions in the screens', () => {
     await user.type(screen.getByRole('searchbox', { name: 'Search instruments' }), 'pump');
     expect(screen.queryByRole('navigation', { name: 'Instrument pages' })).not.toBeInTheDocument();
     expect(await rowOf('Grout pump')).toBeInTheDocument();
+
+    // edit: add / change the make (company) of an instrument already in the list
+    await user.click(within(await rowOf('Grout pump')).getByRole('button', { name: 'Edit Grout pump' }));
+    dialog = await screen.findByRole('dialog', { name: 'Edit Grout pump' });
+    const make = within(dialog).getByLabelText('Make (company)');
+    expect(make).toHaveValue('Ajay Tools');
+    await user.clear(make);
+    await user.type(make, 'Graco');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('“Grout pump” saved.')).toBeInTheDocument();
+    row = await rowOf('Grout pump');
+    expect(within(row).getByText('Graco')).toBeInTheDocument();
+    expect(within(row).getByText('Amit Deshmukh')).toBeInTheDocument();   // who has it did not change
+
+    // search finds instruments by make
+    const search = screen.getByRole('searchbox', { name: 'Search instruments' });
+    await user.clear(search);
+    await user.type(search, 'elcometer');
+    expect(await rowOf('Coating thickness gauge (DFT)')).toBeInTheDocument();
+    expect(screen.queryByText('Grout pump', { selector: 'td strong' })).not.toBeInTheDocument();
   });
 
   it('instruments tab: repair form, back from repair, and remove with a reason', async () => {
