@@ -38,6 +38,18 @@ public class Instrument {
     @Column(name = "info", nullable = false, length = 1000)
     private String info = "";
 
+    /** Units with the same material code are one material (e.g. 4 hammer drills share "INS-010"). */
+    @Column(name = "material_code", nullable = false, length = 40)
+    private String materialCode = "";
+
+    public String getMaterialCode() {
+        return materialCode;
+    }
+
+    public void setMaterialCode(String materialCode) {
+        this.materialCode = materialCode == null ? "" : materialCode;
+    }
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by_id")
     private Employee createdBy;

@@ -262,7 +262,22 @@ export function buildSeed() {
     { id: 11, name: 'Angle grinder', make: 'Makita', info: '100 mm, for surface preparation and cutting' },
     { id: 12, name: 'Wet and dry vacuum cleaner', make: 'Karcher', info: 'Cleans the surface before coating' },
     { id: 13, name: 'Aluminium ladder (8 ft)', make: 'Youngman', info: 'Folding, for painting and POP work' },
+    // the company has 3 hammer drills: one material (same name), 3 units with their own codes
+    { id: 14, name: 'Hammer drill machine', make: 'Bosch', info: '800 W, with drill bit set' },
+    { id: 15, name: 'Hammer drill machine', make: 'Bosch', info: '800 W, with drill bit set' },
   ].map((i) => ({ ...i, createdById: 1, createdAt: iso(now - 40 * D), updatedAt: iso(now - 40 * D) }));
+  // each unit's own material code, like the server defaults (INS-001 … INS-013, in the server's order)
+  const CODE = {
+    'Moisture meter': 'INS-001', 'Laser distance meter': 'INS-002', 'Cross line laser level': 'INS-003',
+    'Auto level machine': 'INS-004', 'Airless paint sprayer': 'INS-005', 'Paint and putty mixer': 'INS-006',
+    'PU injection pump': 'INS-007', 'Gas torch for membrane': 'INS-008', 'Coating thickness gauge (DFT)': 'INS-009',
+    'Hammer drill machine': 'INS-010', 'Angle grinder': 'INS-011', 'Wet and dry vacuum cleaner': 'INS-012',
+    'Aluminium ladder (8 ft)': 'INS-013',
+  };
+  instruments.forEach((i) => { i.materialCode = CODE[i.name]; });
+  // each unit has its own code: the two extra hammer drills are INS-014 and INS-015
+  instruments.find((i) => i.id === 14).materialCode = 'INS-014';
+  instruments.find((i) => i.id === 15).materialCode = 'INS-015';
   const use = (id, instrumentId, holderId, location, project, startDays, endDays, endAction) => ({
     id, instrumentId, holderId, location, project, givenById: 1, startedAt: iso(now - startDays * D), note: '',
     endedAt: endDays == null ? null : iso(now - endDays * D), endedById: endDays == null ? null : holderId,
@@ -277,6 +292,7 @@ export function buildSeed() {
     use(6, 6, 2, 'Baner', 'Office POP false ceiling', 4, null),
     use(7, 8, 5, 'Wakad', 'Villa 12 terrace waterproofing', 3, null),
     use(8, 11, 5, 'Wakad', 'Villa 12 terrace waterproofing', 3, null),
+    use(9, 14, 4, 'Talegaon', 'Warehouse flooring', 5, null),
   ];
   // the vacuum cleaner is at the service centre now; the paint sprayer was repaired once before
   const instrumentRepairs = [

@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -1084,5 +1085,63 @@ class BusinessRulesIntegrationTest {
         // the list's Sr No still counts 1, 2, 3 ... without gaps
         JsonNode list = ok(admin, get("/api/instruments"), null);
         for (int i = 0; i < list.size(); i++) assertThat(list.get(i).get("srNo").asLong()).isEqualTo(i + 1);
+    }
+
+    @Test
+    void eachUnitHasItsOwnMaterialCodeAndSeveralUnitsCountUp() throws Exception {
+        Person site = person("Units Site Engineer");
+        // the default instruments have their own codes
+        JsonNode defaults = ok(admin, get("/api/instruments"), null);
+        for (JsonNode d : defaults) {
+            if ("Hammer drill machine".equals(d.get("name").asText())) assertThat(d.get("materialCode").asText()).isEqualTo("INS-010");
+        }
+
+        // several units go to the office store; giving them to a person is one by one
+        call(site.token(), post("/api/instruments"), map("name", "Rotary hammer", "materialCode", "rh-26", "quantity", 3,
+                "holderId", site.id(), "location", "Wakad")).andExpect(status().isBadRequest());
+        call(site.token(), post("/api/instruments"), map("name", "Rotary hammer", "quantity", 0)).andExpect(status().isBadRequest());
+        call(site.token(), post("/api/instruments"), map("name", "Rotary hammer", "quantity", 101)).andExpect(status().isBadRequest());
+
+        // 3 units from RH-08: their codes count up, keeping the zero (RH-08, RH-09, RH-10)
+        JsonNode first = ok(site.token(), post("/api/instruments"), map("name", "Rotary hammer", "make", "Bosch",
+                "materialCode", " rh-08 ", "info", "SDS plus", "quantity", 3));
+        assertThat(first.get("materialCode").asText()).isEqualTo("RH-08");
+        List<String> codes = new java.util.ArrayList<>();
+        for (JsonNode r : ok(site.token(), get("/api/instruments"), null)) {
+            if ("Rotary hammer".equals(r.get("name").asText())) {
+                codes.add(r.get("materialCode").asText());
+                assertThat(r.get("make").asText()).isEqualTo("Bosch");
+                assertThat(r.get("status").asText()).isEqualTo("FREE");
+            }
+        }
+        assertThat(codes).containsExactly("RH-08", "RH-09", "RH-10");
+
+        // a code another unit has is refused, and the message says the next free one
+        call(site.token(), post("/api/instruments"), map("name", "Rotary hammer", "materialCode", "RH-09"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("the next free one is RH-11")));
+        call(site.token(), post("/api/instruments"), map("name", "Moisture meter", "materialCode", "INS-001"))
+                .andExpect(status().isBadRequest());
+        // two more starting from a free code skip the used ones: RH-07 is free, then RH-08 … RH-10 are taken → RH-11
+        ok(site.token(), post("/api/instruments"), map("name", "Rotary hammer", "materialCode", "RH-07", "quantity", 2));
+        codes.clear();
+        for (JsonNode r : ok(site.token(), get("/api/instruments"), null)) {
+            if ("Rotary hammer".equals(r.get("name").asText())) codes.add(r.get("materialCode").asText());
+        }
+        assertThat(codes).containsExactly("RH-08", "RH-09", "RH-10", "RH-07", "RH-11");
+
+        // editing: its own code is fine; another unit's code is refused
+        long id = first.get("id").asLong();
+        ok(site.token(), put("/api/instruments/" + id), map("name", "Rotary hammer", "materialCode", "RH-08"));
+        call(site.token(), put("/api/instruments/" + id), map("name", "Rotary hammer", "materialCode", "RH-11"))
+                .andExpect(status().isBadRequest());
+
+        // each unit is given, shifted and submitted on its own
+        ok(site.token(), post("/api/instruments/" + id + "/give"), map("holderId", site.id(), "location", "Baner"));
+        int inUse = 0;
+        for (JsonNode r : ok(site.token(), get("/api/instruments"), null)) {
+            if ("Rotary hammer".equals(r.get("name").asText()) && "IN_USE".equals(r.get("status").asText())) inUse++;
+        }
+        assertThat(inUse).isEqualTo(1);
     }
 }

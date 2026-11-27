@@ -1118,6 +1118,29 @@ textarea.gform-input { resize: vertical; min-height: 36px; }
 .pager-buttons .btn { min-width: 34px; }
 .pager-gap { padding: 0 4px; }
 .pager-compact { justify-content: center; gap: 8px; margin: 8px 0 0; }
+/* materials list (first page): one row per material; the quantity opens its units */
+.mat-table { min-width: 620px; }
+.mat-table .c-mname { width: 30%; }
+.mat-table .c-qty { width: 100px; }
+.mat-table .c-count { width: 90px; }
+.mat-table .c-where { width: auto; }
+.mat-count { font-weight: 700; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.mat-places { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.mat-places li { display: flex; min-width: 0; }
+.mat-places .inst-clip { min-width: 0; }
+/* the materials table has no Action column: its last column is not pinned */
+.mat-table th:last-child, .mat-table td:last-child { position: static; box-shadow: none; border-left: 0; background: transparent; }
+.mat-table th:last-child { background: var(--surface-2); }
+.mat-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-sm); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; white-space: nowrap; }
+.inst-table .btn.small.mat-qty { min-width: 56px; font-weight: 700; font-size: 1rem; justify-content: center; }
+.mat-status { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); }
+.mat-status-free { color: var(--done, #1e7a4f); }
+.mat-status-in_use { color: var(--primary); }
+.mat-status-repair { color: var(--overdue); }
+.mat-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.mat-head-title { flex: 1 1 240px; min-width: 0; }
+.mat-head-title h2 { margin: 0; font-size: 1.15rem; }
 .inst-top-pager { margin-left: auto; }
 .inst-top-pager .pager-compact { margin: 0; flex-wrap: nowrap; }
 .inst-top-pager .btn.small { min-width: 36px; font-size: 1.05rem; padding: 4px 10px; }
@@ -1129,3 +1152,4 @@ textarea.gform-input { resize: vertical; min-height: 36px; }
 .inst-history li.is-now::before { background: var(--primary); }
 .inst-history p { margin: 2px 0 0; }
 .inst-history-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.block-code { display: inline-block; margin: 3px 0 2px; }

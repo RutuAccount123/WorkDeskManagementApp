@@ -15,6 +15,14 @@ public interface InstrumentRepository extends JpaRepository<Instrument, Long> {
     /** In the list (not removed), oldest first: their position is the Sr No. */
     List<Instrument> findByRemovedAtIsNullOrderByIdAsc();
 
+    /**
+     * The listed instrument that already has this material code (each unit has its own code).
+     * selfId: the instrument being edited (-1 when adding).
+     */
+    @Query("select i from Instrument i where i.removedAt is null and upper(i.materialCode) = upper(:code)"
+            + " and i.id <> :selfId order by i.id")
+    List<Instrument> withCode(@Param("code") String code, @Param("selfId") Long selfId);
+
     /** Removed ones, oldest first. */
     List<Instrument> findByRemovedAtIsNotNullOrderByIdAsc();
 

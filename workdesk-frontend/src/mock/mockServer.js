@@ -1543,7 +1543,7 @@ function route(method, path, query, body, me) {
       const repair = openRepairOf(i.id);
       const removed = !!i.removedAt;
       return {
-        id: i.id, srNo: ordered(removed).findIndex((x) => x.id === i.id) + 1, name: i.name, make: i.make || '', info: i.info || '',
+        id: i.id, srNo: ordered(removed).findIndex((x) => x.id === i.id) + 1, name: i.name, make: i.make || '', materialCode: i.materialCode || '', info: i.info || '',
         status: removed ? 'REMOVED' : repair ? 'REPAIR' : now ? 'IN_USE' : 'FREE', holder: now ? empRef(now.holderId) : null,
         location: removed ? 'Removed' : repair ? repair.repairShop : now ? now.location : 'Office store',
         project: now ? now.project : '', heldSince: now ? now.startedAt : null,
@@ -1568,10 +1568,22 @@ function route(method, path, query, body, me) {
       if (s.length > max) throw bad(`${label}: must be ${max} characters or fewer`);
       return s;
     };
-    const details = (i) => {
+    // each unit has its own material code (units with the same name are one material)
+    const nextCode = (c) => {
+      const m = /^(.*?)(\d+)$/.exec(c);
+      return m ? m[1] + String(Number(m[2]) + 1).padStart(m[2].length, '0') : `${c}-2`;
+    };
+    const codeOwner = (code, selfId = -1) => ordered().find((x) => x.id !== selfId && (x.materialCode || '').toUpperCase() === code);
+    const nextFree = (code) => { let c = nextCode(code); while (codeOwner(c)) c = nextCode(c); return c; };
+    const details = (i, selfId = -1) => {
       const name = text(body.name, 120, 'name');
       if (!name) throw bad('Write the instrument name');
-      Object.assign(i, { name, make: text(body.make, 120, 'make'), info: text(body.info, 1000, 'info'), updatedAt: nowIso() });
+      const code = text(body.materialCode, 40, 'materialCode').toUpperCase();
+      const owner = code && codeOwner(code, selfId);
+      if (owner) throw bad(`Material code ${code} is already the code of a "${owner.name}". Each unit needs its own code; the next free one is ${nextFree(code)}`);
+      Object.assign(i, {
+        name, make: text(body.make, 120, 'make'), materialCode: code, info: text(body.info, 1000, 'info'), updatedAt: nowIso(),
+      });
     };
     const start = (i, holderId, location, project, note) => {
       const holder = activeAssignee(holderId);
@@ -1582,17 +1594,29 @@ function route(method, path, query, body, me) {
     };
     if (!id && method === 'GET') return ordered(query.get('removed') === 'true').map(out);
     if (!id && method === 'POST') {
-      const i = { id: nextId(db.instruments), createdById: me.id, createdAt: nowIso() };
-      details(i);
+      // quantity: that many units of the same material, all in the office store; one unit can go to a person at once
+      const quantity = body.quantity == null || body.quantity === '' ? 1 : Number(body.quantity);
+      if (!Number.isInteger(quantity) || quantity < 1) throw bad('Quantity must be at least 1');
+      if (quantity > 100) throw bad('Add at most 100 at a time');
+      if (quantity > 1 && body.holderId) throw bad('Add several units to the office store, then give them to people one by one');
+      const probe = {};
+      details(probe);
       let location = '';
       if (body.holderId) {
         location = text(body.location, 160, 'location');
         if (!location) throw bad('Write the site location for the person who gets it');
         activeAssignee(body.holderId);
       }
-      db.instruments.push(i);
-      if (body.holderId) start(i, body.holderId, location, text(body.project, 160, 'project'), text(body.note, 500, 'note'));
-      return out(i);
+      let first = null;
+      let code = probe.materialCode;
+      for (let n = 0; n < quantity; n += 1) {
+        if (code && n > 0) code = nextFree(code);   // the next units count up, skipping used codes
+        const i = { ...probe, materialCode: code, id: nextId(db.instruments), createdById: me.id, createdAt: nowIso() };
+        db.instruments.push(i);
+        if (body.holderId) start(i, body.holderId, location, text(body.project, 160, 'project'), text(body.note, 500, 'note'));
+        first ||= i;
+      }
+      return out(first);
     }
     const i = db.instruments.find((x) => x.id === id);
     if (!i) throw notFound('Instrument');
@@ -1600,7 +1624,7 @@ function route(method, path, query, body, me) {
     if (seg[2] === 'repairs' && method === 'GET') return repairsOf(i.id).map(repairOut);
     if (i.removedAt) throw bad('This instrument was removed from the list');
     const notUnderRepair = () => { if (openRepairOf(i.id)) throw bad('This instrument is under repair. Mark it back from repair first'); };
-    if (!seg[2] && method === 'PUT') { details(i); return out(i); }
+    if (!seg[2] && method === 'PUT') { details(i, i.id); return out(i); }
     if (seg[2] === 'repair' && !seg[3] && method === 'POST') {
       const problem = text(body.problem, 500, 'problem');
       if (!problem) throw bad('Write what is wrong with it');

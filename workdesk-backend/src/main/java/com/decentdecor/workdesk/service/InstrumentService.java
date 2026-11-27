@@ -80,31 +80,56 @@ public class InstrumentService {
         return find(id).getRepairs().stream().map(this::toRepair).toList();
     }
 
-    /** POST /api/instruments — adds it; with a person, gives it to them straight away. */
+    /**
+     * POST /api/instruments — adds it (quantity: that many units of the same material, all in the office store).
+     * Each unit has its own material code: with several units the code you write is the first one and the next ones
+     * count up (HD-01, HD-02, HD-03), skipping codes already in use. One unit with a person: given to them straight away.
+     * Returns the first unit added.
+     */
     @Transactional
     public InstrumentResponse create(CurrentUser user, InstrumentRequest req) {
         Employee me = people.me(user);
         Instant now = time.now();
-        Instrument inst = new Instrument();
-        inst.setCreatedBy(me);
-        inst.setCreatedAt(now);
-        details(inst, req, now);
-        inst = instruments.save(inst);
+        int quantity = req.quantity() == null ? 1 : req.quantity();
+        if (quantity > 1 && req.holderId() != null) {
+            throw new BadRequestException("Add several units to the office store, then give them to people one by one");
+        }
+        Employee holder = null;
+        String location = null;
         if (req.holderId() != null) {
-            String location = Texts.trimToNull(req.location());
+            location = Texts.trimToNull(req.location());
             if (location == null) throw new BadRequestException("Write the site location for the person who gets it");
-            start(inst, people.activeAssignee(req.holderId()), location, req.project(), req.note(), me, now);
+            holder = people.activeAssignee(req.holderId());
+        }
+        String code = codeOf(req);
+        if (code != null) codeIsFree(code, null);   // the first code must be free; the next ones skip used codes
+        Instrument first = null;
+        for (int n = 0; n < quantity; n++) {
+            Instrument inst = new Instrument();
+            inst.setCreatedBy(me);
+            inst.setCreatedAt(now);
+            details(inst, req, now);
+            if (code != null) {
+                if (n > 0) code = nextFreeCode(code);
+                inst.setMaterialCode(code);
+            }
+            inst = instruments.save(inst);
+            instruments.flush();   // so the next unit's code sees this one as used
+            if (holder != null) start(inst, holder, location, req.project(), req.note(), me, now);
+            if (first == null) first = inst;
         }
         instruments.flush();
-        return toResponse(inst);
+        return toResponse(first);
     }
 
-    /** PUT /api/instruments/{id} — name, make and info only; who has it changes with give / shift / submit. */
+    /** PUT /api/instruments/{id} — name, make, material code and info only; who has it changes with give / shift / submit. */
     @Transactional
     public InstrumentResponse update(CurrentUser user, Long id, InstrumentRequest req) {
         people.me(user);
         Instrument inst = find(id);
         notRemoved(inst);
+        String code = codeOf(req);
+        if (code != null) codeIsFree(code, id);
         details(inst, req, time.now());
         return toResponse(inst);
     }
@@ -235,9 +260,42 @@ public class InstrumentService {
         }
     }
 
+    /** The written material code, trimmed and in capitals; null when none. */
+    private static String codeOf(InstrumentRequest req) {
+        String code = Texts.trimToNull(req.materialCode());
+        return code == null ? null : code.toUpperCase(java.util.Locale.ROOT);
+    }
+
+    /** Each unit has its own code: refuses one another listed unit already has, and says the next free one. */
+    private void codeIsFree(String code, Long selfId) {
+        List<Instrument> owners = instruments.withCode(code, selfId == null ? -1L : selfId);
+        if (!owners.isEmpty()) {
+            throw new BadRequestException("Material code " + code + " is already the code of a \"" + owners.get(0).getName()
+                    + "\". Each unit needs its own code; the next free one is " + nextFreeCode(code));
+        }
+    }
+
+    /** The next code after this one that no listed unit has: HD-09 → HD-10 (HD-10 taken → HD-11); "LADDER" → "LADDER-2". */
+    private String nextFreeCode(String code) {
+        String next = nextCode(code);
+        while (!instruments.withCode(next, -1L).isEmpty()) next = nextCode(next);
+        return next;
+    }
+
+    /** Counts up the number at the end, keeping its zeros: INS-009 → INS-010; no number at the end → "-2". */
+    static String nextCode(String code) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(.*?)(\\d+)$").matcher(code);
+        if (!m.matches()) return code + "-2";
+        String digits = m.group(2);
+        String bumped = new java.math.BigInteger(digits).add(java.math.BigInteger.ONE).toString();
+        if (bumped.length() < digits.length()) bumped = "0".repeat(digits.length() - bumped.length()) + bumped;
+        return m.group(1) + bumped;
+    }
+
     private void details(Instrument inst, InstrumentRequest req, Instant now) {
         inst.setName(req.name().trim());
         inst.setMake(Texts.trimToEmpty(req.make()));
+        inst.setMaterialCode(Texts.trimToEmpty(req.materialCode()).toUpperCase(java.util.Locale.ROOT));
         inst.setInfo(Texts.trimToEmpty(req.info()));
         inst.setUpdatedAt(now);
     }
@@ -266,7 +324,7 @@ public class InstrumentService {
         String status = inst.isRemoved() ? REMOVED : repair != null ? REPAIR : now != null ? IN_USE : FREE;
         String location = inst.isRemoved() ? "Removed" : repair != null ? repair.getRepairShop()
                 : now != null ? now.getLocation() : OFFICE_STORE;
-        return new InstrumentResponse(inst.getId(), srNo, inst.getName(), inst.getMake(), inst.getInfo(),
+        return new InstrumentResponse(inst.getId(), srNo, inst.getName(), inst.getMake(), inst.getMaterialCode(), inst.getInfo(),
                 status,
                 now == null ? null : employees.toRef(now.getHolder()),
                 location,

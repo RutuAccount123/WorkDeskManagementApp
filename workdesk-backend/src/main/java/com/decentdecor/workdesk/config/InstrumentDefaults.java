@@ -75,6 +75,7 @@ public class InstrumentDefaults implements ApplicationRunner {
             Instrument i = new Instrument();
             i.setName(d[0]);
             i.setMake(d[1]);
+            i.setMaterialCode(String.format("INS-%03d", DEFAULTS.indexOf(d) + 1));
             i.setInfo(d[2]);
             i.setCreatedBy(admin);
             i.setCreatedAt(now);

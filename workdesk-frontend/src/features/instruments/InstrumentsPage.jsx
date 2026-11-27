@@ -70,25 +70,89 @@ function PersonSelect({ people, value, onChange, label, emptyLabel, required = f
   );
 }
 
-/** Add instrument: its details, and optionally the person who takes it now. */
-function AddInstrumentForm({ people, onClose, onSaved }) {
-  const [form, setForm] = useState({ name: '', make: '', info: '', holderId: '', location: '', project: '', note: '' });
+/** Counts up the number at the end, keeping its zeros: INS-009 → INS-010; no number at the end → "-2". Same as the server. */
+export function nextCode(code) {
+  const m = /^(.*?)(\d+)$/.exec(code);
+  if (!m) return `${code}-2`;
+  return m[1] + String(Number(m[2]) + 1).padStart(m[2].length, '0');
+}
+
+const usedCodes = (units, selfId) => new Set(units.filter((u) => u.id !== selfId && u.materialCode)
+  .map((u) => u.materialCode.trim().toUpperCase()));
+
+/** The codes that `quantity` new units get from `code`: the first as written, the next ones count up skipping used codes. */
+export function codesFrom(units, code, quantity) {
+  const used = usedCodes(units);
+  const out = [];
+  let c = (code || '').trim().toUpperCase();
+  if (!c) return out;
+  out.push(c);
+  while (out.length < quantity) {
+    do { c = nextCode(c); } while (used.has(c) || out.includes(c));
+    out.push(c);
+  }
+  return out;
+}
+
+/** The next free code after the highest code of a material's units (for "add more"): HD-03 → HD-04. */
+export function nextFreeCodeFor(units, material) {
+  const own = material.units.map((u) => (u.materialCode || '').trim().toUpperCase()).filter(Boolean).sort();
+  if (!own.length) return '';
+  const used = usedCodes(units);
+  let c = own[own.length - 1];
+  do { c = nextCode(c); } while (used.has(c));
+  return c;
+}
+
+/**
+ * Each unit has its own material code. Returns a message when another listed unit already has this code
+ * (with the next free one), else null.
+ */
+export function codeTaken(units, code, selfId) {
+  const c = (code || '').trim().toUpperCase();
+  if (!c) return null;
+  const owner = units.find((u) => u.id !== selfId && (u.materialCode || '').trim().toUpperCase() === c);
+  if (!owner) return null;
+  const used = usedCodes(units, selfId);
+  let next = c;
+  do { next = nextCode(next); } while (used.has(next));
+  return `Material code ${c} is already the code of a “${owner.name}”. Each unit needs its own code; the next free one is ${next}.`;
+}
+
+/**
+ * Add instrument: its details, how many units, and (for one unit) optionally the person who takes it now.
+ * Units with the same name are one material; each unit has its own material code.
+ * preset: a material to add more units of (name locked, code filled with its next free code).
+ * units: every listed unit, to check codes.
+ */
+function AddInstrumentForm({ people, preset, units = [], onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name: preset?.name || '', make: preset?.make || '', materialCode: preset ? nextFreeCodeFor(units, preset) : '',
+    info: preset?.info || '', quantity: '1', holderId: '', location: '', project: '', note: '',
+  });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const quantity = Math.max(1, Number(form.quantity) || 1);
+  const giving = quantity === 1 && !!form.holderId;
+  const clash = codeTaken(units, form.materialCode);
+  const codes = quantity > 1 ? codesFrom(units, form.materialCode, quantity) : [];
 
   const submit = async (e) => {
     e.preventDefault();
+    if (clash) return;   // the message is already under the code box
     setError('');
     setSaving(true);
     try {
       await instrumentService.add({
-        name: form.name.trim(), make: form.make.trim(), info: form.info.trim(),
-        holderId: form.holderId ? Number(form.holderId) : null,
-        location: form.holderId ? form.location.trim() : null, project: form.holderId ? form.project.trim() : null,
-        note: form.holderId ? form.note.trim() : null,
+        name: form.name.trim(), make: form.make.trim(), materialCode: form.materialCode.trim(), info: form.info.trim(),
+        quantity,
+        holderId: giving ? Number(form.holderId) : null,
+        location: giving ? form.location.trim() : null, project: giving ? form.project.trim() : null,
+        note: giving ? form.note.trim() : null,
       });
-      onSaved(`“${form.name.trim()}” added${form.holderId ? ` and given to ${people.find((p) => String(p.id) === form.holderId)?.fullName}` : ' to the office store'}.`);
+      const what = quantity > 1 ? `${quantity} × “${form.name.trim()}”` : `“${form.name.trim()}”`;
+      onSaved(`${what} added${giving ? ` and given to ${people.find((p) => String(p.id) === form.holderId)?.fullName}` : ' to the office store'}.`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -97,19 +161,38 @@ function AddInstrumentForm({ people, onClose, onSaved }) {
   };
 
   return (
-    <Modal title="Add instrument" onClose={onClose}>
+    <Modal title={preset ? `Add more ${preset.name}` : 'Add instrument'} onClose={onClose}>
       <form className="form" onSubmit={submit}>
-        <label>Instrument name<input value={form.name} onChange={set('name')} required autoFocus maxLength={120}
-          placeholder="e.g. Moisture meter" /></label>
+        {preset && (
+          <p className="hint">More units of <strong>{preset.name}</strong>. Units with the same name are one material,
+            so they show in this same list; each one gets its own code.</p>
+        )}
+        <label>Instrument name<input value={form.name} onChange={set('name')} required autoFocus={!preset} maxLength={120}
+          readOnly={!!preset} placeholder="e.g. Moisture meter" /></label>
         <div className="grid-2">
           <label>Make (company)<input value={form.make} onChange={set('make')} maxLength={120}
             placeholder="e.g. Bosch" /></label>
-          <PersonSelect people={people} value={form.holderId} onChange={(v) => setForm((f) => ({ ...f, holderId: v }))}
-            label="Give it to" emptyLabel="Nobody yet — keep in office store" />
+          <label>{quantity > 1 ? 'Material code (first unit)' : 'Material code'}<input value={form.materialCode}
+            onChange={set('materialCode')} maxLength={40} aria-invalid={!!clash} placeholder="e.g. HD-01" /></label>
         </div>
+        {clash
+          ? <p className="error small" role="alert">{clash}</p>
+          : codes.length > 1
+            ? <p className="muted small">The {quantity} units get the codes <strong>{codes.join(', ')}</strong>.</p>
+            : <p className="muted small">Each unit has its own code. Units with the same name are one material.</p>}
         <label>Instrument info<textarea rows={2} value={form.info} onChange={set('info')} maxLength={1000}
           placeholder="e.g. Pin + pinless, for wall / slab dampness before waterproofing" /></label>
-        {form.holderId && (
+        <div className="grid-2">
+          <label>Quantity<input type="number" min="1" max="100" step="1" value={form.quantity} onChange={set('quantity')}
+            required autoFocus={!!preset} /></label>
+          {quantity === 1 ? (
+            <PersonSelect people={people} value={form.holderId} onChange={(v) => setForm((f) => ({ ...f, holderId: v }))}
+              label="Give it to" emptyLabel="Nobody yet — keep in office store" />
+          ) : (
+            <p className="hint">All {quantity} go to the office store. Give them to people one by one from the list.</p>
+          )}
+        </div>
+        {giving && (
           <>
             <div className="grid-2">
               <label>Site location<input value={form.location} onChange={set('location')} required maxLength={160} placeholder="e.g. Kharadi" /></label>
@@ -129,17 +212,19 @@ function AddInstrumentForm({ people, onClose, onSaved }) {
 }
 
 /** Edit details: name, make (company) and info. Who has it does not change here. */
-function EditInstrumentForm({ instrument, onClose, onSaved }) {
-  const [form, setForm] = useState({ name: instrument.name, make: instrument.make || '', info: instrument.info || '' });
+function EditInstrumentForm({ instrument, units = [], onClose, onSaved }) {
+  const [form, setForm] = useState({ name: instrument.name, make: instrument.make || '', materialCode: instrument.materialCode || '', info: instrument.info || '' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const clash = codeTaken(units, form.materialCode, instrument.id);
   const submit = async (e) => {
     e.preventDefault();
+    if (clash) return;   // the message is already under the code box
     setError('');
     setSaving(true);
     try {
-      await instrumentService.update(instrument.id, { name: form.name.trim(), make: form.make.trim(), info: form.info.trim() });
+      await instrumentService.update(instrument.id, { name: form.name.trim(), make: form.make.trim(), materialCode: form.materialCode.trim(), info: form.info.trim() });
       onSaved(`“${form.name.trim()}” saved.`);
     } catch (err) {
       setError(err.message);
@@ -152,6 +237,8 @@ function EditInstrumentForm({ instrument, onClose, onSaved }) {
       <form className="form" onSubmit={submit}>
         <label>Instrument name<input value={form.name} onChange={set('name')} required maxLength={120} /></label>
         <label>Make (company)<input value={form.make} onChange={set('make')} maxLength={120} autoFocus placeholder="e.g. Bosch" /></label>
+        <label>Material code<input value={form.materialCode} onChange={set('materialCode')} maxLength={40} aria-invalid={!!clash} placeholder="e.g. INS-010" /></label>
+        {clash && <p className="error small" role="alert">{clash}</p>}
         <label>Instrument info<textarea rows={3} value={form.info} onChange={set('info')} maxLength={1000} /></label>
         {error && <p className="error" role="alert">{error}</p>}
         <div className="form-actions">
@@ -429,10 +516,177 @@ function HistoryDialog({ instrument, onClose }) {
   );
 }
 
+/** Units with the same name are one material (each unit keeps its own material code). Capitals and spaces do not matter. */
+export const materialKey = (i) => i.name.trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** Materials (one per name) in the order they were first added, each with its units. */
+export function groupMaterials(units) {
+  const byKey = new Map();
+  units.forEach((u) => {
+    const key = materialKey(u);
+    if (!byKey.has(key)) byKey.set(key, { key, name: u.name, make: u.make, info: u.info, units: [] });
+    byKey.get(key).units.push(u);
+  });
+  return [...byKey.values()];
+}
+
+const STATUS_WORD = { FREE: 'free', IN_USE: 'in use', REPAIR: 'under repair' };
+const statusSummary = (units) => Object.entries(STATUS_WORD)
+  .map(([s, word]) => [units.filter((u) => u.status === s).length, word, s])
+  .filter(([n]) => n > 0);
+
+/** Each unit with all its fields: status, where it is, who has it, history and actions. */
+function UnitsTable({ rows, srOf, open }) {
+  return (
+    <div className="table-wrap">
+      <table className="table inst-table">
+        <colgroup>
+          <col className="c-sr" /><col className="c-name" /><col className="c-info" /><col className="c-status" />
+          <col className="c-loc" /><col className="c-owner" /><col className="c-hist" /><col className="c-act" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Sr No</th><th>Instrument name</th><th>Instrument info</th><th>Status</th>
+            <th>Location &amp; project</th><th>Owner (has it now)</th><th>History</th><th><span>Action</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((i) => (
+            <tr key={i.id}>
+              <td className="inst-sr">{srOf(i)}</td>
+              <td>
+                <strong className="inst-clip" title={i.name}>{i.name}</strong>
+                {i.materialCode && <code className="mat-code block-code" title="Material code">{i.materialCode}</code>}
+                {i.status !== 'REMOVED' && (
+                  <button type="button" className="link-btn small" onClick={open('edit', i)} aria-label={`Edit ${i.name}`}>Edit</button>
+                )}
+              </td>
+              <td><InfoCell make={i.make} info={i.info} /></td>
+              <td><InstrumentStatus status={i.status} /></td>
+              <td>
+                {i.status === 'REPAIR' && <span className="muted small block">At repair</span>}
+                <strong className="block inst-clip" title={i.location}>{i.location}</strong>
+                {i.project && <span className="muted small inst-clip2" title={i.project}>{i.project}</span>}
+                {i.status === 'REPAIR' && i.repair && (
+                  <span className="muted small inst-clip2" title={i.repair.problem}>
+                    {i.repair.problem}{i.repair.expectedBack && ` · back by ${fmtDate(i.repair.expectedBack)}`}
+                  </span>
+                )}
+              </td>
+              <td>
+                {i.holder ? (
+                  <span className="inst-owner">
+                    <span className="avatar small" style={{ background: personColor(i.holder.fullName) }} aria-hidden="true">{initials(i.holder.fullName)}</span>
+                    <span className="inst-owner-text">
+                      <strong className="block inst-clip" title={i.holder.fullName}>{i.holder.fullName}</strong>
+                      <small className="muted">{[i.holder.department, i.heldSince && `since ${fmtDateTime(i.heldSince)}`].filter(Boolean).join(' · ')}</small>
+                    </span>
+                  </span>
+                ) : <span className="muted">—</span>}
+              </td>
+              <td>
+                <button className="btn ghost small inst-hist-btn" onClick={open('history', i)}
+                  aria-label={`History of ${i.name}`}>View</button>
+              </td>
+              <td className="inst-actions">
+                {i.status === 'REMOVED' ? (
+                  <span className="small inst-removed">
+                    <span className="muted block">Removed {fmtDate(i.removedAt)} by</span>
+                    <strong className="block inst-clip" title={i.removedBy?.fullName}>{i.removedBy?.fullName}</strong>
+                    <span className="muted inst-clip2" title={i.removedReason}>{i.removedReason}</span>
+                  </span>
+                ) : (
+                  <div className="inst-action-grid">
+                    {i.status === 'FREE' && (
+                      <button className="btn primary small" onClick={open('give', i)}>Give to person</button>
+                    )}
+                    {i.status === 'IN_USE' && (
+                      <>
+                        <button className="btn ghost small" onClick={open('submit', i)}>Submit</button>
+                        <button className="btn primary small" onClick={open('give', i)}>Shift</button>
+                      </>
+                    )}
+                    {i.status === 'REPAIR' ? (
+                      <button className="btn primary small" onClick={open('repairDone', i)}>Back from repair</button>
+                    ) : (
+                      <button className="btn ghost small" onClick={open('repair', i)} aria-label={`Repair ${i.name}`}>Repair</button>
+                    )}
+                    <button className="btn danger-ghost small" onClick={open('remove', i)} aria-label={`Remove ${i.name}`}>Remove</button>
+                  </div>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Where the units of a material are: each place with how many ("Office store · 2", "Talegaon · 1"). */
+function placesOf(units) {
+  const places = new Map();
+  units.forEach((u) => {
+    const place = u.status === 'REPAIR' ? `${u.location} (repair)` : u.location;
+    places.set(place, (places.get(place) || 0) + 1);
+  });
+  return [...places.entries()];
+}
+
+/** First page: one row per material: how many there are, how many free / in use, and where they are. The quantity opens its units. */
+function MaterialsTable({ rows, srOf, onOpen }) {
+  const countOf = (m, s) => m.units.filter((u) => u.status === s).length;
+  return (
+    <div className="table-wrap">
+      <table className="table inst-table mat-table">
+        <colgroup>
+          <col className="c-sr" /><col className="c-mname" /><col className="c-qty" /><col className="c-count" />
+          <col className="c-count" /><col className="c-where" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Sr No</th><th>Material</th><th>Quantity</th><th>Free</th><th>In use</th><th>Where they are</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((m) => {
+            const repair = countOf(m, 'REPAIR');
+            return (
+              <tr key={m.key}>
+                <td className="inst-sr">{srOf(m)}</td>
+                <td><strong className="inst-clip" title={m.name}>{m.name}</strong></td>
+                <td>
+                  <button type="button" className="btn ghost small mat-qty" onClick={() => onOpen(m.key)}
+                    aria-label={`Show the ${m.units.length} ${m.name} units`} title="Show each unit">
+                    {m.units.length} <span aria-hidden="true">›</span>
+                  </button>
+                </td>
+                <td><span className="mat-count mat-status-free" aria-label={`${countOf(m, 'FREE')} free`}>{countOf(m, 'FREE')}</span></td>
+                <td>
+                  <span className="mat-count mat-status-in_use" aria-label={`${countOf(m, 'IN_USE')} in use`}>{countOf(m, 'IN_USE')}</span>
+                  {repair > 0 && <span className="muted small block mat-status-repair">{repair} under repair</span>}
+                </td>
+                <td>
+                  <ul className="mat-places">
+                    {placesOf(m.units).map(([place, n]) => (
+                      <li key={place}><span className="inst-clip" title={place}>{place}</span><span className="muted"> · {n}</span></li>
+                    ))}
+                  </ul>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /**
  * Instruments tab: the company's site instruments, who has each one now and where, with its history.
  * Separate from tasks; it only uses the employee list. Everyone can add, give, shift, submit, repair and remove.
- * 5 instruments per page.
+ * First page: materials (one row each, with quantity). Click the quantity: each unit of that material, with all its fields.
+ * 5 rows per page.
  */
 export default function InstrumentsPage() {
   const [list, setList] = useState(null);
@@ -443,7 +697,9 @@ export default function InstrumentsPage() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
-  const [dialog, setDialog] = useState(null);   // { kind: 'add' | 'give' | 'submit' | 'repair' | 'repairDone' | 'remove' | 'history', instrument }
+  const [openKey, setOpenKey] = useState(null);   // the material whose units are shown; null = the materials list
+  // { kind: 'add' | 'edit' | 'give' | 'submit' | 'repair' | 'repairDone' | 'remove' | 'history', instrument, preset }
+  const [dialog, setDialog] = useState(null);
   const removedView = status === 'REMOVED';
 
   const load = () => {
@@ -457,19 +713,28 @@ export default function InstrumentsPage() {
   useEffect(() => {
     if (removedView && removed === null) instrumentService.removed().then(setRemoved).catch((e) => setError(e.message));
   }, [removedView, removed]);
-  useEffect(() => { setPage(1); }, [q, status]);
+  useEffect(() => { setPage(1); }, [q, status, openKey]);
 
   const saved = (text) => { setDialog(null); setMessage(text); setError(''); load(); };
-  const source = removedView ? removed : list;
   const needle = q.trim().toLowerCase();
-  const shown = (source || []).filter((i) => (removedView || !status || i.status === status)
-    && (!needle || [i.name, i.make, i.info, i.location, i.project, i.removedReason, i.repair?.repairShop]
-      .some((v) => v?.toLowerCase().includes(needle))
-      || (i.holder && matchesPerson(i.holder, q)) || (i.removedBy && matchesPerson(i.removedBy, q))));
-  const count = (s) => (list || []).filter((i) => i.status === s).length;
-  const current = Math.min(page, pageCount(shown.length, PAGE_SIZE));   // stays valid when the list shrinks
-  const pageRows = pageSlice(shown, current, PAGE_SIZE);
+  const unitMatches = (i) => !needle || [i.name, i.make, i.materialCode, i.info, i.location, i.project, i.removedReason, i.repair?.repairShop]
+    .some((v) => v?.toLowerCase().includes(needle))
+    || (i.holder && matchesPerson(i.holder, q)) || (i.removedBy && matchesPerson(i.removedBy, q));
+  const statusMatches = (i) => !status || removedView || i.status === status;
+
+  const materials = groupMaterials(list || []);
+  const material = openKey ? materials.find((m) => m.key === openKey) : null;
+  // view: removed units (flat) · one material's units · the materials list
+  const view = removedView ? 'removed' : material ? 'units' : 'materials';
+  const rows = view === 'removed' ? (removed || []).filter(unitMatches)
+    : view === 'units' ? material.units.filter((u) => statusMatches(u) && unitMatches(u))
+      : materials.filter((m) => m.units.some((u) => statusMatches(u) && unitMatches(u)));
+  const current = Math.min(page, pageCount(rows.length, PAGE_SIZE));   // stays valid when the list shrinks
+  const pageRows = pageSlice(rows, current, PAGE_SIZE);
   const open = (kind, instrument) => () => setDialog({ kind, instrument });
+  const count = (s) => (list || []).filter((i) => i.status === s).length;
+  const loading = view === 'removed' ? removed === null : list === null;
+  const openMaterial = (key) => { setOpenKey(key); setQ(''); setMessage(''); };
 
   return (
     <div className="page">
@@ -477,18 +742,38 @@ export default function InstrumentsPage() {
         <div>
           <h1>Instruments</h1>
           <p className="muted">Site instruments, who has them now, and where they are.
-            {list && list.length > 0 && ` ${list.length} instruments · ${count('FREE')} free · ${count('IN_USE')} in use`}
+            {list && list.length > 0 && ` ${materials.length} materials · ${list.length} units · ${count('FREE')} free · ${count('IN_USE')} in use`}
             {count('REPAIR') > 0 && ` · ${count('REPAIR')} under repair`}{list && list.length > 0 && '.'}</p>
         </div>
-        <button className="btn primary" onClick={() => setDialog({ kind: 'add' })}>+ Add instrument</button>
+        {/* inside a material, adding means one more unit of it */}
+        <button className="btn primary" onClick={() => setDialog({ kind: 'add', preset: material || undefined })}>
+          {material ? `+ Add ${material.name}` : '+ Add instrument'}
+        </button>
       </header>
       {message && <p className="success" role="status">{message}</p>}
       {error && <p className="error">{error}</p>}
 
+      {view === 'units' && (
+        <div className="mat-head">
+          <button type="button" className="btn ghost small" onClick={() => setOpenKey(null)}>‹ All materials</button>
+          <div className="mat-head-title">
+            <h2>{material.name}</h2>
+            <span className="muted small">
+              {material.make && `${material.make} · `}
+              {material.units.length} unit{material.units.length === 1 ? '' : 's'}
+              {statusSummary(material.units).map(([n, word, s]) => <span key={s}> · {n} {word}</span>)}
+            </span>
+          </div>
+          <button type="button" className="btn ghost small" onClick={() => setDialog({ kind: 'add', preset: material })}>
+            + Add more units
+          </button>
+        </div>
+      )}
+
       {list && (list.length > 0 || removedView) && (
         <div className="employee-search">
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search instruments"
-            placeholder="Search instrument, make, person, location or project" />
+            placeholder={view === 'materials' ? 'Search material, code, make, person or location' : 'Search code, make, person, location or project'} />
           <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
             <option value="">All</option>
             <option value="FREE">Free</option>
@@ -498,109 +783,36 @@ export default function InstrumentsPage() {
           </select>
           {/* arrows at the top too, so the next page is one click away without scrolling down */}
           <div className="inst-top-pager">
-            <Pagination compact page={current} pageSize={PAGE_SIZE} total={shown.length} onPage={setPage}
+            <Pagination compact page={current} pageSize={PAGE_SIZE} total={rows.length} onPage={setPage}
               label="Instrument pages (top)" />
           </div>
         </div>
       )}
 
-      {source === null ? <p className="muted">Loading…</p> : source.length === 0 ? (
+      {loading ? <p className="muted">Loading…</p> : (view === 'removed' ? removed : list).length === 0 ? (
         <section className="panel"><p className="muted">{removedView ? 'No instrument has been removed.'
           : 'No instruments yet. Use “Add instrument” to add the first one.'}</p></section>
-      ) : shown.length === 0 ? (
+      ) : rows.length === 0 ? (
         <p className="muted">No instrument matches. <button className="link-btn" onClick={() => { setQ(''); setStatus(''); }}>Clear filters</button></p>
       ) : (
         <>
-        <div className="table-wrap">
-          <table className="table inst-table">
-            <colgroup>
-              <col className="c-sr" /><col className="c-name" /><col className="c-info" /><col className="c-status" />
-              <col className="c-loc" /><col className="c-owner" /><col className="c-hist" /><col className="c-act" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Sr No</th><th>Instrument name</th><th>Instrument info</th><th>Status</th>
-                <th>Location &amp; project</th><th>Owner (has it now)</th><th>History</th><th><span>Action</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map((i) => (
-                <tr key={i.id}>
-                  <td className="inst-sr">{i.srNo}</td>
-                  <td>
-                    <strong className="inst-clip" title={i.name}>{i.name}</strong>
-                    {i.status !== 'REMOVED' && (
-                      <button type="button" className="link-btn small" onClick={open('edit', i)} aria-label={`Edit ${i.name}`}>Edit</button>
-                    )}
-                  </td>
-                  <td><InfoCell make={i.make} info={i.info} /></td>
-                  <td><InstrumentStatus status={i.status} /></td>
-                  <td>
-                    {i.status === 'REPAIR' && <span className="muted small block">At repair</span>}
-                    <strong className="block inst-clip" title={i.location}>{i.location}</strong>
-                    {i.project && <span className="muted small inst-clip2" title={i.project}>{i.project}</span>}
-                    {i.status === 'REPAIR' && i.repair && (
-                      <span className="muted small inst-clip2" title={i.repair.problem}>
-                        {i.repair.problem}{i.repair.expectedBack && ` · back by ${fmtDate(i.repair.expectedBack)}`}
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    {i.holder ? (
-                      <span className="inst-owner">
-                        <span className="avatar small" style={{ background: personColor(i.holder.fullName) }} aria-hidden="true">{initials(i.holder.fullName)}</span>
-                        <span className="inst-owner-text">
-                          <strong className="block inst-clip" title={i.holder.fullName}>{i.holder.fullName}</strong>
-                          <small className="muted">{[i.holder.department, i.heldSince && `since ${fmtDateTime(i.heldSince)}`].filter(Boolean).join(' · ')}</small>
-                        </span>
-                      </span>
-                    ) : <span className="muted">—</span>}
-                  </td>
-                  <td>
-                    <button className="btn ghost small inst-hist-btn" onClick={open('history', i)}
-                      aria-label={`History of ${i.name}`}>View</button>
-                  </td>
-                  <td className="inst-actions">
-                    {i.status === 'REMOVED' ? (
-                      <span className="small inst-removed">
-                        <span className="muted block">Removed {fmtDate(i.removedAt)} by</span>
-                        <strong className="block inst-clip" title={i.removedBy?.fullName}>{i.removedBy?.fullName}</strong>
-                        <span className="muted inst-clip2" title={i.removedReason}>{i.removedReason}</span>
-                      </span>
-                    ) : (
-                      <div className="inst-action-grid">
-                        {i.status === 'FREE' && (
-                          <button className="btn primary small" onClick={open('give', i)}>Give to person</button>
-                        )}
-                        {i.status === 'IN_USE' && (
-                          <>
-                            <button className="btn ghost small" onClick={open('submit', i)}>Submit</button>
-                            <button className="btn primary small" onClick={open('give', i)}>Shift</button>
-                          </>
-                        )}
-                        {i.status === 'REPAIR' ? (
-                          <button className="btn primary small" onClick={open('repairDone', i)}>Back from repair</button>
-                        ) : (
-                          <button className="btn ghost small" onClick={open('repair', i)} aria-label={`Repair ${i.name}`}>Repair</button>
-                        )}
-                        <button className="btn danger-ghost small" onClick={open('remove', i)} aria-label={`Remove ${i.name}`}>Remove</button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <Pagination page={current} pageSize={PAGE_SIZE} total={shown.length} onPage={setPage} label="Instrument pages" />
+          {view === 'materials'
+            ? <MaterialsTable rows={pageRows} srOf={(m) => materials.indexOf(m) + 1} onOpen={openMaterial} />
+            : <UnitsTable rows={pageRows} open={open}
+                srOf={(i) => (view === 'units' ? material.units.indexOf(i) + 1 : i.srNo)} />}
+          <Pagination page={current} pageSize={PAGE_SIZE} total={rows.length} onPage={setPage} label="Instrument pages" />
         </>
       )}
-      <p className="muted small">Submit = back to the office store (Free). Shift = give it to another person; that person becomes the owner.
-        Repair = fill the repair form; it shows “Under repair” until you press “Back from repair”. Remove = take it off the list with a reason
-        (your name is saved; see it under “Removed”). History shows everyone who had it and every repair.</p>
+      <p className="muted small">
+        {view === 'materials'
+          ? 'Units with the same name are one material; each unit has its own material code. Click the quantity to see each unit: who has it, where, its history, and Give / Shift / Submit / Repair / Remove.'
+          : <>Submit = back to the office store (Free). Shift = give it to another person; that person becomes the owner.
+            Repair = fill the repair form; it shows “Under repair” until you press “Back from repair”. Remove = take it off the list with a reason
+            (your name is saved; see it under “Removed”). History shows everyone who had it and every repair.</>}
+      </p>
 
-      {dialog?.kind === 'add' && <AddInstrumentForm people={people} onClose={() => setDialog(null)} onSaved={saved} />}
-      {dialog?.kind === 'edit' && <EditInstrumentForm instrument={dialog.instrument} onClose={() => setDialog(null)} onSaved={saved} />}
+      {dialog?.kind === 'add' && <AddInstrumentForm people={people} preset={dialog.preset} units={list || []} onClose={() => setDialog(null)} onSaved={saved} />}
+      {dialog?.kind === 'edit' && <EditInstrumentForm instrument={dialog.instrument} units={list || []} onClose={() => setDialog(null)} onSaved={saved} />}
       {dialog?.kind === 'give' && <GiveForm instrument={dialog.instrument} people={people} onClose={() => setDialog(null)} onSaved={saved} />}
       {dialog?.kind === 'submit' && <SubmitForm instrument={dialog.instrument} onClose={() => setDialog(null)} onSaved={saved} />}
       {dialog?.kind === 'repair' && <RepairForm instrument={dialog.instrument} onClose={() => setDialog(null)} onSaved={saved} />}
