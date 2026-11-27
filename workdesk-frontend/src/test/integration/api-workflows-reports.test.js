@@ -197,8 +197,14 @@ describe('reports', () => {
     await asUser(ADMIN);
     const p = await reportService.performance({ employeeId: 2 });
     if (p.score != null) {
-      expect(p.score).toBe(Math.round(0.6 * p.completionRate + 0.4 * (p.onTimeRate ?? 0)));
+      // from the exact counts (the rates in the response are rounded to 1 decimal, so rebuilding the score from them
+      // can be 1 off on some days, e.g. 90.45 → 90 but 90.5 → 91)
+      const completion = p.completed / p.total;
+      const onTime = p.completed ? p.completedOnTime / p.completed : 0;
+      expect(p.score).toBe(Math.round(100 * (0.6 * completion + 0.4 * onTime)));
       expect(p.completed).toBe(p.completedOnTime + p.completedLate);
+      // and the rounded rates shown on screen agree with it to within 1 point
+      expect(Math.abs(p.score - (0.6 * p.completionRate + 0.4 * (p.onTimeRate ?? 0)))).toBeLessThanOrEqual(1);
     }
     expect(p.trend).toHaveLength(6);
     const y = await reportService.yearly({ employeeId: 2, year: new Date().getFullYear() });
