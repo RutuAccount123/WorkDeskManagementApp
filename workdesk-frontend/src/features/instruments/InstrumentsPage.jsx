@@ -211,7 +211,55 @@ function AddInstrumentForm({ people, preset, units = [], onClose, onSaved }) {
   );
 }
 
-/** Edit details: name, make (company) and info. Who has it does not change here. */
+/**
+ * Edit a material from the first page: name, make and info for ALL its units at once.
+ * Each unit keeps its own material code, and who has it does not change.
+ */
+function EditMaterialForm({ material, onClose, onSaved }) {
+  const [form, setForm] = useState({ name: material.name, make: material.make || '', info: material.info || '' });
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const n = material.units.length;
+  const submit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSaving(true);
+    try {
+      for (const u of material.units) {
+        // eslint-disable-next-line no-await-in-loop
+        await instrumentService.update(u.id, {
+          name: form.name.trim(), make: form.make.trim(), materialCode: u.materialCode || '', info: form.info.trim(),
+        });
+      }
+      onSaved(`“${form.name.trim()}” saved${n > 1 ? ` (all ${n} units)` : ''}.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal title={`Edit ${material.name}`} onClose={onClose}>
+      <form className="form" onSubmit={submit}>
+        <p className="hint">
+          {n > 1 ? <>Changes all <strong>{n} units</strong> of this material.</> : 'Changes this material.'}
+          {' '}Each unit keeps its own material code (change a code from the unit list: click the quantity, then Edit).
+        </p>
+        <label>Instrument name<input value={form.name} onChange={set('name')} required autoFocus maxLength={120} /></label>
+        <label>Make (company)<input value={form.make} onChange={set('make')} maxLength={120} placeholder="e.g. Bosch" /></label>
+        <label>Instrument info<textarea rows={3} value={form.info} onChange={set('info')} maxLength={1000} /></label>
+        {error && <p className="error" role="alert">{error}</p>}
+        <div className="form-actions">
+          <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={saving}>{n > 1 ? `Save all ${n} units` : 'Save'}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Edit one unit: name, make (company), its material code and info. Who has it does not change here. */
 function EditInstrumentForm({ instrument, units = [], onClose, onSaved }) {
   const [form, setForm] = useState({ name: instrument.name, make: instrument.make || '', materialCode: instrument.materialCode || '', info: instrument.info || '' });
   const [error, setError] = useState('');
@@ -634,7 +682,7 @@ function placesOf(units) {
 }
 
 /** First page: one row per material: how many there are, how many free / in use, and where they are. The quantity opens its units. */
-function MaterialsTable({ rows, srOf, onOpen }) {
+function MaterialsTable({ rows, srOf, onOpen, onEdit }) {
   const countOf = (m, s) => m.units.filter((u) => u.status === s).length;
   return (
     <div className="table-wrap">
@@ -654,7 +702,10 @@ function MaterialsTable({ rows, srOf, onOpen }) {
             return (
               <tr key={m.key}>
                 <td className="inst-sr">{srOf(m)}</td>
-                <td><strong className="inst-clip" title={m.name}>{m.name}</strong></td>
+                <td>
+                  <strong className="inst-clip" title={m.name}>{m.name}</strong>
+                  <button type="button" className="link-btn small" onClick={() => onEdit(m)} aria-label={`Edit ${m.name} (all units)`}>Edit</button>
+                </td>
                 <td>
                   <button type="button" className="btn ghost small mat-qty" onClick={() => onOpen(m.key)}
                     aria-label={`Show the ${m.units.length} ${m.name} units`} title="Show each unit">
@@ -797,7 +848,8 @@ export default function InstrumentsPage() {
       ) : (
         <>
           {view === 'materials'
-            ? <MaterialsTable rows={pageRows} srOf={(m) => materials.indexOf(m) + 1} onOpen={openMaterial} />
+            ? <MaterialsTable rows={pageRows} srOf={(m) => materials.indexOf(m) + 1} onOpen={openMaterial}
+                onEdit={(m) => setDialog({ kind: 'editMaterial', material: m })} />
             : <UnitsTable rows={pageRows} open={open}
                 srOf={(i) => (view === 'units' ? material.units.indexOf(i) + 1 : i.srNo)} />}
           <Pagination page={current} pageSize={PAGE_SIZE} total={rows.length} onPage={setPage} label="Instrument pages" />
@@ -813,6 +865,7 @@ export default function InstrumentsPage() {
 
       {dialog?.kind === 'add' && <AddInstrumentForm people={people} preset={dialog.preset} units={list || []} onClose={() => setDialog(null)} onSaved={saved} />}
       {dialog?.kind === 'edit' && <EditInstrumentForm instrument={dialog.instrument} units={list || []} onClose={() => setDialog(null)} onSaved={saved} />}
+      {dialog?.kind === 'editMaterial' && <EditMaterialForm material={dialog.material} onClose={() => setDialog(null)} onSaved={saved} />}
       {dialog?.kind === 'give' && <GiveForm instrument={dialog.instrument} people={people} onClose={() => setDialog(null)} onSaved={saved} />}
       {dialog?.kind === 'submit' && <SubmitForm instrument={dialog.instrument} onClose={() => setDialog(null)} onSaved={saved} />}
       {dialog?.kind === 'repair' && <RepairForm instrument={dialog.instrument} onClose={() => setDialog(null)} onSaved={saved} />}

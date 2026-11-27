@@ -523,6 +523,36 @@ describe('permissions in the screens', () => {
     expect(within(row).queryByRole('button', { name: /Remove|Repair|Shift|Give/ })).not.toBeInTheDocument();
   });
 
+  it('instruments tab: Edit on the first page changes the material for all its units; each keeps its own code', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');   // Rahul
+    start('/instruments');
+    await screen.findByRole('heading', { level: 1, name: 'Instruments' });
+    const rowOf = async (name) => (await screen.findByText(name, { selector: 'td strong' })).closest('tr');
+
+    await user.click(within(await rowOf('Hammer drill machine')).getByRole('button', { name: 'Edit Hammer drill machine (all units)' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Hammer drill machine' });
+    expect(within(dialog).getByText('3 units')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Make (company)')).toHaveValue('Bosch');
+    await user.clear(within(dialog).getByLabelText('Instrument name'));
+    await user.type(within(dialog).getByLabelText('Instrument name'), 'Hammer drill (800 W)');
+    await user.clear(within(dialog).getByLabelText('Make (company)'));
+    await user.type(within(dialog).getByLabelText('Make (company)'), 'Makita');
+    await user.click(within(dialog).getByRole('button', { name: 'Save all 3 units' }));
+    expect(await screen.findByText('“Hammer drill (800 W)” saved (all 3 units).')).toBeInTheDocument();
+
+    // still one material with 3 units; each unit has the new name and make, and its own code
+    const row = await rowOf('Hammer drill (800 W)');
+    expect(screen.queryByText('Hammer drill machine', { selector: 'td strong' })).not.toBeInTheDocument();
+    await user.click(within(row).getByRole('button', { name: 'Show the 3 Hammer drill (800 W) units' }));
+    await screen.findByRole('heading', { level: 2, name: 'Hammer drill (800 W)' });
+    const units = within(screen.getByRole('table')).getAllByRole('row').slice(1);
+    expect(units).toHaveLength(3);
+    expect(units.map((r) => r.querySelector('.mat-code').textContent)).toEqual(['INS-010', 'INS-014', 'INS-015']);
+    units.forEach((r) => expect(within(r).getByText('Makita')).toBeInTheDocument());
+    expect(within(units[1]).getByText('Sneha Kulkarni')).toBeInTheDocument();   // who has it did not change
+  });
+
   it('the Tasks page shows at most 5 cards in each lane', async () => {
     tokenStore.set('mock-1');   // admin: sees everyone's tasks
     start('/tasks?status=all');
