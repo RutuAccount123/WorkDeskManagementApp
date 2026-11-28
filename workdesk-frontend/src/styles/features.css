@@ -1005,6 +1005,7 @@ textarea.gform-input { resize: vertical; min-height: 36px; }
 .ticket-list { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
 .ticket { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); }
 .ticket-open { border-left: 3px solid var(--todo); }
+.ticket-focus { box-shadow: 0 0 0 2px var(--primary); }
 .ticket-resolved { border-left: 3px solid var(--done); }
 .ticket-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .ticket-who { flex: 1; min-width: 0; overflow-wrap: anywhere; }

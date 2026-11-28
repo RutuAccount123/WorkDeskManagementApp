@@ -18,6 +18,7 @@ import TaskTickets from '@/features/tickets/TaskTickets.jsx';
 import ProofFilePicker, { toAttachments } from './ProofFilePicker.jsx';
 import TaskProofs from './TaskProofs.jsx';
 import { ACTION_TEXT, actionsFor, yourTurn } from './taskActions.js';
+import { ticketPath } from '@/features/tickets/ticketLink.js';
 
 /**
  * Full page for one task. For a workflow (FMS) step it also shows the run's form
@@ -184,6 +185,7 @@ export default function TaskDetailPage() {
           {task.fromTicket.status === 'OPEN'
             ? '. Marking this task done answers the ticket (your note is sent as the answer).'
             : '. The ticket is resolved.'}
+          {' '}<Link to={ticketPath(task.fromTicket.ticketId)}>Open the ticket</Link>
         </p>
       )}
       {turn && <p className="hint big-hint">{turn}</p>}

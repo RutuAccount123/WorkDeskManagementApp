@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ticketService } from '@/services/index.js';
 import { useAuth } from '@/features/auth/AuthContext.jsx';
@@ -15,8 +15,9 @@ const OPEN_TASK = ['TODO', 'IN_PROGRESS', 'SUBMITTED', 'REOPENED'];
  *   Mark task done → they finish the task themselves; it moves to them and is done
  * The person who raised it, or a full admin, can close (resolve) it.
  * showTask: also link to the task (on the Tickets page).
+ * focus: the ticket the person came to work on: highlighted, scrolled to, and its reply box open.
  */
-export default function TicketCard({ ticket, showTask = false, onChanged }) {
+export default function TicketCard({ ticket, showTask = false, onChanged, focus = false }) {
   const { user, isAdmin } = useAuth();
   const [reply, setReply] = useState('');
   const [replying, setReplying] = useState(false);
@@ -27,6 +28,13 @@ export default function TicketCard({ ticket, showTask = false, onChanged }) {
   const canResolve = open && (mine || ticket.raisedBy?.id === user.id || isAdmin);   // the server checks the department
   const aboutLeave = !ticket.task && !!ticket.subject;
   const canFinish = open && mine && !aboutLeave && (!ticket.taskStatus || OPEN_TASK.includes(ticket.taskStatus));
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!focus) return;
+    ref.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    if (canResolve && mine) setReplying(true);
+  }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const act = async (action) => {
     if (!reply.trim()) return;
@@ -47,7 +55,8 @@ export default function TicketCard({ ticket, showTask = false, onChanged }) {
   };
 
   return (
-    <li className={`ticket ${open ? 'ticket-open' : 'ticket-resolved'}`}>
+    <li ref={ref} className={`ticket ${open ? 'ticket-open' : 'ticket-resolved'} ${focus ? 'ticket-focus' : ''}`}
+      aria-current={focus ? 'true' : undefined}>
       <div className="ticket-head">
         <span className={`chip ${open ? 'chip-todo' : 'chip-done'}`}>{open ? 'Open' : ticket.taskDone ? 'Task done' : 'Resolved'}</span>
         <span className="ticket-who">

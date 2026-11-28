@@ -18,7 +18,7 @@ export default function AppLayout() {
     const load = () => notificationService.unreadCount().then((r) => {
       setUnread(r.count);
       if (r.count > 0 && desktopEnabled()) {
-        notificationService.list(5).then((list) => list.filter((n) => !n.read).reverse().forEach(showDesktop)).catch(() => {});
+        notificationService.list(20).then((list) => list.filter((n) => !n.read).reverse().forEach(showDesktop)).catch(() => {});
       }
     }).catch(() => {});
     load();

@@ -35,6 +35,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
     priority: task?.priority || 'MEDIUM',
     dueDate: toLocalInput(task?.dueAt).slice(0, 10),
     dueTime: toLocalInput(task?.dueAt).slice(11, 16) || '18:00',
+    showDaily: !!task?.showDaily,   // show in To do every day until the due date
     repeat: 'ONCE',
     dayOfWeek: new Date().toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() === 'SUNDAY'
       ? 'MONDAY'
@@ -107,6 +108,7 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
         title: form.title, description: form.description, priority: form.priority,
         ...(form.repeat === 'ONCE' || task ? {
           dueAt: form.dueDate ? `${form.dueDate}T${form.dueTime || '18:00'}` : null,
+          showDaily: !!form.dueDate && form.showDaily,
           estimatedHours: null,
           reviewerId: form.reviewerId === NO_REVIEW ? null : Number(form.reviewerId),
           noReview: form.reviewerId === NO_REVIEW,
@@ -233,6 +235,14 @@ export default function TaskForm({ task, onClose, onSaved, defaultAssigneeId }) 
               </label>
             </div>
             <p className="hint">Leave the due date empty if the task has no deadline.</p>
+            <label className="check">
+              <input type="checkbox" checked={form.showDaily && !!form.dueDate} disabled={!form.dueDate}
+                onChange={(e) => setForm((f) => ({ ...f, showDaily: e.target.checked }))} />
+              Show in To do every day until the due date
+            </label>
+            {form.showDaily && form.dueDate && (
+              <p className="hint">It shows in To do from today until it is due, not only on the due day, so it is not forgotten.</p>
+            )}
           </>
         ) : (
           <>

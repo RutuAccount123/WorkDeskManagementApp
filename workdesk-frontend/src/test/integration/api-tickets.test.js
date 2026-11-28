@@ -5,7 +5,8 @@ import { tokenStore } from '@/services/http.js';
 import { ADMIN, AMIT, PRIYA, RAHUL, localDue, signIn } from '../helpers.js';
 
 const asUser = async (email) => { tokenStore.clear(); return signIn(email); };
-const lastNote = async () => (await notificationService.list()).find((n) => n.type !== 'DAILY_DIGEST');
+// the latest notice about something that happened (not the daily summary or a due-date reminder)
+const lastNote = async () => (await notificationService.list()).find((n) => !['DAILY_DIGEST', 'DUE_SOON', 'DAY_REMINDER'].includes(n.type));
 
 describe('tickets on a task', () => {
   it('a ticket is also a task in the list of the person it is raised to', async () => {

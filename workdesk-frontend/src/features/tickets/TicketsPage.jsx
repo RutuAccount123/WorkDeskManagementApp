@@ -21,6 +21,7 @@ export default function TicketsPage() {
   const [params, setParams] = useSearchParams();
   const scope = params.get('scope') || 'assigned';
   const status = params.has('status') ? params.get('status') : 'OPEN';
+  const focusId = Number(params.get('ticket')) || null;   // opened from a ticket's task: show that ticket
   const [tickets, setTickets] = useState(null);
   const [error, setError] = useState('');
 
@@ -73,7 +74,7 @@ export default function TicketsPage() {
           </div>
         ) : (
           <ul className="ticket-list">
-            {tickets.map((t) => <TicketCard key={t.id} ticket={t} showTask onChanged={load} />)}
+            {tickets.map((t) => <TicketCard key={t.id} ticket={t} showTask onChanged={load} focus={t.id === focusId} />)}
           </ul>
         )}
     </div>

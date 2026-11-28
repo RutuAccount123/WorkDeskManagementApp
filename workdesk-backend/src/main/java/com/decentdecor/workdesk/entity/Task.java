@@ -133,6 +133,30 @@ public class Task {
     @Column(name = "overdue_reminded", nullable = false)
     private boolean overdueReminded;
 
+    /** The last office day a "due tomorrow" / "due today" reminder was sent (one per day). */
+    @Column(name = "day_reminded_on")
+    private java.time.LocalDate dayRemindedOn;
+
+    public java.time.LocalDate getDayRemindedOn() {
+        return dayRemindedOn;
+    }
+
+    public void setDayRemindedOn(java.time.LocalDate dayRemindedOn) {
+        this.dayRemindedOn = dayRemindedOn;
+    }
+
+    /** Show in the assignee's To do every day from the day it was made until it is due. */
+    @Column(name = "show_daily", nullable = false)
+    private boolean showDaily;
+
+    public boolean isShowDaily() {
+        return showDaily;
+    }
+
+    public void setShowDaily(boolean showDaily) {
+        this.showDaily = showDaily;
+    }
+
     /**
      * Pending = someone raised a ticket on this task and it is not resolved yet.
      * Read from task_ticket when the task is loaded. While pending the task is not overdue.

@@ -1,4 +1,5 @@
 // Desktop (Windows / Chrome) pop-up notifications for reminders.
+// Only the day reminders pop up ("Due tomorrow" / "Due today"); everything else stays in the bell.
 // The person has to allow them once in the browser; after that they can turn them off and on again here.
 // (A website cannot take back the browser permission, so "off" is remembered in this browser.)
 
@@ -30,9 +31,12 @@ export function disableDesktop() {
   write(OFF_KEY, '1');
 }
 
-/** Shows each notification once (remembered by id), and only ones that arrived after reminders were turned on. */
+/** The kinds of notification that pop up on the desktop. */
+export const DESKTOP_TYPES = ['DAY_REMINDER'];
+
+/** Shows each day reminder once (remembered by id), and only ones that arrived after reminders were turned on. */
 export function showDesktop(notification) {
-  if (!desktopEnabled()) return;
+  if (!desktopEnabled() || !DESKTOP_TYPES.includes(notification.type)) return;
   const since = read(SINCE_KEY);
   if (since && notification.createdAt && new Date(notification.createdAt) < new Date(since)) return;
   const key = 'ewms_desktop_shown';

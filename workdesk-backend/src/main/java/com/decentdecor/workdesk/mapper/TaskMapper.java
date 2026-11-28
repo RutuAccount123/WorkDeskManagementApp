@@ -57,7 +57,8 @@ public class TaskMapper {
                 t.getSubmittedAt(),
                 t.getCompletedAt(),
                 includeImage ? image(t) : null,
-                ticketSource(t));
+                ticketSource(t),
+                t.isShowDaily());
     }
 
     private String image(Task task) {

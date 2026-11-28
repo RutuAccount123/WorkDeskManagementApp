@@ -218,6 +218,7 @@ public class TaskService {
         t.setSubmittedAt(status == TaskStatus.COMPLETED ? now : null);
         t.setCompletedAt(status == TaskStatus.COMPLETED ? now : null);
         t.setLinkedWorkflow(linkableWorkflow(req.workflowId(), me));
+        t.setShowDaily(Boolean.TRUE.equals(req.showDaily()) && t.getDueAt() != null);
         t = tasks.save(t);
 
         List<String> notes = new ArrayList<>();
@@ -244,7 +245,8 @@ public class TaskService {
         return assigneeIds.stream()
                 .map(assigneeId -> createOne(user, new TaskRequest(
                         task.title(), task.description(), assigneeId, task.reviewerId(), task.priority(),
-                        task.dueAt(), task.status(), task.workflowId(), task.estimatedHours(), null, task.noReview()), imageData))
+                        task.dueAt(), task.status(), task.workflowId(), task.estimatedHours(), null, task.noReview(),
+                        task.showDaily()), imageData))
                 .toList();
     }
 
@@ -293,6 +295,7 @@ public class TaskService {
             changes.add("due date");
             t.setDueSoonReminded(false);   // a new due date gets fresh reminders
             t.setOverdueReminded(false);
+            t.setDayRemindedOn(null);
         }
         if (!Objects.equals(t.getEstimatedHours(), req.estimatedHours())) changes.add("estimated effort");
 
@@ -328,6 +331,8 @@ public class TaskService {
         t.setPriority(priority);
         t.setDueAt(due);
         t.setEstimatedHours(req.estimatedHours());
+        if (req.showDaily() != null) t.setShowDaily(req.showDaily());
+        if (due == null) t.setShowDaily(false);   // nothing to count down to
         t.setUpdatedAt(time.now());
         if (!changes.isEmpty()) activity.note(t, me, ActivityAction.UPDATED, "Changed " + String.join(", ", changes));
         return mapper.toResponse(t, time.now());
@@ -376,10 +381,12 @@ public class TaskService {
             t.setDueAt(deadline(t, now, t.getEstimatedHours()));
             t.setDueSoonReminded(false);
             t.setOverdueReminded(false);
+            t.setDayRemindedOn(null);
         } else if (t.getEstimatedHours() != null && (to == TaskStatus.TODO || to == TaskStatus.REOPENED)) {
             t.setDueAt(null);
             t.setDueSoonReminded(false);
             t.setOverdueReminded(false);
+            t.setDayRemindedOn(null);
         } else if (to == TaskStatus.IN_PROGRESS && t.getStartedAt() == null) {
             t.setStartedAt(now);
         }
@@ -473,6 +480,7 @@ public class TaskService {
                 t.markNotDueOnLeave();
                 t.setDueSoonReminded(false);
                 t.setOverdueReminded(false);
+                t.setDayRemindedOn(null);
                 t.setUpdatedAt(now);
                 activity.note(t, me, ActivityAction.UPDATED, "Was due on a leave day (" + time.friendly(old) + "), moved to "
                         + time.friendly(due) + (note == null ? "" : ": " + note));

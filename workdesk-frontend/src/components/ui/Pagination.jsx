@@ -14,10 +14,11 @@ export const pageCount = (total, pageSize) => Math.max(1, Math.ceil(total / page
 /**
  * ‹ Prev 1 2 3 Next › with "Showing 1–5 of 13". Hidden when everything fits on one page.
  * compact: only ‹ 1 / 3 › (for narrow places like a task lane).
+ * alwaysShow: show it even when everything fits on one page (arrows disabled).
  */
-export default function Pagination({ page, pageSize, total, onPage, label = 'Pages', compact = false }) {
+export default function Pagination({ page, pageSize, total, onPage, label = 'Pages', compact = false, alwaysShow = false }) {
   const pages = pageCount(total, pageSize);
-  if (pages <= 1) return null;
+  if (pages <= 1 && !(alwaysShow && total > 0)) return null;
   const from = (page - 1) * pageSize + 1;
   const to = Math.min(total, page * pageSize);
 

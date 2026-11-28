@@ -13,6 +13,7 @@ import java.util.List;
  * recurringTemplateId: the daily / weekly schedule this task is a copy of (null if not repeating). repeat: recurrence frequency for copies of a repeating task.
  * reviewer: null = no review needed. workflow: set for an FMS run task.
  * fromTicket: set when this task is a ticket raised to the assignee (their work on that ticket).
+ * showDaily: shows in To do every day until it is due.
  */
 public record TaskResponse(
         Long id,
@@ -42,5 +43,6 @@ public record TaskResponse(
         Instant submittedAt,
         Instant completedAt,
         String image,
-        TicketSource fromTicket) {
+        TicketSource fromTicket,
+        boolean showDaily) {
 }

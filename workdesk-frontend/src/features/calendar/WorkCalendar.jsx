@@ -11,6 +11,8 @@ import { groupFmsTasks } from '@/features/tasks/taskGroups.js';
 import { scheduledFmsForWeek } from './scheduledFms.js';
 import { REPEAT_LABEL, upcomingRepeats } from './scheduledRepeats.js';
 import TaskPdfExport from '@/components/TaskPdfExport.jsx';
+import { useOpenTask } from '@/features/tickets/ticketLink.js';
+import Pagination, { pageCount, pageSlice } from '@/components/ui/Pagination.jsx';
 
 const VIEWS = [
   { key: 'day', label: 'Day' },
@@ -59,8 +61,9 @@ function move(view, anchor, dir) {
 function WorkItem({ t, onOpen, showTime = true }) {
   const g = statusGroup(t);
   const title = t.workflow?.name || t.title;
+  const open = useOpenTask(onOpen);
   return (
-    <button className={`work-item wi-${g} ${t.overdue ? 'wi-late' : ''}`} onClick={() => onOpen(t.id)}
+    <button className={`work-item wi-${g} ${t.overdue ? 'wi-late' : ''}`} onClick={() => open(t)}
       title={`${title} — ${STATUS_LABEL[t.status]}${t.overdue ? ', overdue' : ''}`}>
       <span className="wi-dot" aria-hidden="true" />
       <span className="wi-title">{t.repeat && <span className="wi-repeat" title={`${REPEAT_LABEL[t.repeat] || 'Repeating'} task`}>↻ </span>}{title}</span>
@@ -133,7 +136,15 @@ const leaveOn = (leaves, day) => {
   return leaves.find((l) => l.startDate <= d && l.endDate >= d) || null;
 };
 
+/** The date a Day view card is sorted by: To do shows today's work first, then the next days. */
+const cardDate = (c) => (c.kind === 'moved' ? plannedDate(c.t)
+  : c.kind === 'later' ? new Date(c.t.dueAt)
+    : c.t.dailyUntilDue ? new Date(c.t.dueAt) : shownDate(c.t));
+export const DAY_PAGE_SIZE = 5;
+
 function DayView({ tasks, planned = [], upcoming = [], onOpen, onOpenUpcoming, holiday, isSunday, leave }) {
+  const open = useOpenTask(onOpen);
+  const [pages, setPages] = useState({});   // column key -> page
   return (
     <>
     {leave && <p className="holiday-banner leave">🌴 On leave{leave.reason && `: ${leave.reason}`}. No repeating tasks are created on this day.</p>}
@@ -144,10 +155,15 @@ function DayView({ tasks, planned = [], upcoming = [], onOpen, onOpenUpcoming, h
         const list = tasks.filter((t) => statusGroup(t) === g.key);
         const later = g.key === 'todo' ? upcoming : [];
         const moved = planned.filter((t) => statusGroup(t) === g.key);
+        // one list for the column, by date (today first, then the next days), shown 5 per page
+        const cards = [...moved.map((t) => ({ kind: 'moved', t })), ...later.map((t) => ({ kind: 'later', t })),
+          ...list.map((t) => ({ kind: 'task', t }))].sort((a, b) => cardDate(a) - cardDate(b));
+        const page = Math.min(pages[g.key] || 1, pageCount(cards.length, DAY_PAGE_SIZE));
+        const shown = pageSlice(cards, page, DAY_PAGE_SIZE);
         return (
           <section key={g.key} className={`day-col dc-${g.key}`}>
             <h4>{g.title} <span className="count">{list.length + later.length}</span></h4>
-            {moved.map((t) => (
+            {shown.map(({ kind, t }) => (kind === 'moved' ? (
               <button key={t.id} className="day-card wi-planned" onClick={() => onOpen(t.taskId)}>
                 <span className="day-card-title">{t.title}</span>
                 <span className="task-meta">
@@ -157,8 +173,7 @@ function DayView({ tasks, planned = [], upcoming = [], onOpen, onOpenUpcoming, h
                   <StatusChip status={t.status} />
                 </span>
               </button>
-            ))}
-            {later.map((t) => (
+            ) : kind === 'later' ? (
               <button key={t.id} className="day-card wi-scheduled wi-upcoming" onClick={() => onOpenUpcoming(t)}>
                 <span className="day-card-title">{t.title}</span>
                 <span className="task-meta">
@@ -167,11 +182,11 @@ function DayView({ tasks, planned = [], upcoming = [], onOpen, onOpenUpcoming, h
                   <span className="muted">Upcoming</span>
                 </span>
               </button>
-            ))}
-            {list.length === 0 && later.length === 0 && moved.length === 0 ? <p className="muted small">Nothing here.</p> : list.map((t) => (
-              <button key={t.id} className="day-card" onClick={() => onOpen(t.id)}>
+            ) : (
+              <button key={t.id} className="day-card" onClick={() => open(t)}>
                 <span className="day-card-title">{t.title}</span>
                 <span className="task-meta">
+                  {t.dailyUntilDue && <span className="tag tag-daily" title="Shows in To do every day until it is due">every day until due</span>}
                   {t.carriedOver && <span className="tag" title="Not finished on its own day, so it carries over to today">from {fmtDate(workDate(t))}</span>}
                   {statusGroup(t) === 'done' && t.completedAt ? (
                     <>
@@ -184,7 +199,7 @@ function DayView({ tasks, planned = [], upcoming = [], onOpen, onOpenUpcoming, h
                         <span>Started {sameDay(new Date(t.startedAt), new Date()) ? fmtTime(t.startedAt) : fmtDateTime(t.startedAt)}</span>
                       )}
                       {t.dueAt && <span className={t.overdue ? 'text-overdue' : ''}>{t.overdue ? 'Overdue, was due ' : 'Due '}
-                        {sameDay(new Date(t.dueAt), workDate(t)) ? fmtTime(t.dueAt) : fmtDateTime(t.dueAt)}</span>}
+                        {sameDay(new Date(t.dueAt), workDate(t)) && !t.dailyUntilDue ? fmtTime(t.dueAt) : fmtDateTime(t.dueAt)}</span>}
                     </>
                   )}
                   <span>{PRIORITY_LABEL[t.priority]}</span>
@@ -194,7 +209,10 @@ function DayView({ tasks, planned = [], upcoming = [], onOpen, onOpenUpcoming, h
                   {(t.status === 'SUBMITTED' || t.status === 'REOPENED' || t.overdue || t.pending || t.onLeave) && <StatusChip status={t.status} overdue={t.overdue} pending={t.pending} onLeave={t.onLeave} />}
                 </span>
               </button>
-            ))}
+            )))}
+            {cards.length === 0 && <p className="muted small">Nothing here.</p>}
+            <Pagination page={page} pageSize={DAY_PAGE_SIZE} total={cards.length} compact alwaysShow
+              label={`${g.title} pages`} onPage={(n) => setPages((p) => ({ ...p, [g.key]: n }))} />
           </section>
         );
       })}
@@ -388,8 +406,15 @@ export default function WorkCalendar({ employeeId, employeeName, onOpen, refresh
         includesToday
           ? taskService.list({ assigneeId: employeeId, status: OPEN, workTo: isoDay(addDays(from, -1)) })
           : Promise.resolve([]),
-      ]).then(([list, earlier]) => {
+        // Day view: open tasks due on a later day that show every day until they are due
+        view === 'day'
+          ? taskService.list({ assigneeId: employeeId, status: OPEN, workFrom: isoDay(to) })
+          : Promise.resolve([]),
+      ]).then(([list, earlier, ahead]) => {
         const seen = new Set(list.map((t) => t.id));
+        const daily = ahead.filter((t) => t.showDaily && !seen.has(t.id) && t.dueAt && new Date(t.dueAt) >= to
+          && startOfDay(new Date(t.createdAt)) <= from && t.status !== 'CANCELLED')
+          .map((t) => ({ ...t, dailyUntilDue: true }));
         const todayStart = startOfDay(new Date());
         const all = groupFmsTasks([...earlier.filter((t) => !seen.has(t.id)), ...list].filter((t) => t.status !== 'CANCELLED'))
           .map((t) => (includesToday && OPEN.includes(t.status) && workDate(t) < todayStart ? { ...t, carriedOver: true } : t));
@@ -401,7 +426,7 @@ export default function WorkCalendar({ employeeId, employeeName, onOpen, refresh
           .filter((t) => !t.carriedOver && inRange(plannedDate(t)) && !sameDay(plannedDate(t), shownDate(t)))
           .map((t) => ({ ...t, id: `planned-${t.id}`, taskId: t.id, plannedCopy: true }));
         if (alive) {
-          setTasks(shown.sort((a, b) => shownDate(a) - shownDate(b)));
+          setTasks([...shown.sort((a, b) => shownDate(a) - shownDate(b)), ...daily.filter((t) => !shown.some((x) => x.id === t.id))]);
           setPlanned(moved);
         }
       });

@@ -8,6 +8,8 @@ public enum NotificationType {
     TASK_REOPENED,
     COMMENT,
     DUE_SOON,
+    /** "Due tomorrow" / "Due today": the only kind shown as a desktop pop-up. */
+    DAY_REMINDER,
     OVERDUE,
     DAILY_DIGEST,
     WORKFLOW_STEP,

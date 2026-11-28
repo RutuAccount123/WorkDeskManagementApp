@@ -122,4 +122,14 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
                             or (t.scheduledAt is null and t.dueAt <= :soon))))
             """)
     List<Task> findNeedingReminder(@Param("open") Collection<TaskStatus> open, @Param("now") Instant now, @Param("soon") Instant soon);
+
+    /** Open work due today or tomorrow (not past due) that has not had its reminder today. */
+    @EntityGraph(attributePaths = {"assignee", "createdBy"})
+    @Query("""
+            select t from Task t
+            where t.status in :open and t.dueAt is not null and t.dueAt >= :now and t.dueAt < :until
+              and (t.dayRemindedOn is null or t.dayRemindedOn < :today)
+            """)
+    List<Task> findNeedingDayReminder(@Param("open") Collection<TaskStatus> open, @Param("now") Instant now,
+                                      @Param("until") Instant until, @Param("today") java.time.LocalDate today);
 }

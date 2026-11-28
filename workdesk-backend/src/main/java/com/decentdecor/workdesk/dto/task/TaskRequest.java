@@ -10,6 +10,7 @@ import java.math.BigDecimal;
  * dueAt: "2026-10-30T18:00" (office time) or empty. estimatedHours: optional; if set, dueAt is generated when work starts.
  * status: only for your own work (TODO, IN_PROGRESS, COMPLETED).
  * workflowId: link to an existing FMS (only when creating).
+ * showDaily: show it in To do every day until its due date (needs a due date). Empty when editing = keep.
  */
 public record TaskRequest(
         @NotBlank(message = "title: must not be blank")
@@ -23,5 +24,6 @@ public record TaskRequest(
         Long workflowId,
         BigDecimal estimatedHours,
         @Size(max = 7000000, message = "image: is too large") String image,
-        Boolean noReview) {
+        Boolean noReview,
+        Boolean showDaily) {
 }

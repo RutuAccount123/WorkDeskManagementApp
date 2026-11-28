@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import App from '@/app/App.jsx';
 import { ADMIN_NAV, EMPLOYEE_NAV } from '@/config/navigation.js';
 import { tokenStore } from '@/services/http.js';
-import { authService, employeeService, leaveService, recurringService, taskService } from '@/services/index.js';
+import { authService, employeeService, leaveService, recurringService, taskService, ticketService } from '@/services/index.js';
 
 const idOf = async (title) => (await taskService.list({ q: title, scope: 'all' })).find((t) => t.title === title).id;
 
@@ -131,6 +131,90 @@ describe('today view carries over unfinished work', () => {
     expect(item.closest('.week-day').querySelector('.week-head strong').textContent).toBe('Tue');
     await user.click(item);
     expect(await screen.findByRole('heading', { level: 1, name: 'Far weekly check' })).toBeInTheDocument();
+  });
+
+  it('"show every day until due": a task due in 2 days is in today\'s To do, after today\'s work; 5 per page', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-1');   // admin assigns Rahul work due in two days, shown every day
+    const day = (n, h) => { const d = new Date(); d.setDate(d.getDate() + n); d.setHours(h, 0, 0, 0);
+      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+    await taskService.create({ title: 'Measure Wakad site', assigneeId: 3, dueAt: day(2, 18), showDaily: true });
+    await taskService.create({ title: 'Not shown before its day', assigneeId: 3, dueAt: day(2, 18) });
+    for (let i = 1; i <= 6; i += 1) await taskService.create({ title: `Today job ${i}`, assigneeId: 3, dueAt: day(0, 23) });
+    tokenStore.set('mock-3');   // Rahul
+
+    start('/');
+    const todo = await waitFor(() => { const c = document.querySelector('.dc-todo'); expect(c).not.toBeNull(); return c; });
+    await within(todo).findByText('Today job 1');
+    expect(within(todo).getAllByRole('button').filter((b) => b.classList.contains('day-card')).length).toBeLessThanOrEqual(5);
+    const pager = within(todo).getByRole('navigation', { name: 'To do pages' });
+    // keep going to the last page: the task due in 2 days comes after today's work
+    let next = within(pager).getByRole('button', { name: /next/i });
+    while (!next.disabled) { await user.click(next); next = within(pager).getByRole('button', { name: /next/i }); }
+    const card = (await within(todo).findByText('Measure Wakad site')).closest('button');
+    expect(card).toHaveTextContent('every day until due');
+    expect(within(todo).queryByText('Today job 1')).toBeNull();
+    expect(screen.queryByText('Not shown before its day')).toBeNull();
+  });
+
+  it('In progress and Done on the Day view also show 5 per page, with ‹ › arrows', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');   // Rahul's own work, started and done today
+    for (let i = 1; i <= 7; i += 1) {
+      await taskService.create({ title: `Started job ${i}`, status: 'IN_PROGRESS' });
+      await taskService.create({ title: `Finished job ${i}`, status: 'COMPLETED' });
+    }
+    start('/');
+    for (const [col, name, word] of [['.dc-progress', 'In progress pages', 'Started job'], ['.dc-done', 'Done pages', 'Finished job']]) {
+      const c = await waitFor(() => { const el = document.querySelector(col); expect(within(el).getAllByText(new RegExp(word)).length).toBeGreaterThan(0); return el; });
+      const cards = () => [...c.querySelectorAll('.day-card')];
+      expect(cards().length).toBe(5);
+      const pager = within(c).getByRole('navigation', { name });
+      const first = cards().map((b) => b.textContent);
+      await user.click(within(pager).getByRole('button', { name: 'Next page' }));
+      expect(cards().length).toBeGreaterThan(0);
+      expect(cards().map((b) => b.textContent)).not.toEqual(first);
+    }
+  });
+
+  it('"Add my work" can also show the work every day in To do until its date', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-3');   // Rahul
+    start('/');
+    await user.click(await screen.findByRole('button', { name: 'Add my work' }));
+    await user.type(screen.getByLabelText('What is the work?'), 'Prepare Hinjewadi quotation');
+    const later = new Date(); later.setDate(later.getDate() + 2);
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: `${later.getFullYear()}-${String(later.getMonth() + 1).padStart(2, '0')}-${String(later.getDate()).padStart(2, '0')}` } });
+    await user.click(screen.getByLabelText('Show in To do every day until the date'));
+    await user.click(screen.getByRole('button', { name: 'Add work' }));
+
+    const todo = await waitFor(() => { const c = document.querySelector('.dc-todo'); expect(c).not.toBeNull(); return c; });
+    const pager = within(todo).queryByRole('navigation', { name: 'To do pages' });
+    if (pager) {
+      let next = within(pager).getByRole('button', { name: /next/i });
+      while (!next.disabled) { await user.click(next); next = within(pager).getByRole('button', { name: /next/i }); }
+    }
+    const card = (await within(todo).findByText('Prepare Hinjewadi quotation')).closest('button');
+    expect(card).toHaveTextContent('every day until due');
+  });
+
+  it('a ticket raised to me opens on the Tickets page, ready to work on, not as a task', async () => {
+    const user = userEvent.setup();
+    tokenStore.set('mock-2');   // Priya raises a ticket to Rahul on her task
+    const mine = await taskService.create({ title: 'Check GST on site bills', assigneeId: 2 });
+    const k = await ticketService.raise(mine.id, 3, 'Please send me the two missing bills');
+    tokenStore.set('mock-3');   // Rahul
+
+    start('/');
+    const day = await waitFor(() => { const d = document.querySelector('.day-cols'); expect(d).not.toBeNull(); return d; });
+    await user.click((await within(day).findByText('Ticket: Check GST on site bills')).closest('button'));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Tickets' })).toBeInTheDocument();
+    const card = await waitFor(() => { const c = document.querySelector('.ticket-focus'); expect(c).not.toBeNull(); return c; });
+    expect(card).toHaveTextContent('Please send me the two missing bills');
+    expect(within(card).getByLabelText('Reply')).toBeInTheDocument();   // "Work on this ticket" is already open
+    expect(within(card).getByRole('button', { name: 'Resolve' })).toBeInTheDocument();
+    expect(window.location.search).toContain(`ticket=${k.id}`);
   });
 
   it('upcoming work started today shows today under In progress, with the time it was started', async () => {

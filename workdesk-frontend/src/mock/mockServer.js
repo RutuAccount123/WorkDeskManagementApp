@@ -118,6 +118,7 @@ function taskOut(t, includeImage = false) {
     createdAt: t.createdAt, updatedAt: t.updatedAt, startedAt: t.startedAt,
     submittedAt: t.submittedAt, completedAt: t.completedAt,
     fromTicket: ticketSource(t),
+    showDaily: !!t.showDaily,
   };
 }
 
@@ -360,6 +361,22 @@ function runDeadlineReminders() {
   const now = new Date();
   const soon = new Date(now.getTime() + 24 * 3600e3);
   let changed = false;
+  // day reminders, once each day: the day before the due date and the due day.
+  // High / urgent work whatever its status; other work only while still in To do.
+  const today = localDay(now);
+  const tomorrow = localDay(new Date(now.getTime() + 86400e3));
+  db.tasks.forEach((t) => {
+    if (!OPEN.includes(t.status) || !t.dueAt || isPending(t) || isOnLeave(t) || t.dayRemindedOn === today) return;
+    const due = new Date(t.dueAt);
+    const day = localDay(due);
+    if (due < now || (day !== today && day !== tomorrow)) return;
+    const important = t.priority === 'HIGH' || t.priority === 'URGENT';
+    const notStarted = t.status === 'TODO' || t.status === 'REOPENED';
+    if (!important && !notStarted) return;
+    const when = due.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    notify(t.assigneeId, t.id, 'DAY_REMINDER', `${day === today ? 'Due today' : 'Due tomorrow'}: ${important ? `${t.priority === 'HIGH' ? 'High' : 'Urgent'} priority: ` : ''}"${t.title}" is due ${when}${notStarted ? ' and is not started yet' : ''}`);
+    t.dayRemindedOn = today; t.dueSoonReminded = true; changed = true;
+  });
   db.tasks.forEach((t) => {
     if (!OPEN.includes(t.status) || !t.dueAt || isPending(t) || isOnLeave(t)) return; // pending: remind again after the ticket is resolved
     const due = new Date(t.dueAt);
@@ -1082,6 +1099,7 @@ function route(method, path, query, body, me) {
         image: body.image || null,
         workflowId: linkedWorkflowId(body.workflowId),
       };
+      t.showDaily = !!body.showDaily && !!t.dueAt;   // every day in To do until it is due
       db.tasks.push(t);
       const rv = reviewerId ? empById(reviewerId) : null;
       log(t.id, me.id, 'CREATED', null, status, [self ? 'Added own work' : null, rv ? `Reviewer: ${rv.fullName}` : null].filter(Boolean).join('. ') || null);
@@ -1246,7 +1264,7 @@ function route(method, path, query, body, me) {
       const changes = [];
       if (t.title !== body.title.trim()) changes.push('title');
       if (t.priority !== body.priority) changes.push(`priority ${t.priority} → ${body.priority}`);
-      if (t.dueAt !== due) changes.push('due date');
+      if (t.dueAt !== due) { changes.push('due date'); t.dueSoonReminded = false; t.overdueReminded = false; t.dayRemindedOn = null; }
       if (t.estimatedHours !== estimatedHours) changes.push('estimated effort');
       if (t.assigneeId !== Number(body.assigneeId)) {
         const prev = empById(t.assigneeId);
@@ -1269,6 +1287,8 @@ function route(method, path, query, body, me) {
       }
       Object.assign(t, { title: body.title.trim(), description: body.description || '', priority: body.priority, dueAt: due,
         estimatedHours, updatedAt: nowIso() });
+      if (body.showDaily != null) t.showDaily = !!body.showDaily;
+      if (!t.dueAt) t.showDaily = false;
       if (body.image) t.image = body.image;
       if (changes.length) log(id, me.id, 'UPDATED', null, null, `Changed ${changes.join(', ')}`);
       return taskOut(t);

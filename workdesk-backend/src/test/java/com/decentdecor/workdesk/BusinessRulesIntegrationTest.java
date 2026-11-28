@@ -173,6 +173,27 @@ class BusinessRulesIntegrationTest {
     }
 
     @Test
+    void aTaskCanShowInToDoEveryDayUntilItIsDue() throws Exception {
+        Person a = person("Daily Shower");
+        Person b = person("Daily Doer");
+        String due = java.time.LocalDate.now().plusDays(2) + "T18:00";
+        JsonNode t = ok(a.token(), post("/api/tasks"), map("title", "Site measurement", "assigneeId", b.id(), "dueAt", due, "showDaily", true));
+        assertThat(t.get("showDaily").asBoolean()).isTrue();
+        // without a due date there is nothing to count down to
+        assertThat(ok(a.token(), post("/api/tasks"), map("title", "No date", "assigneeId", b.id(), "showDaily", true))
+                .get("showDaily").asBoolean()).isFalse();
+        assertThat(ok(a.token(), post("/api/tasks"), map("title", "Plain", "assigneeId", b.id(), "dueAt", due))
+                .get("showDaily").asBoolean()).isFalse();
+        // editing keeps it unless it is changed; removing the due date turns it off
+        long id = t.get("id").asLong();
+        assertThat(ok(admin, put("/api/tasks/" + id), map("title", "Site measurement", "dueAt", due)).get("showDaily").asBoolean()).isTrue();
+        assertThat(ok(admin, put("/api/tasks/" + id), map("title", "Site measurement", "dueAt", due, "showDaily", false))
+                .get("showDaily").asBoolean()).isFalse();
+        ok(admin, put("/api/tasks/" + id), map("title", "Site measurement", "dueAt", due, "showDaily", true));
+        assertThat(ok(admin, put("/api/tasks/" + id), map("title", "Site measurement")).get("showDaily").asBoolean()).isFalse();
+    }
+
+    @Test
     void editDeleteAndComments() throws Exception {
         Person a = person("Editor Six");
         Person b = person("Doer Seven");
@@ -924,6 +945,36 @@ class BusinessRulesIntegrationTest {
         call(other.token(), post("/api/notifications/" + first + "/read"), null).andExpect(status().isNotFound());
         ok(p.token(), post("/api/notifications/read-all"), null);
         assertThat(ok(p.token(), get("/api/notifications/unread-count"), null).get("count").asLong()).isZero();
+    }
+
+    @Test
+    void dayBeforeAndDueDayRemindersHighAlwaysOthersOnlyWhileInToDo() throws Exception {
+        Person p = person("Day Reminder TwentySix");
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        String tomorrow = today.plusDays(1) + "T23:00";
+        String later = today.plusDays(3) + "T18:00";
+        long high = ok(admin, post("/api/tasks"), map("title", "Urgent site visit " + p.id(), "assigneeId", p.id(),
+                "priority", "HIGH", "dueAt", tomorrow)).get("id").asLong();
+        ok(admin, post("/api/tasks"), map("title", "Plain todo " + p.id(), "assigneeId", p.id(), "priority", "LOW", "dueAt", tomorrow));
+        // own work added already started: never in To do, so no day reminder
+        ok(p.token(), post("/api/tasks"), map("title", "Plain started " + p.id(), "priority", "MEDIUM", "status", "IN_PROGRESS", "dueAt", tomorrow));
+        ok(admin, post("/api/tasks"), map("title", "Far away " + p.id(), "assigneeId", p.id(), "priority", "HIGH", "dueAt", later));
+        ok(p.token(), post("/api/tasks/" + high + "/status"), map("status", "IN_PROGRESS"));
+
+        scheduler.sendReminders();
+        scheduler.sendReminders();   // once a day only
+        java.util.List<String> msgs = new java.util.ArrayList<>();
+        for (JsonNode n : ok(p.token(), get("/api/notifications"), null)) msgs.add(n.get("message").asText());
+        java.util.function.Predicate<String> dayNote = m -> m.startsWith("Due tomorrow: ") || m.startsWith("Due today: ");
+        // high priority: reminded even though it is started
+        assertThat(msgs.stream().filter(m -> dayNote.test(m) && m.contains("Urgent site visit")).toList()).hasSize(1)
+                .allMatch(m -> m.contains("High priority"));
+        // other priorities: only while still in To do
+        assertThat(msgs.stream().filter(m -> dayNote.test(m) && m.contains("Plain todo")).toList()).hasSize(1)
+                .allMatch(m -> m.endsWith("is not started yet"));
+        assertThat(msgs.stream().filter(m -> dayNote.test(m) && m.contains("Plain started")).toList()).isEmpty();
+        // not yet: due in 3 days
+        assertThat(msgs.stream().filter(m -> m.contains("Far away") && dayNote.test(m)).toList()).isEmpty();
     }
 
     @Test

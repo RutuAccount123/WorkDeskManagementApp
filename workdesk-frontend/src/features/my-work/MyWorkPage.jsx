@@ -14,6 +14,7 @@ import TaskBoard from '@/features/tasks/TaskBoard.jsx';
 import { groupFmsTasks } from '@/features/tasks/taskGroups.js';
 import { Link } from 'react-router-dom';
 import EmployeeProfileCard from '@/features/dashboard/EmployeeProfileCard.jsx';
+import { useOpenTask } from '@/features/tickets/ticketLink.js';
 
 /** Personal home: today's reminder, day/week/month/year views, and monthly performance. */
 export default function MyWork({ personalDashboard = false }) {
@@ -27,20 +28,25 @@ export default function MyWork({ personalDashboard = false }) {
   const [refresh, setRefresh] = useState(0);
   const [desktop, setDesktop] = useState(desktopEnabled());
   const bump = useCallback(() => setRefresh((n) => n + 1), []);
+  const openTask = useOpenTask(setOpenId);
 
   useEffect(() => {
     const d = isoDay(new Date());
     const personalScope = personalDashboard ? { scope: 'assigned' } : {};
     const yesterday = isoDay(new Date(Date.now() - 86400000));
+    const tomorrow = isoDay(new Date(Date.now() + 86400000));
     Promise.all([
       taskService.list({ ...personalScope, workFrom: d, workTo: d }),
       taskService.list({ ...personalScope, overdue: 'true' }),
       // unfinished work from earlier days carries over to today
       taskService.list({ ...personalScope, status: ['TODO', 'IN_PROGRESS', 'SUBMITTED', 'REOPENED'], workTo: yesterday }),
-    ]).then(([list, overdue, earlier]) => {
+      // due on a later day but shown in To do every day until then
+      taskService.list({ ...personalScope, status: ['TODO', 'IN_PROGRESS', 'SUBMITTED', 'REOPENED'], workFrom: tomorrow }),
+    ]).then(([list, overdue, earlier, ahead]) => {
       const todays = list.filter((t) => t.status !== 'CANCELLED' && sameDay(workDate(t), new Date()));
       const ids = new Set(todays.map((t) => t.id));
-      const mine = groupFmsTasks([...earlier.filter((t) => !ids.has(t.id)), ...todays]);
+      const daily = ahead.filter((t) => t.showDaily && !ids.has(t.id));
+      const mine = groupFmsTasks([...earlier.filter((t) => !ids.has(t.id)), ...todays, ...daily]);
       const c = { todo: 0, progress: 0, done: 0 };
       mine.forEach((t) => { c[statusGroup(t)] += 1; });
       setToday({ total: mine.length, ...c, next: mine.find((t) => statusGroup(t) !== 'done') });
@@ -89,16 +95,17 @@ export default function MyWork({ personalDashboard = false }) {
             <p className="reminder-text">
               {today.total > 0 && <>{today.todo} to do, {today.progress} in progress, {today.done} done. </>}
               {late > 0 && <strong className="text-overdue">{late} overdue. </strong>}
-              {today.next && <>Next up: <button className="link-btn" onClick={() => setOpenId(today.next.id)}>{today.next.title}</button></>}
+              {today.next && <>Next up: <button className="link-btn" onClick={() => openTask(today.next)}>{today.next.title}</button></>}
               {today.total === 0 && 'Add what you plan to do so it shows in your record.'}
             </p>
           </div>
           {desktopSupported() && !desktop && (
-            <button className="btn ghost small" onClick={turnOnDesktop}>Turn on desktop reminders</button>
+            <button className="btn ghost small" onClick={turnOnDesktop}
+              title="Pops up on the desktop only on the day before a task is due and on its due day">Turn on desktop reminders</button>
           )}
           {desktop && (
             <span className="row desktop-toggle">
-              <span className="muted small">Desktop reminders on</span>
+              <span className="muted small" title="Only the day before a task is due and its due day pop up; everything else is in the bell">Desktop reminders on (due tomorrow / due today)</span>
               <button className="btn ghost small" onClick={turnOffDesktop}>Stop desktop reminders</button>
             </span>
           )}

@@ -36,6 +36,7 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
     priority: task?.priority || 'MEDIUM',
     status: 'TODO',
     reviewerId: task?.reviewer ? String(task.reviewer.id) : '',
+    showDaily: !!task?.showDaily,   // show in To do every day until the date
   });
   const { user } = useAuth();
   const [people, setPeople] = useState([]);
@@ -77,6 +78,7 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
         const body = {
           title: form.title, description: form.description, priority: form.priority,
           dueAt: form.date ? `${form.date}T${form.time || '18:00'}` : null,
+          showDaily: !!form.date && form.showDaily,
           reviewerId: form.reviewerId ? Number(form.reviewerId) : null,
         };
         saved = task
@@ -137,6 +139,16 @@ export default function AddWorkForm({ task, defaultDate, onClose, onSaved }) {
             </select>
           </label>
         </div>
+
+        {!repeating && (
+          <label className="check">
+            <input type="checkbox" checked={form.showDaily} onChange={(e) => setForm((f) => ({ ...f, showDaily: e.target.checked }))} />
+            Show in To do every day until the date
+          </label>
+        )}
+        {!repeating && form.showDaily && (
+          <p className="hint">It shows in To do from today until its date, not only on that day, so it is not forgotten.</p>
+        )}
 
         {repeating && (
           <RepeatDueFields frequency={form.repeat} start={repeatStart}

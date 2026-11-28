@@ -4,6 +4,7 @@ import { LANES, PRIORITY_LABEL, fmtDateTime, laneOf, relativeDue } from '@/utils
 import StatusChip from '@/components/ui/StatusChip.jsx';
 import Pagination, { pageCount, pageSlice } from '@/components/ui/Pagination.jsx';
 import { groupFmsTasks } from './taskGroups.js';
+import { useOpenTask } from '@/features/tickets/ticketLink.js';
 
 /**
  * Tasks grouped into deadline lanes: Pending, Overdue, Due today, Next 7 days, Later, No date, Done.
@@ -16,6 +17,7 @@ export default function TaskBoard({
   pageSize,
 }) {
   const [lanePages, setLanePages] = useState({});   // lane key -> page
+  const open = useOpenTask(onOpen);
   const groups = {};
   const groupedTasks = groupFmsTasks(tasks);
   const selectable = new Set(selectableTaskIds);
@@ -46,7 +48,7 @@ export default function TaskBoard({
                         checked={selected.has(t.id)} onChange={() => onToggleTask(t.id)} />
                     </label>
                   )}
-                  <button className="task-row" onClick={() => onOpen(t.id)}>
+                  <button className="task-row" onClick={() => open(t)}>
                   <span className={`prio prio-${t.priority.toLowerCase()}`} title={`${PRIORITY_LABEL[t.priority]} priority`} />
                   <span className="task-main">
                     <span className="task-title">{t.title}</span>
